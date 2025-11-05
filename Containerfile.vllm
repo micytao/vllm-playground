@@ -1,0 +1,55 @@
+# vLLM WebUI Container for GPU (CUDA)
+# Based on official vLLM OpenAI-compatible server image
+
+FROM docker.io/vllm/vllm-openai:latest
+
+USER root
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    WEBUI_PORT=7860 \
+    VLLM_PORT=8000 \
+    HOME=/workspace \
+    # GPU-specific settings
+    CUDA_VISIBLE_DEVICES=all \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Install additional system dependencies if needed
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create workspace directory
+WORKDIR ${HOME}
+
+# Copy the vLLM WebUI project files
+COPY --chown=root:root . ${HOME}/vllm-webui/
+
+# Install WebUI dependencies
+RUN cd vllm-webui && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Expose ports
+# 7860 - WebUI interface
+# 8000 - vLLM API server (default)
+EXPOSE 7860 8000
+
+# Set the working directory to the WebUI
+WORKDIR ${HOME}/vllm-webui
+
+# Create a startup script that runs the WebUI
+RUN echo '#!/bin/bash' > ${HOME}/start.sh && \
+    echo 'cd ${HOME}/vllm-webui' >> ${HOME}/start.sh && \
+    echo 'exec python3 run.py' >> ${HOME}/start.sh && \
+    chmod +x ${HOME}/start.sh
+
+# Set entrypoint
+ENTRYPOINT ["/bin/bash", "-c", "${HOME}/start.sh"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:7860/api/status || exit 1
+

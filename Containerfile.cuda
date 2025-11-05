@@ -1,36 +1,65 @@
-# vLLM WebUI Container for GPU (CUDA)
-# Based on official vLLM OpenAI-compatible server image
+# vLLM WebUI Container for RHEL 9 x86_64 (GPU-enabled)
+# Based on Red Hat Universal Base Image 9 Minimal (100% free, official RHEL-based image)
+# Optimized for x86_64 architecture with CUDA GPU inference
+# Uses pip install for vLLM with CUDA support
 
-FROM docker.io/vllm/vllm-openai:latest
+FROM registry.redhat.io/ubi9-minimal:latest
 
-USER root
-
+USER 0
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
-    WEBUI_PORT=7860 \
-    VLLM_PORT=8000 \
-    HOME=/workspace \
-    # GPU-specific settings
+    VLLM_TARGET_DEVICE=cuda \
     CUDA_VISIBLE_DEVICES=all \
     NVIDIA_VISIBLE_DEVICES=all \
-    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    WEBUI_PORT=7860 \
+    VLLM_PORT=8000 \
+    HOME=/home/vllm \
+    PYTHON_VERSION=3.11
 
-# Install additional system dependencies if needed
-RUN apt-get update && apt-get install -y \
-    curl \
+# Install Python 3.11 and build dependencies
+# Note: UBI9 uses microdnf (same as Fedora Minimal)
+# curl-minimal is already pre-installed in ubi9-minimal
+RUN microdnf install -y \
+    python3.11 \
+    python3.11-devel \
+    python3.11-pip \
+    gcc \
+    gcc-c++ \
+    make \
     git \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    openssl \
+    openssl-devel \
+    tar \
+    gzip \
+    && microdnf clean all && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/bin/pip3.11 /usr/bin/pip3
 
-# Create workspace directory
-WORKDIR ${HOME}
+# Create non-root user
+RUN useradd -m -u 1001 -s /bin/bash vllm
+
+# Build everything as root, set working directory
+WORKDIR /home/vllm
+
+# Create and activate virtual environment, then install vLLM from PyPI with CUDA support
+# CUDA toolkit will be provided by the Kubernetes NVIDIA device plugin at runtime
+RUN python3 -m venv vllm_env && \
+    source vllm_env/bin/activate && \
+    pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu121 && \
+    pip install --no-cache-dir vllm
 
 # Copy the vLLM WebUI project files
-COPY --chown=root:root . ${HOME}/vllm-webui/
+COPY . /home/vllm/vllm-webui/
 
 # Install WebUI dependencies
-RUN cd vllm-webui && \
+RUN source vllm_env/bin/activate && \
+    cd vllm-webui && \
     pip install --no-cache-dir -r requirements.txt
+
+# Set ownership of all files to vllm user
+RUN chown -R 1001:1001 /home/vllm
 
 # Expose ports
 # 7860 - WebUI interface
@@ -38,18 +67,24 @@ RUN cd vllm-webui && \
 EXPOSE 7860 8000
 
 # Set the working directory to the WebUI
-WORKDIR ${HOME}/vllm-webui
+WORKDIR /home/vllm/vllm-webui
 
-# Create a startup script that runs the WebUI
-RUN echo '#!/bin/bash' > ${HOME}/start.sh && \
-    echo 'cd ${HOME}/vllm-webui' >> ${HOME}/start.sh && \
-    echo 'exec python3 run.py' >> ${HOME}/start.sh && \
-    chmod +x ${HOME}/start.sh
+# Create a startup script
+RUN echo '#!/bin/bash' > /home/vllm/start.sh && \
+    echo 'source /home/vllm/vllm_env/bin/activate' >> /home/vllm/start.sh && \
+    echo 'cd /home/vllm/vllm-webui' >> /home/vllm/start.sh && \
+    echo 'exec python3 run.py' >> /home/vllm/start.sh && \
+    chmod +x /home/vllm/start.sh
+
+# Switch to non-root user for runtime
+USER 1001
 
 # Set entrypoint
-ENTRYPOINT ["/bin/bash", "-c", "${HOME}/start.sh"]
+ENTRYPOINT ["/bin/bash", "-c", "/home/vllm/start.sh"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:7860/api/status || exit 1
+
+
 
