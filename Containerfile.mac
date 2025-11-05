@@ -1,0 +1,82 @@
+# vLLM WebUI Container for macOS (CPU-only)
+# Based on Fedora Minimal (100% free, Red Hat family, ~50% smaller than standard Fedora)
+# Python 3.12 built from source
+
+FROM registry.fedoraproject.org/fedora-minimal:latest
+
+USER 0
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    VLLM_TARGET_DEVICE=cpu \
+    VLLM_BUILD_WITH_CUDA=0 \
+    WEBUI_PORT=7860 \
+    VLLM_PORT=8000 \
+    HOME=/home/vllm \
+    PYTHON_VERSION=3.12.7
+
+# Install Python 3.12 and build dependencies (using microdnf for Fedora Minimal)
+RUN microdnf install -y \
+    python3.12 \
+    python3.12-devel \
+    gcc \
+    gcc-c++ \
+    make \
+    git \
+    numactl-devel \
+    openssl \
+    curl \
+    && microdnf clean all && \
+    ln -sf /usr/bin/python3.12 /usr/bin/python3 && \
+    python3.12 -m ensurepip --upgrade && \
+    ln -sf /usr/local/bin/pip3.12 /usr/bin/pip3
+
+# Create non-root user
+RUN useradd -m -u 1001 -s /bin/bash vllm
+
+# Switch back to default user
+USER 1001
+
+# Set working directory
+WORKDIR ${HOME}
+
+# Create and activate virtual environment, then build vLLM from source
+RUN python3 -m venv vllm_env && \
+    source vllm_env/bin/activate && \
+    git clone --single-branch --branch releases/v0.11.0 https://github.com/vllm-project/vllm.git && \
+    cd vllm && \
+    pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir torch torchvision && \
+    export VLLM_TARGET_DEVICE=cpu && \
+    export VLLM_BUILD_WITH_CUDA=0 && \
+    pip install --no-cache-dir -e .
+
+# Copy the vLLM WebUI project files
+COPY --chown=1001:1001 . ${HOME}/vllm-webui/
+
+# Install WebUI dependencies
+RUN source vllm_env/bin/activate && \
+    cd vllm-webui && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Expose ports
+# 7860 - WebUI interface
+# 8000 - vLLM API server (default)
+EXPOSE 7860 8000
+
+# Set the working directory to the WebUI
+WORKDIR ${HOME}/vllm-webui
+
+# Create a startup script
+RUN echo '#!/bin/bash' > ${HOME}/start.sh && \
+    echo 'source ${HOME}/vllm_env/bin/activate' >> ${HOME}/start.sh && \
+    echo 'cd ${HOME}/vllm-webui' >> ${HOME}/start.sh && \
+    echo 'exec python3 run.py' >> ${HOME}/start.sh && \
+    chmod +x ${HOME}/start.sh
+
+# Set entrypoint
+ENTRYPOINT ["/bin/bash", "-c", "${HOME}/start.sh"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:7860/api/status || exit 1
+

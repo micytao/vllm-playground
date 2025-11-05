@@ -8,30 +8,40 @@ A modern web interface for managing and interacting with vLLM (Very Large Langua
 
 ```
 vllm-webui/
-├── app.py                  # Main FastAPI backend application
-├── run.py                  # Backend server launcher
-├── index.html              # Main HTML interface
-├── requirements.txt        # Python dependencies
-├── LICENSE                 # MIT License
-├── README.md              # This file
+├── app.py                       # Main FastAPI backend application
+├── run.py                       # Backend server launcher
+├── index.html                   # Main HTML interface
+├── requirements.txt             # Python dependencies
+├── LICENSE                      # MIT License
+├── README.md                    # This file
+├── Containerfile                # Podman/Docker container definition 🐳
+├── .containerignore             # Container build exclusions
+├── Makefile                     # Quick commands for container management
+├── CONTAINER-QUICKSTART.md      # Container quick start guide 🐳
+├── README-CONTAINER.md          # Complete container documentation 🐳
 │
-├── static/                # Frontend assets
+├── static/                      # Frontend assets
 │   ├── css/
-│   │   └── style.css     # Main stylesheet
+│   │   └── style.css           # Main stylesheet
 │   └── js/
-│       └── app.js        # Frontend JavaScript
+│       └── app.js              # Frontend JavaScript
 │
-├── scripts/              # Utility scripts
-│   ├── run_cpu.sh       # Start vLLM in CPU mode (macOS compatible)
-│   ├── start.sh         # General start script
-│   ├── install.sh       # Installation script
-│   └── verify_setup.py  # Setup verification
+├── scripts/                    # Utility scripts
+│   ├── run_cpu.sh             # Start vLLM in CPU mode (macOS compatible)
+│   ├── start.sh               # General start script
+│   ├── install.sh             # Installation script
+│   ├── verify_setup.py        # Setup verification
+│   ├── build_container.sh     # Build Podman container 🐳
+│   ├── run_container.sh       # Run Podman container 🐳
+│   ├── stop_container.sh      # Stop Podman container 🐳
+│   ├── test_container.sh      # Test container setup 🐳
+│   └── docker-compose-up.sh   # Docker Compose wrapper 🐳
 │
-├── config/               # Configuration files
-│   ├── vllm_cpu.env     # CPU mode environment variables
-│   └── example_configs.json  # Example configurations
+├── config/                     # Configuration files
+│   ├── vllm_cpu.env           # CPU mode environment variables
+│   └── example_configs.json   # Example configurations
 │
-└── docs/                 # Documentation
+└── docs/                       # Documentation
     ├── QUICKSTART.md           # Quick start guide
     ├── MACOS_CPU_GUIDE.md      # macOS CPU setup guide
     ├── CPU_MODELS_QUICKSTART.md # CPU-optimized models guide
@@ -45,20 +55,48 @@ vllm-webui/
 
 ## 🚀 Quick Start
 
-### 1. Install Dependencies
+### 🐳 Option 1: Container (Easiest for macOS) **RECOMMENDED**
+
+For macOS users, the container provides the easiest setup with everything pre-configured:
+
+```bash
+# 1. Build the container (one-time, ~15-30 min)
+./scripts/build_container.sh
+
+# 2. Run the container
+./scripts/run_container.sh
+
+# 3. Open http://localhost:7860
+```
+
+**✨ Benefits:**
+- ✅ No complex installation
+- ✅ Pre-built vLLM optimized for CPU
+- ✅ Isolated environment
+- ✅ Works out of the box
+
+**📖 See [CONTAINER-QUICKSTART.md](CONTAINER-QUICKSTART.md)** for detailed instructions.
+
+---
+
+### 💻 Option 2: Local Installation
+
+For local development or if you prefer not to use containers:
+
+#### 1. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Install vLLM
+#### 2. Install vLLM
 
 ```bash
 # For macOS/CPU mode
 pip install vllm
 ```
 
-### 3. Start the WebUI
+#### 3. Start the WebUI
 
 ```bash
 python run.py
@@ -66,7 +104,7 @@ python run.py
 
 Then open http://localhost:7860 in your browser.
 
-### 4. Start vLLM Server
+#### 4. Start vLLM Server
 
 **Option A: Using the WebUI**
 - Select CPU or GPU mode
@@ -107,6 +145,9 @@ nano config/vllm_cpu.env
 ## 📖 Documentation
 
 ### Getting Started
+- **[Container Quick Start](CONTAINER-QUICKSTART.md)** 🐳 - Easiest way for macOS users (RECOMMENDED)
+- **[Container Full Guide](README-CONTAINER.md)** - Complete container documentation
+- **[Container Workflow](CONTAINER-WORKFLOW.md)** - Step-by-step container workflow
 - **[Quick Start Guide](docs/QUICKSTART.md)** - Get up and running in minutes
 - [macOS CPU Setup](docs/MACOS_CPU_GUIDE.md) - Apple Silicon optimization guide
 - [CPU Models Quickstart](docs/CPU_MODELS_QUICKSTART.md) - Best models for CPU

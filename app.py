@@ -36,6 +36,7 @@ app.mount("/assets", StaticFiles(directory=str(BASE_DIR / "assets")), name="asse
 vllm_process: Optional[subprocess.Popen] = None
 log_queue: asyncio.Queue = asyncio.Queue()
 websocket_connections: List[WebSocket] = []
+latest_vllm_metrics: Dict[str, Any] = {}  # Store latest metrics from logs
 
 
 class VLLMConfig(BaseModel):
@@ -469,8 +470,53 @@ async def read_logs():
 
 async def broadcast_log(message: str):
     """Broadcast log message to all connected websockets"""
+    global latest_vllm_metrics
+    
     if not message:
         return
+    
+    # Parse metrics from log messages with more flexible patterns
+    import re
+    
+    # Try various patterns for KV cache usage
+    # Examples: "GPU KV cache usage: 0.3%", "KV cache usage: 0.3%", "cache usage: 0.3%"
+    if "cache usage" in message.lower() and "%" in message:
+        # More flexible pattern - match any number before %
+        match = re.search(r'cache usage[:\s]+([\d.]+)\s*%', message, re.IGNORECASE)
+        if match:
+            cache_usage = float(match.group(1))
+            latest_vllm_metrics['kv_cache_usage_perc'] = cache_usage
+            logger.info(f"✓ Captured KV cache usage: {cache_usage}% from: {message[:100]}")
+        else:
+            logger.debug(f"Failed to parse cache usage from: {message[:100]}")
+    
+    # Try various patterns for prefix cache hit rate
+    # Examples: "Prefix cache hit rate: 36.1%", "hit rate: 36.1%", "cache hit rate: 36.1%"
+    if "hit rate" in message.lower() and "%" in message:
+        # More flexible pattern
+        match = re.search(r'hit rate[:\s]+([\d.]+)\s*%', message, re.IGNORECASE)
+        if match:
+            hit_rate = float(match.group(1))
+            latest_vllm_metrics['prefix_cache_hit_rate'] = hit_rate
+            logger.info(f"✓ Captured prefix cache hit rate: {hit_rate}% from: {message[:100]}")
+        else:
+            logger.debug(f"Failed to parse hit rate from: {message[:100]}")
+    
+    # Try to parse avg prompt throughput
+    if "prompt throughput" in message.lower():
+        match = re.search(r'prompt throughput[:\s]+([\d.]+)', message, re.IGNORECASE)
+        if match:
+            prompt_throughput = float(match.group(1))
+            latest_vllm_metrics['avg_prompt_throughput'] = prompt_throughput
+            logger.info(f"✓ Captured prompt throughput: {prompt_throughput}")
+    
+    # Try to parse avg generation throughput
+    if "generation throughput" in message.lower():
+        match = re.search(r'generation throughput[:\s]+([\d.]+)', message, re.IGNORECASE)
+        if match:
+            generation_throughput = float(match.group(1))
+            latest_vllm_metrics['avg_generation_throughput'] = generation_throughput
+            logger.info(f"✓ Captured generation throughput: {generation_throughput}")
     
     disconnected = []
     for ws in websocket_connections:
@@ -653,6 +699,84 @@ async def list_models():
     ]
     
     return {"models": common_models}
+
+
+@app.get("/api/vllm/metrics")
+async def get_vllm_metrics():
+    """Get vLLM server metrics including KV cache and prefix cache stats"""
+    global current_config, vllm_process, latest_vllm_metrics
+    
+    if vllm_process is None or vllm_process.poll() is not None:
+        return JSONResponse(
+            status_code=400, 
+            content={"error": "vLLM server is not running"}
+        )
+    
+    # Log what we have for debugging
+    logger.info(f"Returning metrics: {latest_vllm_metrics}")
+    
+    # Return metrics parsed from logs
+    if latest_vllm_metrics:
+        return latest_vllm_metrics
+    
+    # If no metrics captured yet from logs, try the metrics endpoint
+    if current_config is None:
+        return {}
+    
+    try:
+        import aiohttp
+        
+        # Try to fetch metrics from vLLM's metrics endpoint
+        metrics_url = f"http://{current_config.host}:{current_config.port}/metrics"
+        
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(metrics_url, timeout=aiohttp.ClientTimeout(total=2)) as response:
+                    if response.status == 200:
+                        text = await response.text()
+                        
+                        # Parse Prometheus-style metrics
+                        metrics = {}
+                        
+                        # Look for KV cache usage
+                        for line in text.split('\n'):
+                            if 'vllm:gpu_cache_usage_perc' in line and not line.startswith('#'):
+                                try:
+                                    value = float(line.split()[-1])
+                                    metrics['gpu_cache_usage_perc'] = value
+                                except:
+                                    pass
+                            elif 'vllm:cpu_cache_usage_perc' in line and not line.startswith('#'):
+                                try:
+                                    value = float(line.split()[-1])
+                                    metrics['cpu_cache_usage_perc'] = value
+                                except:
+                                    pass
+                            elif 'vllm:avg_prompt_throughput_toks_per_s' in line and not line.startswith('#'):
+                                try:
+                                    value = float(line.split()[-1])
+                                    metrics['avg_prompt_throughput'] = value
+                                except:
+                                    pass
+                            elif 'vllm:avg_generation_throughput_toks_per_s' in line and not line.startswith('#'):
+                                try:
+                                    value = float(line.split()[-1])
+                                    metrics['avg_generation_throughput'] = value
+                                except:
+                                    pass
+                        
+                        return metrics
+                    else:
+                        return {}
+            except asyncio.TimeoutError:
+                return {}
+            except Exception as e:
+                logger.debug(f"Error fetching metrics endpoint: {e}")
+                return {}
+    
+    except Exception as e:
+        logger.debug(f"Error in get_vllm_metrics: {e}")
+        return {}
 
 
 @app.post("/api/benchmark/start")

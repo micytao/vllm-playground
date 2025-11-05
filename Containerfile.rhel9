@@ -1,0 +1,88 @@
+# vLLM WebUI Container for RHEL 9 x86_64 (CPU-only)
+# Based on Red Hat Universal Base Image 9 Minimal (100% free, official RHEL-based image)
+# Optimized for x86_64 architecture with CPU inference
+
+FROM registry.redhat.io/ubi9-minimal:latest
+
+USER 0
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    VLLM_TARGET_DEVICE=cpu \
+    VLLM_BUILD_WITH_CUDA=0 \
+    WEBUI_PORT=7860 \
+    VLLM_PORT=8000 \
+    HOME=/home/vllm \
+    PYTHON_VERSION=3.11
+
+# Install Python 3.11 and build dependencies
+# Note: UBI9 uses microdnf (same as Fedora Minimal)
+RUN microdnf install -y \
+    python3.11 \
+    python3.11-devel \
+    python3.11-pip \
+    gcc \
+    gcc-c++ \
+    make \
+    git \
+    numactl-devel \
+    openssl \
+    openssl-devel \
+    curl \
+    tar \
+    gzip \
+    && microdnf clean all && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/bin/pip3.11 /usr/bin/pip3
+
+# Create non-root user
+RUN useradd -m -u 1001 -s /bin/bash vllm
+
+# Switch to non-root user
+USER 1001
+
+# Set working directory
+WORKDIR ${HOME}
+
+# Create and activate virtual environment, then build vLLM from source
+# x86_64 CPU optimizations will be automatically detected by PyTorch/vLLM
+RUN python3 -m venv vllm_env && \
+    source vllm_env/bin/activate && \
+    git clone --single-branch --branch releases/v0.11.0 https://github.com/vllm-project/vllm.git && \
+    cd vllm && \
+    pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    export VLLM_TARGET_DEVICE=cpu && \
+    export VLLM_BUILD_WITH_CUDA=0 && \
+    pip install --no-cache-dir -e .
+
+# Copy the vLLM WebUI project files
+COPY --chown=1001:1001 . ${HOME}/vllm-webui/
+
+# Install WebUI dependencies
+RUN source vllm_env/bin/activate && \
+    cd vllm-webui && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Expose ports
+# 7860 - WebUI interface
+# 8000 - vLLM API server (default)
+EXPOSE 7860 8000
+
+# Set the working directory to the WebUI
+WORKDIR ${HOME}/vllm-webui
+
+# Create a startup script
+RUN echo '#!/bin/bash' > ${HOME}/start.sh && \
+    echo 'source ${HOME}/vllm_env/bin/activate' >> ${HOME}/start.sh && \
+    echo 'cd ${HOME}/vllm-webui' >> ${HOME}/start.sh && \
+    echo 'exec python3 run.py' >> ${HOME}/start.sh && \
+    chmod +x ${HOME}/start.sh
+
+# Set entrypoint
+ENTRYPOINT ["/bin/bash", "-c", "${HOME}/start.sh"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:7860/api/status || exit 1
+
+

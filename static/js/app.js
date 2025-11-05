@@ -455,6 +455,7 @@ class VLLMWebUI {
         const textSpan = assistantMessageDiv.querySelector('.message-text');
         let fullText = '';
         let startTime = Date.now();
+        let firstTokenTime = null;
         let usageData = null;
         
         try {
@@ -511,6 +512,12 @@ class VLLMWebUI {
                                 const delta = parsed.choices[0].delta;
                                 
                                 if (delta && delta.content) {
+                                    // Capture time to first token
+                                    if (firstTokenTime === null) {
+                                        firstTokenTime = Date.now();
+                                        console.log('Time to first token:', (firstTokenTime - startTime) / 1000, 'seconds');
+                                    }
+                                    
                                     fullText += delta.content;
                                     // Update the message in real-time with cursor
                                     textSpan.textContent = `${fullText}▌`;
@@ -520,10 +527,17 @@ class VLLMWebUI {
                                 }
                             }
                             
-                            // Capture usage data if available
+                            // Capture usage data if available - check both standard and x-* fields
                             if (parsed.usage) {
                                 usageData = parsed.usage;
                                 console.log('Captured usage data:', usageData);
+                            }
+                            
+                            // vLLM may also include metrics in custom fields
+                            if (parsed.metrics) {
+                                console.log('Captured metrics:', parsed.metrics);
+                                // Merge metrics into usage data
+                                usageData = { ...usageData, ...parsed.metrics };
                             }
                         } catch (e) {
                             // Skip invalid JSON lines
@@ -551,6 +565,7 @@ class VLLMWebUI {
             // Calculate and display metrics
             const endTime = Date.now();
             const timeTaken = (endTime - startTime) / 1000; // in seconds
+            const timeToFirstToken = firstTokenTime ? (firstTokenTime - startTime) / 1000 : null; // in seconds
             
             // Estimate prompt tokens if not provided (rough estimate: ~4 chars per token)
             const estimatedPromptTokens = usageData?.prompt_tokens || Math.ceil(
@@ -563,18 +578,64 @@ class VLLMWebUI {
             const completionTokens = usageData?.completion_tokens || fullText.split(/\s+/).length;
             const totalTokens = usageData?.total_tokens || (estimatedPromptTokens + completionTokens);
             
+            // Extract additional metrics from usage data if available
+            // vLLM may provide these under different field names
+            let kvCacheUsage = usageData?.gpu_cache_usage_perc || 
+                                usageData?.kv_cache_usage || 
+                                usageData?.cache_usage;
+            let prefixCacheHitRate = usageData?.prefix_cache_hit_rate || 
+                                      usageData?.cached_tokens_ratio;
+            
+            console.log('Full usage data:', usageData);
+            
+            // Fetch additional metrics from vLLM's metrics endpoint
+            try {
+                const metricsResponse = await fetch('/api/vllm/metrics');
+                console.log('Metrics response status:', metricsResponse.status);
+                
+                if (metricsResponse.ok) {
+                    const vllmMetrics = await metricsResponse.json();
+                    console.log('✓ Fetched vLLM metrics:', vllmMetrics);
+                    
+                    // Update metrics if available
+                    if (vllmMetrics.kv_cache_usage_perc !== undefined) {
+                        console.log('  → Using KV cache usage:', vllmMetrics.kv_cache_usage_perc);
+                        kvCacheUsage = vllmMetrics.kv_cache_usage_perc;
+                    } else {
+                        console.log('  → No kv_cache_usage_perc in response');
+                    }
+                    
+                    if (vllmMetrics.prefix_cache_hit_rate !== undefined) {
+                        console.log('  → Using prefix cache hit rate:', vllmMetrics.prefix_cache_hit_rate);
+                        prefixCacheHitRate = vllmMetrics.prefix_cache_hit_rate;
+                    } else {
+                        console.log('  → No prefix_cache_hit_rate in response');
+                    }
+                } else {
+                    console.warn('Metrics endpoint returned non-ok status:', metricsResponse.status);
+                }
+            } catch (e) {
+                console.warn('Could not fetch vLLM metrics:', e);
+            }
+            
             console.log('Metrics:', {
                 promptTokens: estimatedPromptTokens,
                 completionTokens: completionTokens,
                 totalTokens: totalTokens,
-                timeTaken: timeTaken
+                timeTaken: timeTaken,
+                timeToFirstToken: timeToFirstToken,
+                kvCacheUsage: kvCacheUsage,
+                prefixCacheHitRate: prefixCacheHitRate
             });
             
             this.updateChatMetrics({
                 promptTokens: estimatedPromptTokens,
                 completionTokens: completionTokens,
                 totalTokens: totalTokens,
-                timeTaken: timeTaken
+                timeTaken: timeTaken,
+                timeToFirstToken: timeToFirstToken,
+                kvCacheUsage: kvCacheUsage,
+                prefixCacheHitRate: prefixCacheHitRate
             });
             
         } catch (error) {
@@ -743,6 +804,10 @@ class VLLMWebUI {
         const totalTokensEl = document.getElementById('metric-total-tokens');
         const timeTakenEl = document.getElementById('metric-time-taken');
         const tokensPerSecEl = document.getElementById('metric-tokens-per-sec');
+        const promptThroughputEl = document.getElementById('metric-prompt-throughput');
+        const generationThroughputEl = document.getElementById('metric-generation-throughput');
+        const kvCacheUsageEl = document.getElementById('metric-kv-cache-usage');
+        const prefixCacheHitEl = document.getElementById('metric-prefix-cache-hit');
         
         if (promptTokensEl) {
             promptTokensEl.textContent = metrics.promptTokens || '-';
@@ -774,6 +839,80 @@ class VLLMWebUI {
             tokensPerSecEl.textContent = tokensPerSec.toFixed(2);
             tokensPerSecEl.classList.add('updated');
             setTimeout(() => tokensPerSecEl.classList.remove('updated'), 500);
+        }
+        
+        // New metrics
+        if (promptThroughputEl) {
+            // Calculate prompt throughput: prompt_tokens / time_to_first_token
+            if (metrics.timeToFirstToken && metrics.timeToFirstToken > 0) {
+                const promptThroughput = metrics.promptTokens / metrics.timeToFirstToken;
+                promptThroughputEl.textContent = `${promptThroughput.toFixed(2)} tok/s`;
+            } else {
+                // Fallback: use overall time if time_to_first_token not available
+                const promptThroughput = metrics.promptTokens / metrics.timeTaken;
+                promptThroughputEl.textContent = `${promptThroughput.toFixed(2)} tok/s`;
+            }
+            promptThroughputEl.classList.add('updated');
+            setTimeout(() => promptThroughputEl.classList.remove('updated'), 500);
+        }
+        
+        if (generationThroughputEl) {
+            // Calculate generation throughput: completion_tokens / (total_time - time_to_first_token)
+            if (metrics.timeToFirstToken) {
+                const generationTime = metrics.timeTaken - metrics.timeToFirstToken;
+                if (generationTime > 0) {
+                    const generationThroughput = metrics.completionTokens / generationTime;
+                    generationThroughputEl.textContent = `${generationThroughput.toFixed(2)} tok/s`;
+                } else {
+                    generationThroughputEl.textContent = '-';
+                }
+            } else {
+                // Fallback: use overall throughput
+                const generationThroughput = metrics.completionTokens / metrics.timeTaken;
+                generationThroughputEl.textContent = `${generationThroughput.toFixed(2)} tok/s`;
+            }
+            generationThroughputEl.classList.add('updated');
+            setTimeout(() => generationThroughputEl.classList.remove('updated'), 500);
+        }
+        
+        if (kvCacheUsageEl) {
+            // GPU KV cache usage - from vLLM stats if available
+            if (metrics.kvCacheUsage !== undefined && metrics.kvCacheUsage !== null) {
+                // Handle both decimal (0.85) and percentage (85) formats
+                let percentage;
+                if (metrics.kvCacheUsage <= 1.0) {
+                    // Decimal format (0.0 to 1.0)
+                    percentage = (metrics.kvCacheUsage * 100).toFixed(1);
+                } else {
+                    // Already a percentage
+                    percentage = metrics.kvCacheUsage.toFixed(1);
+                }
+                kvCacheUsageEl.textContent = `${percentage}%`;
+            } else {
+                kvCacheUsageEl.textContent = 'N/A';
+            }
+            kvCacheUsageEl.classList.add('updated');
+            setTimeout(() => kvCacheUsageEl.classList.remove('updated'), 500);
+        }
+        
+        if (prefixCacheHitEl) {
+            // Prefix cache hit rate - from vLLM stats if available
+            if (metrics.prefixCacheHitRate !== undefined && metrics.prefixCacheHitRate !== null) {
+                // Handle both decimal (0.85) and percentage (85) formats
+                let percentage;
+                if (metrics.prefixCacheHitRate <= 1.0) {
+                    // Decimal format (0.0 to 1.0)
+                    percentage = (metrics.prefixCacheHitRate * 100).toFixed(1);
+                } else {
+                    // Already a percentage
+                    percentage = metrics.prefixCacheHitRate.toFixed(1);
+                }
+                prefixCacheHitEl.textContent = `${percentage}%`;
+            } else {
+                prefixCacheHitEl.textContent = 'N/A';
+            }
+            prefixCacheHitEl.classList.add('updated');
+            setTimeout(() => prefixCacheHitEl.classList.remove('updated'), 500);
         }
     }
 
