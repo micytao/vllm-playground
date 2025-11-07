@@ -1518,7 +1518,8 @@ async def run_compression(config: CompressionConfig):
         compression_status.stage = "saving"
         compression_status.progress = 90.0
         compression_status.message = "Saving compressed model..."
-        await broadcast_log(f"[COMPRESSION] Saving to: {config.output_dir}")
+        await broadcast_log(f"[COMPRESSION] 💾 Saving compressed model...")
+        await broadcast_log(f"[COMPRESSION] Output directory: {config.output_dir}")
         
         # Get compressed model size
         compressed_size = get_directory_size(Path(config.output_dir))
@@ -1531,18 +1532,23 @@ async def run_compression(config: CompressionConfig):
         
         compression_status.stage = "complete"
         compression_status.progress = 100.0
-        compression_status.message = "Compression complete!"
+        compression_status.message = f"Compression complete! Saved to: {config.output_dir}"
         compression_status.output_dir = config.output_dir
         compression_status.running = False
         
         await broadcast_log(f"[COMPRESSION] ✅ Compression complete!")
-        await broadcast_log(f"[COMPRESSION] Output: {config.output_dir}")
+        await broadcast_log(f"[COMPRESSION] " + "="*60)
+        await broadcast_log(f"[COMPRESSION] 📁 SAVED TO: {config.output_dir}")
+        await broadcast_log(f"[COMPRESSION] " + "="*60)
         if compression_status.original_size_mb and compression_status.compressed_size_mb:
             await broadcast_log(
                 f"[COMPRESSION] Size: {compression_status.original_size_mb:.1f}MB → "
                 f"{compression_status.compressed_size_mb:.1f}MB "
                 f"({compression_status.compression_ratio:.2f}x reduction)"
             )
+        # Also log the absolute path for clarity
+        abs_path = Path(config.output_dir).resolve()
+        await broadcast_log(f"[COMPRESSION] Absolute path: {abs_path}")
     
     except asyncio.CancelledError:
         compression_status.running = False

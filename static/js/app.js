@@ -141,6 +141,8 @@ class VLLMWebUI {
             originalSize: document.getElementById('original-size'),
             compressedSize: document.getElementById('compressed-size'),
             compressionRatio: document.getElementById('compression-ratio'),
+            outputDirectoryDisplay: document.getElementById('output-directory-display'),
+            outputDirPath: document.getElementById('output-dir-path'),
             compressionActions: document.getElementById('compression-actions'),
             downloadCompressedBtn: document.getElementById('download-compressed-btn'),
             loadCompressedBtn: document.getElementById('load-compressed-btn'),
@@ -249,6 +251,7 @@ class VLLMWebUI {
         this.elements.loadCompressedBtn.addEventListener('click', () => this.loadCompressedIntoVLLM());
         this.elements.newCompressionBtn.addEventListener('click', () => this.resetCompression());
         this.elements.copyCompressCommandBtn.addEventListener('click', () => this.copyCompressCommand());
+        this.elements.outputDirPath.addEventListener('click', () => this.copyOutputPath());
         
         // Compression config changes - update command preview
         const compressConfigElements = [
@@ -1979,6 +1982,12 @@ class VLLMWebUI {
                 this.elements.compressionRatio.textContent = `${status.compression_ratio.toFixed(2)}x`;
             }
         }
+        
+        // Update output directory display if available
+        if (status.output_dir) {
+            this.elements.outputDirectoryDisplay.style.display = 'block';
+            this.elements.outputDirPath.textContent = status.output_dir;
+        }
     }
     
     resetCompressionUI() {
@@ -1998,6 +2007,7 @@ class VLLMWebUI {
         // Don't hide the status display anymore - it's always visible
         this.elements.compressionActions.style.display = 'none';
         this.elements.sizeComparison.style.display = 'none';
+        this.elements.outputDirectoryDisplay.style.display = 'none';
         this.elements.compressionProgressFill.style.width = '0%';
         this.elements.compressionProgressPercent.textContent = '0%';
         this.elements.compressionProgressMessage.textContent = 'Ready to compress';
@@ -2022,6 +2032,19 @@ class VLLMWebUI {
         // This would require updating the server config with the compressed model path
         // For now, show instructions to user
         alert('To load the compressed model:\n\n1. Download the compressed model\n2. Extract it to a directory\n3. Stop the current vLLM server\n4. Update the model path in configuration\n5. Start the server with the new model');
+    }
+    
+    async copyOutputPath() {
+        const path = this.elements.outputDirPath.textContent;
+        if (path && path !== '--') {
+            try {
+                await navigator.clipboard.writeText(path);
+                this.showNotification('Output path copied to clipboard!', 'success');
+            } catch (error) {
+                console.error('Failed to copy:', error);
+                this.showNotification('Failed to copy path', 'error');
+            }
+        }
     }
     
     // ============ Compression Command Preview ============
