@@ -1422,6 +1422,7 @@ body {
     border-bottom: 1px solid var(--border-color);
     flex: 0 0 auto;
     position: relative;
+    overflow: visible;
 }
 
 /* Resize handle for presets section */
@@ -1451,6 +1452,7 @@ body {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
+    overflow: visible;
 }
 
 .preset-card {
@@ -1514,6 +1516,7 @@ body {
     flex: 0 1 auto;
     order: 1;
     transition: all 0.3s ease;
+    overflow: visible;
 }
 
 /* When advanced options are collapsed, compress the config section */
@@ -1535,6 +1538,7 @@ body {
     display: grid;
     grid-template-columns: 1fr;
     gap: 12px;
+    overflow: visible;
 }
 
 .config-item {
@@ -1568,6 +1572,7 @@ body {
     margin-top: 20px;
     border-top: 1px solid var(--border-color);
     padding-top: 15px;
+    overflow: visible;
 }
 
 .advanced-header {
@@ -1594,6 +1599,7 @@ body {
 
 .advanced-content {
     margin-top: 15px;
+    overflow: visible;
 }
 
 .advanced-grid {
@@ -1601,6 +1607,7 @@ body {
     grid-template-columns: 1fr 1fr;
     gap: 12px;
     column-gap: 15px;
+    overflow: visible;
 }
 
 .compression-command-preview {
@@ -1611,7 +1618,7 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 200px;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .command-preview-header {
@@ -1737,6 +1744,7 @@ body {
     background: var(--bg-primary);
     border-radius: 8px;
     border: 1px solid var(--border-color);
+    overflow: visible;
 }
 
 .compression-timer {
@@ -1813,6 +1821,7 @@ body {
     padding: 20px;
     background: var(--bg-primary);
     border-radius: 8px;
+    overflow: visible;
 }
 
 .size-item {
@@ -2227,6 +2236,7 @@ body {
 #metrics-section-content {
     transition: opacity 0.3s ease;
     overflow: visible;
+    height: auto;
 }
 
 /* Collapsed section styling */
