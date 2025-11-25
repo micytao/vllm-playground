@@ -1,10 +1,10 @@
 """
 vLLM Playground - A web interface for managing and interacting with vLLM
+CONTAINERIZED VERSION - Uses Podman to run vLLM in containers
 """
 import asyncio
 import logging
 import os
-import subprocess
 import sys
 import tempfile
 import shutil
@@ -18,12 +18,20 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
 
-# Setup logging
+# Setup logging (must be before imports that use logger)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Import container manager (optional - only needed for container mode)
+try:
+    from container_manager import container_manager
+    CONTAINER_MODE_AVAILABLE = True
+except ImportError:
+    CONTAINER_MODE_AVAILABLE = False
+    logger.warning("container_manager not available - container mode will be disabled")
 
 app = FastAPI(title="vLLM Playground", version="1.0.0")
 
@@ -35,7 +43,10 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 app.mount("/assets", StaticFiles(directory=str(BASE_DIR / "assets")), name="assets")
 
 # Global state
-vllm_process: Optional[subprocess.Popen] = None
+container_id: Optional[str] = None  # Container ID (for container mode)
+vllm_process: Optional[asyncio.subprocess.Process] = None  # Process (for subprocess mode)
+vllm_running: bool = False
+current_run_mode: Optional[str] = None  # Track current run mode
 log_queue: asyncio.Queue = asyncio.Queue()
 websocket_connections: List[WebSocket] = []
 latest_vllm_metrics: Dict[str, Any] = {}  # Store latest metrics from logs
@@ -72,6 +83,8 @@ class VLLMConfig(BaseModel):
     # Local model support - for compressed models or pre-downloaded models
     # If specified, takes precedence over 'model' parameter
     local_model_path: Optional[str] = None
+    # Run mode: subprocess or container
+    run_mode: Literal["subprocess", "container"] = "subprocess"
 
 
 class ChatMessage(BaseModel):
@@ -541,11 +554,43 @@ async def read_root():
 @app.get("/api/status")
 async def get_status() -> ServerStatus:
     """Get current server status"""
-    global vllm_process, current_config, server_start_time
+    global vllm_running, current_config, server_start_time, current_run_mode, container_id, vllm_process
     
-    running = vllm_process is not None and vllm_process.poll() is None
+    # Check status based on run mode
+    running = False
+    
+    if current_run_mode == "container":
+        # Check container status
+        status = await container_manager.get_container_status()
+        running = status.get('running', False)
+    elif current_run_mode == "subprocess":
+        # Check subprocess status
+        if vllm_process is not None:
+            running = vllm_process.returncode is None
+        else:
+            running = False
+    else:
+        # If run mode is not set (e.g., after restart), check if container exists
+        # This handles the case where Web UI restarts but vLLM pod is still running
+        if CONTAINER_MODE_AVAILABLE:
+            status = await container_manager.get_container_status()
+            if status.get('running', False):
+                running = True
+                current_run_mode = "container"  # Reconnect to existing container
+                # Restore minimal config so chat can work
+                if current_config is None:
+                    # Create a minimal config based on service defaults
+                    current_config = VLLMConfig(
+                        model="unknown",  # Can't retrieve from pod
+                        host="vllm-service",  # Kubernetes service name
+                        port=8000,
+                        run_mode="container"
+                    )
+                logger.info("Reconnected to existing vLLM container after restart")
+    
+    vllm_running = running  # Update global state
+    
     uptime = None
-    
     if running and server_start_time:
         elapsed = datetime.now() - server_start_time
         hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
@@ -557,6 +602,88 @@ async def get_status() -> ServerStatus:
         uptime=uptime,
         config=current_config
     )
+
+
+@app.get("/api/debug/connection")
+async def debug_connection():
+    """Debug endpoint to show connection configuration"""
+    global current_config, current_run_mode
+    
+    is_kubernetes = os.path.exists('/var/run/secrets/kubernetes.io/serviceaccount/token')
+    
+    debug_info = {
+        "current_run_mode": current_run_mode,
+        "is_kubernetes": is_kubernetes,
+        "container_mode_available": CONTAINER_MODE_AVAILABLE,
+    }
+    
+    if current_config:
+        debug_info["config"] = {
+            "host": current_config.host,
+            "port": current_config.port,
+        }
+        
+        # Show what URL would be used
+        if current_run_mode == "container" and is_kubernetes:
+            service_name = getattr(container_manager, 'SERVICE_NAME', 'vllm-service')
+            namespace = getattr(container_manager, 'namespace', os.getenv('KUBERNETES_NAMESPACE', 'default'))
+            url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}/v1/chat/completions"
+            debug_info["url_would_use"] = url
+            debug_info["connection_mode"] = "kubernetes_service"
+        else:
+            url = f"http://{current_config.host}:{current_config.port}/v1/chat/completions"
+            debug_info["url_would_use"] = url
+            debug_info["connection_mode"] = "localhost"
+    
+    if is_kubernetes and hasattr(container_manager, 'namespace'):
+        debug_info["kubernetes"] = {
+            "service_name": getattr(container_manager, 'SERVICE_NAME', 'N/A'),
+            "namespace": container_manager.namespace,
+        }
+    
+    return debug_info
+
+
+@app.get("/api/debug/test-vllm-connection")
+async def test_vllm_connection():
+    """Test if we can reach the vLLM service"""
+    global current_config, current_run_mode
+    
+    if not current_config:
+        return {"error": "No server configuration available"}
+    
+    is_kubernetes = os.path.exists('/var/run/secrets/kubernetes.io/serviceaccount/token')
+    
+    # Determine URL to use
+    if current_run_mode == "container" and is_kubernetes:
+        service_name = getattr(container_manager, 'SERVICE_NAME', 'vllm-service')
+        namespace = getattr(container_manager, 'namespace', os.getenv('KUBERNETES_NAMESPACE', 'default'))
+        base_url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}"
+    else:
+        base_url = f"http://{current_config.host}:{current_config.port}"
+    
+    health_url = f"{base_url}/health"
+    
+    try:
+        import aiohttp
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(health_url) as response:
+                status = response.status
+                text = await response.text()
+                return {
+                    "success": True,
+                    "status_code": status,
+                    "url_tested": health_url,
+                    "response": text[:500]  # Limit response size
+                }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "url_tested": health_url
+        }
 
 
 @app.get("/api/features")
@@ -587,11 +714,17 @@ async def get_features():
 
 @app.post("/api/start")
 async def start_server(config: VLLMConfig):
-    """Start the vLLM server"""
-    global vllm_process, current_config, server_start_time, current_model_identifier
+    """Start the vLLM server in subprocess or container mode"""
+    global container_id, vllm_process, vllm_running, current_config, server_start_time, current_model_identifier, current_run_mode
     
-    if vllm_process is not None and vllm_process.poll() is None:
-        raise HTTPException(status_code=400, detail="Server is already running")
+    # Check if server is already running
+    if current_run_mode == "container":
+        status = await container_manager.get_container_status()
+        if status.get('running', False):
+            raise HTTPException(status_code=400, detail="Server is already running")
+    elif current_run_mode == "subprocess":
+        if vllm_process is not None and vllm_process.returncode is None:
+            raise HTTPException(status_code=400, detail="Server is already running")
     
     # Determine if using local model or HuggingFace Hub
     # Local model path takes precedence
@@ -643,6 +776,18 @@ async def start_server(config: VLLMConfig):
         await broadcast_log(f"[WEBUI] Using HuggingFace Hub model: {model_source}")
     
     try:
+        # Set run mode
+        current_run_mode = config.run_mode
+        
+        # Validate container mode is available if selected
+        if config.run_mode == "container" and not CONTAINER_MODE_AVAILABLE:
+            raise HTTPException(
+                status_code=400,
+                detail="Container mode is not available. container_manager module not found."
+            )
+        
+        await broadcast_log(f"[WEBUI] Run mode: {config.run_mode.upper()}")
+        
         # Check if user manually selected CPU mode (takes precedence)
         if config.use_cpu:
             logger.info("CPU mode manually selected by user")
@@ -768,41 +913,139 @@ async def start_server(config: VLLMConfig):
             await broadcast_log(f"[WEBUI] Trusting vLLM to auto-detect chat template from tokenizer_config.json")
             await broadcast_log(f"[WEBUI] vLLM will use model's built-in chat template automatically")
         
-        logger.info(f"Starting vLLM with command: {' '.join(cmd)}")
-        await broadcast_log(f"[WEBUI] Command: {' '.join(cmd)}")
+        # Start server based on mode
+        if config.run_mode == "container":
+            await broadcast_log(f"[WEBUI] Starting vLLM container...")
+            
+            # Prepare config dict for container manager
+            vllm_config_dict = {
+                'model': config.model,
+                'model_source': model_source,
+                'host': config.host,
+                'port': config.port,
+                'tensor_parallel_size': config.tensor_parallel_size,
+                'gpu_memory_utilization': config.gpu_memory_utilization,
+                'max_model_len': config.max_model_len,
+                'dtype': config.dtype,
+                'trust_remote_code': config.trust_remote_code,
+                'download_dir': config.download_dir,
+                'load_format': config.load_format,
+                'disable_log_stats': config.disable_log_stats,
+                'enable_prefix_caching': config.enable_prefix_caching,
+                'hf_token': config.hf_token,
+                'use_cpu': config.use_cpu,
+                'cpu_kvcache_space': config.cpu_kvcache_space,
+                'cpu_omp_threads_bind': config.cpu_omp_threads_bind,
+                'custom_chat_template': config.custom_chat_template,
+                'local_model_path': config.local_model_path
+            }
+            
+            # Start container
+            container_info = await container_manager.start_container(vllm_config_dict)
+            
+            container_id = container_info['id']
+            vllm_running = True
+            current_config = config
+            server_start_time = datetime.now()
+            
+            # Store the actual model identifier for use in API calls
+            current_model_identifier = model_source
+            
+            # Start log reader task
+            asyncio.create_task(read_logs_container())
+            
+            # Show if container was reused or created new
+            if container_info.get('reused', False):
+                await broadcast_log(f"[WEBUI] ⚡ Restarted existing container: {container_id[:12]} (fast!)")
+            else:
+                await broadcast_log(f"[WEBUI] vLLM container created: {container_id[:12]}")
+            
+            await broadcast_log(f"[WEBUI] Container: {container_info['name']}")
+            await broadcast_log(f"[WEBUI] Image: {container_info.get('image', 'N/A')}")
+            await broadcast_log(f"[WEBUI] Model: {model_display_name}")
+            if config.local_model_path:
+                await broadcast_log(f"[WEBUI] Model Source: Local ({model_source})")
+            else:
+                await broadcast_log(f"[WEBUI] Model Source: HuggingFace Hub")
+            if config.use_cpu:
+                await broadcast_log(f"[WEBUI] Mode: CPU (KV Cache: {config.cpu_kvcache_space}GB)")
+            else:
+                await broadcast_log(f"[WEBUI] Mode: GPU (Memory: {int(config.gpu_memory_utilization * 100)}%)")
+            
+            # Wait for vLLM to be ready
+            await broadcast_log(f"[WEBUI] ⏳ Waiting for vLLM to initialize and become ready...")
+            await broadcast_log(f"[WEBUI] This may take 30-120 seconds depending on model size...")
+            
+            readiness = await container_manager.wait_for_ready(port=config.port, timeout=180)
+            
+            if readiness.get('ready'):
+                await broadcast_log(f"[WEBUI] ✅ vLLM is ready! (took {readiness['elapsed_time']}s)")
+                return {
+                    "status": "ready",
+                    "container_id": container_id[:12],
+                    "mode": "container",
+                    "ready": True,
+                    "startup_time": readiness['elapsed_time']
+                }
+            else:
+                error_msg = readiness.get('error', 'unknown')
+                elapsed = readiness.get('elapsed_time', 0)
+                
+                if error_msg == 'timeout':
+                    await broadcast_log(f"[WEBUI] ⚠️ Warning: vLLM did not become ready within {elapsed}s")
+                    await broadcast_log(f"[WEBUI] Container is running but may still be initializing...")
+                    await broadcast_log(f"[WEBUI] Check the logs above for model download/loading progress")
+                    await broadcast_log(f"[WEBUI] You can try sending requests - they may work once initialization completes")
+                elif error_msg == 'container_stopped':
+                    await broadcast_log(f"[WEBUI] ❌ Error: Container stopped unexpectedly after {elapsed}s")
+                    await broadcast_log(f"[WEBUI] Check the logs above for errors")
+                    raise HTTPException(status_code=500, detail="Container stopped during startup")
+                else:
+                    await broadcast_log(f"[WEBUI] ⚠️ Warning: Could not verify readiness: {error_msg}")
+                    await broadcast_log(f"[WEBUI] Container may still be working - check logs for details")
+                
+                return {
+                    "status": "started",
+                    "container_id": container_id[:12],
+                    "mode": "container",
+                    "ready": False,
+                    "warning": error_msg
+                }
         
-        # Start process with environment variables
-        # Use line buffering (bufsize=1) and ensure output is captured
-        vllm_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-            bufsize=1,  # Line buffered
-            env=env
-        )
-        
-        current_config = config
-        server_start_time = datetime.now()
-        
-        # Store the actual model identifier for use in API calls
-        current_model_identifier = model_source
-        
-        # Start log reader task
-        asyncio.create_task(read_logs())
-        
-        await broadcast_log(f"[WEBUI] vLLM server starting with PID: {vllm_process.pid}")
-        await broadcast_log(f"[WEBUI] Model: {model_display_name}")
-        if config.local_model_path:
-            await broadcast_log(f"[WEBUI] Model Source: Local ({model_source})")
-        else:
-            await broadcast_log(f"[WEBUI] Model Source: HuggingFace Hub")
-        if config.use_cpu:
-            await broadcast_log(f"[WEBUI] Mode: CPU (KV Cache: {config.cpu_kvcache_space}GB)")
-        else:
-            await broadcast_log(f"[WEBUI] Mode: GPU (Memory: {int(config.gpu_memory_utilization * 100)}%)")
-        
-        return {"status": "started", "pid": vllm_process.pid}
+        else:  # subprocess mode
+            await broadcast_log(f"[WEBUI] Starting vLLM subprocess...")
+            await broadcast_log(f"[WEBUI] Command: {' '.join(cmd)}")
+            
+            # Start subprocess
+            vllm_process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env=env
+            )
+            
+            vllm_running = True
+            current_config = config
+            server_start_time = datetime.now()
+            
+            # Store the actual model identifier for use in API calls
+            current_model_identifier = model_source
+            
+            # Start log reader task
+            asyncio.create_task(read_logs_subprocess())
+            
+            await broadcast_log(f"[WEBUI] vLLM subprocess started (PID: {vllm_process.pid})")
+            await broadcast_log(f"[WEBUI] Model: {model_display_name}")
+            if config.local_model_path:
+                await broadcast_log(f"[WEBUI] Model Source: Local ({model_source})")
+            else:
+                await broadcast_log(f"[WEBUI] Model Source: HuggingFace Hub")
+            if config.use_cpu:
+                await broadcast_log(f"[WEBUI] Mode: CPU (KV Cache: {config.cpu_kvcache_space}GB)")
+            else:
+                await broadcast_log(f"[WEBUI] Mode: GPU (Memory: {int(config.gpu_memory_utilization * 100)}%)")
+            
+            return {"status": "started", "pid": vllm_process.pid, "mode": "subprocess"}
     
     except Exception as e:
         logger.error(f"Failed to start server: {e}")
@@ -811,27 +1054,53 @@ async def start_server(config: VLLMConfig):
 
 @app.post("/api/stop")
 async def stop_server():
-    """Stop the vLLM server"""
-    global vllm_process, server_start_time, current_model_identifier
+    """Stop the vLLM server (container or subprocess)"""
+    global container_id, vllm_process, vllm_running, server_start_time, current_model_identifier, current_run_mode
     
-    if vllm_process is None:
+    # Check if server is running based on mode
+    if current_run_mode == "container":
+        status = await container_manager.get_container_status()
+        if not status.get('running', False):
+            raise HTTPException(status_code=400, detail="Server is not running")
+    elif current_run_mode == "subprocess":
+        if vllm_process is None or vllm_process.returncode is not None:
+            raise HTTPException(status_code=400, detail="Server is not running")
+    else:
         raise HTTPException(status_code=400, detail="Server is not running")
     
     try:
-        await broadcast_log("[WEBUI] Stopping vLLM server...")
-        vllm_process.terminate()
+        if current_run_mode == "container":
+            await broadcast_log("[WEBUI] Stopping vLLM container...")
+            
+            # Stop container
+            result = await container_manager.stop_container()
+            
+            container_id = None
+            await broadcast_log("[WEBUI] vLLM container stopped")
         
-        # Wait for process to terminate
-        try:
-            vllm_process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            vllm_process.kill()
-            await broadcast_log("[WEBUI] Force killed vLLM server")
+        else:  # subprocess mode
+            await broadcast_log("[WEBUI] Stopping vLLM subprocess...")
+            
+            # Terminate subprocess
+            vllm_process.terminate()
+            
+            try:
+                # Wait for process to terminate (with timeout)
+                await asyncio.wait_for(vllm_process.wait(), timeout=10.0)
+                await broadcast_log("[WEBUI] vLLM subprocess terminated gracefully")
+            except asyncio.TimeoutError:
+                # Force kill if not terminated
+                vllm_process.kill()
+                await vllm_process.wait()
+                await broadcast_log("[WEBUI] vLLM subprocess killed (forced)")
+            
+            vllm_process = None
+            await broadcast_log("[WEBUI] vLLM subprocess stopped")
         
-        vllm_process = None
+        vllm_running = False
         server_start_time = None
         current_model_identifier = None
-        await broadcast_log("[WEBUI] vLLM server stopped")
+        current_run_mode = None
         
         return {"status": "stopped"}
     
@@ -840,52 +1109,72 @@ async def stop_server():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def read_logs():
-    """Read logs from vLLM process"""
-    global vllm_process
-    
-    if vllm_process is None:
-        return
+async def read_logs_container():
+    """Read logs from vLLM container"""
+    global vllm_running
     
     try:
-        # Use a loop to continuously read output
-        loop = asyncio.get_event_loop()
+        await broadcast_log("[WEBUI] Starting log stream from container...")
         
-        while vllm_process is not None and vllm_process.poll() is None:
-            # Read line in a non-blocking way
-            try:
-                line = await loop.run_in_executor(None, vllm_process.stdout.readline)
-                if line:
-                    # Strip whitespace and send to clients
-                    line = line.strip()
-                    if line:  # Only send non-empty lines
-                        await broadcast_log(line)
-                        logger.debug(f"vLLM: {line}")
-                else:
-                    # No data, small sleep to prevent busy waiting
-                    await asyncio.sleep(0.1)
-            except Exception as e:
-                logger.error(f"Error reading line: {e}")
-                await asyncio.sleep(0.1)
-        
-        # Process has ended - read any remaining output
-        if vllm_process is not None:
-            remaining_output = vllm_process.stdout.read()
-            if remaining_output:
-                for line in remaining_output.splitlines():
-                    line = line.strip()
-                    if line:
-                        await broadcast_log(line)
+        # Stream logs from container
+        async for log_line in container_manager.stream_logs():
+            if log_line:
+                line = log_line.strip()
+                if line:  # Only send non-empty lines
+                    await broadcast_log(line)
+                    logger.debug(f"vLLM: {line}")
             
-            # Log process exit
-            return_code = vllm_process.returncode
-            if return_code == 0:
-                await broadcast_log(f"[WEBUI] vLLM process ended normally (exit code: {return_code})")
-            else:
-                await broadcast_log(f"[WEBUI] vLLM process ended with code: {return_code}")
+            # Check if container is still running
+            if not vllm_running:
+                break
+            
+            await asyncio.sleep(0.01)  # Small delay to prevent busy loop
+        
+        await broadcast_log("[WEBUI] Container log stream ended")
     
     except Exception as e:
-        logger.error(f"Error reading logs: {e}")
+        logger.error(f"Error reading container logs: {e}")
+        await broadcast_log(f"[WEBUI] Error reading logs: {e}")
+
+
+async def read_logs_subprocess():
+    """Read logs from vLLM subprocess"""
+    global vllm_running, vllm_process
+    
+    try:
+        await broadcast_log("[WEBUI] Starting log stream from subprocess...")
+        
+        # Stream logs from subprocess stdout
+        while vllm_process and vllm_process.returncode is None:
+            try:
+                line = await asyncio.wait_for(
+                    vllm_process.stdout.readline(),
+                    timeout=1.0
+                )
+                
+                if line:
+                    decoded_line = line.decode().strip()
+                    if decoded_line:  # Only send non-empty lines
+                        await broadcast_log(decoded_line)
+                        logger.debug(f"vLLM: {decoded_line}")
+                else:
+                    # No more output
+                    break
+            
+            except asyncio.TimeoutError:
+                # No output in this interval, check if still running
+                if not vllm_running or vllm_process.returncode is not None:
+                    break
+                continue
+            
+            except Exception as e:
+                logger.error(f"Error reading line: {e}")
+                break
+        
+        await broadcast_log("[WEBUI] Subprocess log stream ended")
+    
+    except Exception as e:
+        logger.error(f"Error reading subprocess logs: {e}")
         await broadcast_log(f"[WEBUI] Error reading logs: {e}")
 
 
@@ -1003,9 +1292,17 @@ class ChatRequestWithStopTokens(BaseModel):
 @app.post("/api/chat")
 async def chat(request: ChatRequestWithStopTokens):
     """Proxy chat requests to vLLM server using OpenAI-compatible /v1/chat/completions endpoint"""
-    global current_config, current_model_identifier
+    global current_config, current_model_identifier, vllm_running, current_run_mode
     
-    if vllm_process is None or vllm_process.poll() is not None:
+    # Check server status based on mode
+    if current_run_mode == "container":
+        status = await container_manager.get_container_status()
+        if not status.get('running', False):
+            raise HTTPException(status_code=400, detail="vLLM server is not running")
+    elif current_run_mode == "subprocess":
+        if vllm_process is None or vllm_process.returncode is not None:
+            raise HTTPException(status_code=400, detail="vLLM server is not running")
+    else:
         raise HTTPException(status_code=400, detail="vLLM server is not running")
     
     if current_config is None:
@@ -1016,7 +1313,31 @@ async def chat(request: ChatRequestWithStopTokens):
         
         # Use OpenAI-compatible chat completions endpoint
         # vLLM will automatically handle chat template formatting using the model's tokenizer config
-        url = f"http://{current_config.host}:{current_config.port}/v1/chat/completions"
+        # In Kubernetes mode, use the service endpoint instead of host:port
+        # Check if we're in Kubernetes by looking for service account token
+        is_kubernetes = os.path.exists('/var/run/secrets/kubernetes.io/serviceaccount/token')
+        
+        logger.info(f"=== CHAT ENDPOINT ROUTING DEBUG ===")
+        logger.info(f"current_run_mode: {current_run_mode}")
+        logger.info(f"is_kubernetes: {is_kubernetes}")
+        logger.info(f"CONTAINER_MODE_AVAILABLE: {CONTAINER_MODE_AVAILABLE}")
+        
+        if current_run_mode == "container" and is_kubernetes:
+            # Kubernetes mode - connect to vLLM service
+            # Use SERVICE_NAME from container_manager if available
+            service_name = getattr(container_manager, 'SERVICE_NAME', 'vllm-service')
+            namespace = getattr(container_manager, 'namespace', os.getenv('KUBERNETES_NAMESPACE', 'default'))
+            url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}/v1/chat/completions"
+            logger.info(f"✓ Using Kubernetes service URL: {url}")
+            logger.info(f"  Service Name: {service_name}")
+            logger.info(f"  Namespace: {namespace}")
+            logger.info(f"  Port: {current_config.port}")
+        else:
+            # Subprocess mode or local container mode - connect to localhost
+            url = f"http://{current_config.host}:{current_config.port}/v1/chat/completions"
+            logger.info(f"✓ Using localhost URL: {url}")
+        
+        logger.info(f"=====================================")
         
         # Convert messages to OpenAI format
         messages_dict = [{"role": m.role, "content": m.content} for m in request.messages]
@@ -1056,49 +1377,85 @@ async def chat(request: ChatRequestWithStopTokens):
         async def generate_stream():
             """Generator for streaming responses"""
             full_response_text = ""  # Accumulate response for logging
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload) as response:
-                    if response.status != 200:
-                        text = await response.text()
-                        logger.error(f"=== vLLM ERROR RESPONSE ===")
-                        logger.error(f"Status: {response.status}")
-                        logger.error(f"Error: {text}")
-                        logger.error(f"==========================")
-                        yield f"data: {{'error': '{text}'}}\n\n"
-                        return
-                    
-                    logger.info(f"=== vLLM STREAMING RESPONSE START ===")
-                    # Stream the response line by line
-                    # OpenAI-compatible chat completions format
-                    async for line in response.content:
-                        if line:
-                            decoded_line = line.decode('utf-8')
-                            # Log each chunk received
-                            if decoded_line.strip() and decoded_line.strip() != "data: [DONE]":
-                                logger.debug(f"vLLM chunk: {decoded_line.strip()}")
-                                # Try to extract content from SSE data
-                                import json
-                                if decoded_line.startswith("data: "):
-                                    try:
-                                        data_str = decoded_line[6:].strip()
-                                        if data_str and data_str != "[DONE]":
-                                            data = json.loads(data_str)
-                                            if 'choices' in data and len(data['choices']) > 0:
-                                                delta = data['choices'][0].get('delta', {})
-                                                content = delta.get('content', '')
-                                                if content:
-                                                    full_response_text += content
-                                    except:
-                                        pass
-                            # Pass through the SSE formatted data
-                            if decoded_line.strip():
-                                yield decoded_line
-                    
-                    # Log the complete response
-                    logger.info(f"=== vLLM COMPLETE RESPONSE ===")
-                    logger.info(f"Full text: {full_response_text}")
-                    logger.info(f"Length: {len(full_response_text)} chars")
-                    logger.info(f"===============================")
+            buffer = ""  # Buffer for incomplete lines
+            try:
+                # Set reasonable timeout to prevent hanging
+                timeout = aiohttp.ClientTimeout(total=300, connect=10, sock_read=30)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, json=payload) as response:
+                        if response.status != 200:
+                            text = await response.text()
+                            logger.error(f"=== vLLM ERROR RESPONSE ===")
+                            logger.error(f"Status: {response.status}")
+                            logger.error(f"Error: {text}")
+                            logger.error(f"==========================")
+                            yield f"data: {{'error': '{text}'}}\n\n"
+                            return
+                        
+                        logger.info(f"=== vLLM STREAMING RESPONSE START ===")
+                        # Stream the response chunk by chunk
+                        # OpenAI-compatible chat completions format
+                        try:
+                            async for chunk in response.content.iter_any():
+                                if chunk:
+                                    # Decode the chunk and add to buffer
+                                    buffer += chunk.decode('utf-8')
+                                    
+                                    # Process complete lines from buffer
+                                    while '\n' in buffer:
+                                        line, buffer = buffer.split('\n', 1)
+                                        line = line.strip()
+                                        
+                                        if line:
+                                            # Log each chunk received
+                                            if line != "data: [DONE]":
+                                                logger.debug(f"vLLM chunk: {line}")
+                                            # Try to extract content from SSE data
+                                            import json
+                                            if line.startswith("data: "):
+                                                try:
+                                                    data_str = line[6:].strip()
+                                                    if data_str and data_str != "[DONE]":
+                                                        data = json.loads(data_str)
+                                                        if 'choices' in data and len(data['choices']) > 0:
+                                                            delta = data['choices'][0].get('delta', {})
+                                                            content = delta.get('content', '')
+                                                            if content:
+                                                                full_response_text += content
+                                                except:
+                                                    pass
+                                            # Pass through the SSE formatted data
+                                            yield line + '\n'
+                            
+                            # Process any remaining data in buffer
+                            if buffer.strip():
+                                logger.debug(f"vLLM final chunk: {buffer.strip()}")
+                                yield buffer
+                        
+                        except (aiohttp.ClientError, aiohttp.ClientPayloadError, asyncio.TimeoutError) as e:
+                            # Connection error during streaming (e.g., server stopped)
+                            logger.warning(f"Stream interrupted: {type(e).__name__}: {e}")
+                            # Send a final error message to the client
+                            yield f"data: {{'error': 'Stream interrupted: server may have stopped'}}\n\n"
+                            yield "data: [DONE]\n\n"
+                            return
+                        
+                        # Log the complete response
+                        logger.info(f"=== vLLM COMPLETE RESPONSE ===")
+                        logger.info(f"Full text: {full_response_text}")
+                        logger.info(f"Length: {len(full_response_text)} chars")
+                        logger.info(f"===============================")
+            
+            except (aiohttp.ClientError, aiohttp.ClientPayloadError, asyncio.TimeoutError) as e:
+                # Connection error before streaming started
+                logger.error(f"Failed to connect to vLLM: {type(e).__name__}: {e}")
+                yield f"data: {{'error': 'Failed to connect to vLLM server'}}\n\n"
+            except Exception as e:
+                # Unexpected error
+                logger.error(f"Unexpected error in streaming: {type(e).__name__}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                yield f"data: {{'error': 'Internal error during streaming'}}\n\n"
         
         if request.stream:
             # Return streaming response using SSE
@@ -1112,7 +1469,9 @@ async def chat(request: ChatRequestWithStopTokens):
             )
         else:
             # Non-streaming response
-            async with aiohttp.ClientSession() as session:
+            # Set reasonable timeout to prevent hanging
+            timeout = aiohttp.ClientTimeout(total=60, connect=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, json=payload) as response:
                     if response.status != 200:
                         text = await response.text()
@@ -1149,9 +1508,17 @@ class CompletionRequest(BaseModel):
 @app.post("/api/completion")
 async def completion(request: CompletionRequest):
     """Proxy completion requests to vLLM server for base models"""
-    global current_config, current_model_identifier
+    global current_config, current_model_identifier, current_run_mode
     
-    if vllm_process is None or vllm_process.poll() is not None:
+    # Check server status based on mode
+    if current_run_mode == "container":
+        status = await container_manager.get_container_status()
+        if not status.get('running', False):
+            raise HTTPException(status_code=400, detail="vLLM server is not running")
+    elif current_run_mode == "subprocess":
+        if vllm_process is None or vllm_process.returncode is not None:
+            raise HTTPException(status_code=400, detail="vLLM server is not running")
+    else:
         raise HTTPException(status_code=400, detail="vLLM server is not running")
     
     if current_config is None:
@@ -1160,7 +1527,20 @@ async def completion(request: CompletionRequest):
     try:
         import aiohttp
         
-        url = f"http://{current_config.host}:{current_config.port}/v1/completions"
+        # In Kubernetes mode, use the service endpoint instead of host:port
+        # Check if we're in Kubernetes by looking for service account token
+        is_kubernetes = os.path.exists('/var/run/secrets/kubernetes.io/serviceaccount/token')
+        
+        if current_run_mode == "container" and is_kubernetes:
+            # Kubernetes mode - connect to vLLM service
+            service_name = getattr(container_manager, 'SERVICE_NAME', 'vllm-service')
+            namespace = getattr(container_manager, 'namespace', os.getenv('KUBERNETES_NAMESPACE', 'default'))
+            url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}/v1/completions"
+            logger.info(f"Using Kubernetes service URL: {url}")
+        else:
+            # Subprocess mode or local container mode - connect to localhost
+            url = f"http://{current_config.host}:{current_config.port}/v1/completions"
+            logger.info(f"Using localhost URL: {url}")
         
         payload = {
             "model": current_model_identifier if current_model_identifier else current_config.model,
@@ -1391,7 +1771,7 @@ async def get_chat_template():
     Get information about the chat template being used by the currently loaded model.
     vLLM auto-detects templates from tokenizer_config.json - this endpoint provides reference info.
     """
-    global current_config, vllm_process
+    global current_config
     
     if current_config is None:
         raise HTTPException(status_code=400, detail="No model configuration available")
@@ -1420,9 +1800,23 @@ async def get_chat_template():
 @app.get("/api/vllm/metrics")
 async def get_vllm_metrics():
     """Get vLLM server metrics including KV cache and prefix cache stats"""
-    global current_config, vllm_process, latest_vllm_metrics, metrics_timestamp
+    global current_config, latest_vllm_metrics, metrics_timestamp, current_run_mode
     
-    if vllm_process is None or vllm_process.poll() is not None:
+    # Check server status based on mode
+    if current_run_mode == "container":
+        status = await container_manager.get_container_status()
+        if not status.get('running', False):
+            return JSONResponse(
+                status_code=400, 
+                content={"error": "vLLM server is not running"}
+            )
+    elif current_run_mode == "subprocess":
+        if vllm_process is None or vllm_process.returncode is not None:
+            return JSONResponse(
+                status_code=400, 
+                content={"error": "vLLM server is not running"}
+            )
+    else:
         return JSONResponse(
             status_code=400, 
             content={"error": "vLLM server is not running"}
@@ -1451,7 +1845,18 @@ async def get_vllm_metrics():
         import aiohttp
         
         # Try to fetch metrics from vLLM's metrics endpoint
-        metrics_url = f"http://{current_config.host}:{current_config.port}/metrics"
+        # In Kubernetes mode, use the service endpoint instead of host:port
+        # Check if we're in Kubernetes by looking for service account token
+        is_kubernetes = os.path.exists('/var/run/secrets/kubernetes.io/serviceaccount/token')
+        
+        if current_run_mode == "container" and is_kubernetes:
+            # Kubernetes mode - connect to vLLM service
+            service_name = getattr(container_manager, 'SERVICE_NAME', 'vllm-service')
+            namespace = getattr(container_manager, 'namespace', os.getenv('KUBERNETES_NAMESPACE', 'default'))
+            metrics_url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}/metrics"
+        else:
+            # Subprocess mode or local container mode - connect to localhost
+            metrics_url = f"http://{current_config.host}:{current_config.port}/metrics"
         
         async with aiohttp.ClientSession() as session:
             try:
@@ -1506,9 +1911,17 @@ async def get_vllm_metrics():
 @app.post("/api/benchmark/start")
 async def start_benchmark(config: BenchmarkConfig):
     """Start a benchmark test using either built-in or GuideLLM"""
-    global vllm_process, current_config, benchmark_task, benchmark_results
+    global current_config, benchmark_task, benchmark_results, current_run_mode
     
-    if vllm_process is None or vllm_process.poll() is not None:
+    # Check server status based on mode
+    if current_run_mode == "container":
+        status = await container_manager.get_container_status()
+        if not status.get('running', False):
+            raise HTTPException(status_code=400, detail="vLLM server is not running")
+    elif current_run_mode == "subprocess":
+        if vllm_process is None or vllm_process.returncode is not None:
+            raise HTTPException(status_code=400, detail="vLLM server is not running")
+    else:
         raise HTTPException(status_code=400, detail="vLLM server is not running")
     
     if benchmark_task is not None and not benchmark_task.done():
@@ -1577,7 +1990,7 @@ async def stop_benchmark():
 
 async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
     """Run a simple benchmark test"""
-    global benchmark_results, current_model_identifier
+    global benchmark_results, current_model_identifier, current_run_mode
     
     try:
         import aiohttp
@@ -1587,7 +2000,20 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
         
         await broadcast_log(f"[BENCHMARK] Configuration: {config.total_requests} requests at {config.request_rate} req/s")
         
-        url = f"http://{server_config.host}:{server_config.port}/v1/chat/completions"
+        # In Kubernetes mode, use the service endpoint instead of host:port
+        # Check if we're in Kubernetes by looking for service account token
+        is_kubernetes = os.path.exists('/var/run/secrets/kubernetes.io/serviceaccount/token')
+        
+        if current_run_mode == "container" and is_kubernetes:
+            # Kubernetes mode - connect to vLLM service
+            service_name = getattr(container_manager, 'SERVICE_NAME', 'vllm-service')
+            namespace = getattr(container_manager, 'namespace', os.getenv('KUBERNETES_NAMESPACE', 'default'))
+            url = f"http://{service_name}.{namespace}.svc.cluster.local:{server_config.port}/v1/chat/completions"
+            logger.info(f"Using Kubernetes service URL for benchmark: {url}")
+        else:
+            # Subprocess mode or local container mode - connect to localhost
+            url = f"http://{server_config.host}:{server_config.port}/v1/chat/completions"
+            logger.info(f"Using localhost URL for benchmark: {url}")
         
         # Generate a sample prompt of specified length
         prompt_text = " ".join(["benchmark" for _ in range(config.prompt_tokens // 10)])

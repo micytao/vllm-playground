@@ -1,0 +1,34 @@
+---
+# Optional: Persistent Volume Claim for Model Cache
+# This allows downloaded models to persist across pod restarts
+# 
+# Enable this for:
+# - Production deployments
+# - Repeated testing with same models
+# - Faster server restarts (models already downloaded)
+#
+# Skip this for:
+# - Initial testing (use emptyDir instead)
+# - Clusters without persistent storage
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vllm-model-cache
+  namespace: vllm-playground
+  labels:
+    app: vllm-playground
+spec:
+  accessModes:
+  - ReadWriteOnce  # Single pod can mount at a time
+  resources:
+    requests:
+      storage: 80Gi  # Adjust based on models you'll use
+                     # Small models: 20Gi
+                     # Mixed sizes: 50Gi (recommended)
+                     # Large models: 100Gi+
+  # storageClassName: <your-storage-class>
+  # Uncomment and set if you need a specific storage class
+  # Common values: gp3, gp3-csi, nfs, local-path, etc.
+  # Leave commented to use cluster default
+

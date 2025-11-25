@@ -1,0 +1,65 @@
+# Containerfile for vLLM Playground Web UI (OpenShift/Kubernetes)
+# This builds the web UI that manages vLLM pods via Kubernetes API
+
+FROM registry.fedoraproject.org/fedora-minimal:latest
+
+USER 0
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    HOME=/home/playground \
+    PYTHON_VERSION=3.12 \
+    PATH="/usr/local/bin:/home/playground/.local/bin:$PATH"
+
+# Install Python and dependencies
+RUN microdnf install -y \
+    python3.12 \
+    git \
+    curl \
+    which \
+    && microdnf clean all
+
+# Create symlinks and bootstrap pip
+RUN ln -sf /usr/bin/python3.12 /usr/bin/python3 && \
+    python3.12 -m ensurepip --upgrade && \
+    python3.12 -m pip install --upgrade pip
+
+# Create non-root user
+RUN useradd -m -u 1001 -g 0 -s /bin/bash playground && \
+    chmod -R g=u /home/playground
+
+# Set working directory
+WORKDIR ${HOME}/vllm-playground
+
+# Copy application files
+COPY --chown=1001:0 app.py ${HOME}/vllm-playground/
+COPY --chown=1001:0 index.html ${HOME}/vllm-playground/
+COPY --chown=1001:0 static/ ${HOME}/vllm-playground/static/
+COPY --chown=1001:0 assets/ ${HOME}/vllm-playground/assets/
+COPY --chown=1001:0 openshift/kubernetes_container_manager.py ${HOME}/vllm-playground/container_manager.py
+COPY --chown=1001:0 openshift/requirements-k8s.txt ${HOME}/vllm-playground/requirements.txt
+
+# Install Python dependencies
+RUN python3.12 -m pip install --no-cache-dir --upgrade pip && \
+    python3.12 -m pip install --no-cache-dir -r ${HOME}/vllm-playground/requirements.txt
+
+# Make playground directory accessible
+RUN chmod -R 775 ${HOME}/vllm-playground
+
+# Switch to non-root user
+USER 1001
+
+# Expose web UI port
+EXPOSE 7860
+
+# Environment variables (can be overridden at runtime)
+ENV WEBUI_PORT=7860 \
+    KUBERNETES_NAMESPACE=vllm-playground
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:7860/api/status || exit 1
+
+# Start web UI
+CMD ["python3.12", "/home/playground/vllm-playground/app.py"]
+

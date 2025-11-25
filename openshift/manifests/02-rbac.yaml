@@ -1,0 +1,42 @@
+---
+# ServiceAccount for the Web UI pod
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vllm-playground-sa
+  namespace: vllm-playground
+
+---
+# Role with permissions to manage pods and services
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vllm-pod-manager
+  namespace: vllm-playground
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list", "create", "update", "patch"]
+
+---
+# RoleBinding to grant the role to the ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vllm-pod-manager-binding
+  namespace: vllm-playground
+subjects:
+- kind: ServiceAccount
+  name: vllm-playground-sa
+  namespace: vllm-playground
+roleRef:
+  kind: Role
+  name: vllm-pod-manager
+  apiGroup: rbac.authorization.k8s.io
+

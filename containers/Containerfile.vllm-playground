@@ -1,0 +1,84 @@
+# vLLM Playground Web UI Container
+# This container runs the web UI and orchestrates other containers
+# 
+# Build:
+#   podman build -f Containerfile.vllm-playground -t vllm-playground:latest .
+#
+# Run:
+#   podman run -d \
+#     --name vllm-playground \
+#     -p 7860:7860 \
+#     -v /run/podman/podman.sock:/run/podman/podman.sock:rw \
+#     -v ~/.cache/huggingface:/models:rw \
+#     -e CONTAINER_RUNTIME=podman \
+#     vllm-playground:latest
+
+FROM registry.fedoraproject.org/fedora-minimal:latest
+
+USER 0
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    HOME=/home/playground \
+    PYTHON_VERSION=3.12 \
+    PATH="/usr/local/bin:/home/playground/.local/bin:$PATH"
+
+# Install Python, podman-remote, and dependencies
+RUN microdnf install -y \
+    python3.12 \
+    git \
+    curl \
+    which \
+    podman-remote \
+    && microdnf clean all
+
+# Create symlinks and bootstrap pip using ensurepip
+# Also create podman symlink if only podman-remote is available
+RUN ln -sf /usr/bin/python3.12 /usr/bin/python3 && \
+    if [ ! -f /usr/bin/podman ] && [ -f /usr/bin/podman-remote ]; then \
+        ln -sf /usr/bin/podman-remote /usr/bin/podman; \
+    fi && \
+    python3.12 -m ensurepip --upgrade && \
+    python3.12 -m pip install --upgrade pip
+
+# Create non-root user (can still access Docker socket with proper mount)
+RUN useradd -m -u 1001 -g 0 -s /bin/bash playground && \
+    chmod -R g=u /home/playground
+
+# Copy application files (as root, then fix permissions)
+COPY --chown=1001:0 . ${HOME}/vllm-playground/
+
+# Install Python dependencies globally so they work for root or non-root user
+# This is needed because we may run as root to access Podman socket
+RUN python3.12 -m pip install --no-cache-dir --upgrade pip && \
+    python3.12 -m pip install --no-cache-dir -r ${HOME}/vllm-playground/requirements.txt && \
+    python3.12 -m pip install --no-cache-dir podman
+
+# Make playground directory accessible by both root and user 1001
+RUN chmod -R 775 ${HOME}/vllm-playground
+
+# Default to non-root user (can override with --user root at runtime)
+USER 1001
+
+# Install container orchestrator (if not already in project)
+# This allows the web UI to control other containers
+
+# Expose web UI port
+EXPOSE 7860
+
+# Set working directory (use absolute path for reliability)
+WORKDIR /home/playground/vllm-playground
+
+# Environment variables (can be overridden at runtime)
+ENV WEBUI_PORT=7860 \
+    VLLM_IMAGE=quay.io/rh_ee_micyang/vllm-service:macos \
+    MODELS_DIR=/models \
+    CONTAINER_RUNTIME=podman
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:7860/api/status || exit 1
+
+# Start web UI (use absolute path to app.py for reliability)
+CMD ["python3.12", "/home/playground/vllm-playground/app.py"]
+

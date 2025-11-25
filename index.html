@@ -115,6 +115,22 @@
                         <small class="form-help">Required for gated models (Llama 3.1, Llama 3.2). Get token from <a href="https://huggingface.co/settings/tokens" target="_blank">HuggingFace Settings</a></small>
                     </div>
 
+                    <!-- Run Mode Toggle -->
+                    <div class="form-group mode-toggle-group">
+                        <label>Run Mode</label>
+                        <div class="mode-toggle-buttons">
+                            <label class="mode-button active" id="run-mode-subprocess-label">
+                                <input type="radio" name="run-mode" id="run-mode-subprocess" value="subprocess" checked>
+                                <span>⚡ Subprocess</span>
+                            </label>
+                            <label class="mode-button" id="run-mode-container-label">
+                                <input type="radio" name="run-mode" id="run-mode-container" value="container">
+                                <span>📦 Container</span>
+                            </label>
+                        </div>
+                        <small class="form-help" id="run-mode-help-text">Subprocess: Direct (local dev), Container: Isolated (production)</small>
+                    </div>
+
                     <!-- CPU/GPU Mode Toggle -->
                     <div class="form-group mode-toggle-group">
                         <label>Compute Mode</label>

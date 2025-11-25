@@ -1,8 +1,32 @@
 # vLLM Playground
 
-A modern web interface for managing and interacting with vLLM servers (www.github.com/vllm-project/vllm). Supports both GPU and CPU modes, with special optimizations for macOS Apple Silicon.
+A modern web interface for managing and interacting with vLLM servers (www.github.com/vllm-project/vllm). Supports both GPU and CPU modes, with special optimizations for macOS Apple Silicon and enterprise deployment on OpenShift/Kubernetes.
 
 ![vLLM Playground Interface](assets/vllm-playground.png)
+
+## 🐳 New: Containerized vLLM Service
+
+**No more manual vLLM installation!** The Web UI now automatically manages vLLM in isolated containers, providing a seamless experience from local development to enterprise deployment.
+
+**📹 [Watch Demo: Automatic Container Startup](assets/start-vllm.mp4)**
+
+*See how easy it is: Just click "Start Server" and the container orchestrator automatically starts the vLLM container - no manual installation or configuration needed!*
+
+**📹 [Watch Demo: Automatic Container Shutdown](assets/stop-vllm.mp4)**
+
+*Clean shutdown: Click "Stop Server" and the container orchestrator gracefully stops the vLLM container with automatic cleanup!*
+
+**Key Benefits:**
+- ✅ **Zero Setup**: No vLLM installation required - containers handle everything
+- ✅ **Isolated Environment**: vLLM runs in its own container, preventing conflicts
+- ✅ **Smart Management**: Automatic container lifecycle (start, stop, logs, health checks)
+- ✅ **Fast Restarts**: Configuration caching for quick server restarts
+- ✅ **Hybrid Architecture**: Same UI works locally (Podman) and in cloud (Kubernetes)
+
+**Architecture:**
+- **Local Development**: Podman-based container orchestration
+- **Enterprise Deployment**: OpenShift/Kubernetes with dynamic pod creation
+- **Container Manager**: Automatic lifecycle management with smart reuse
 
 ## 🆕 New: Model Compression Support
 
@@ -22,6 +46,7 @@ Integrated GuideLLM for comprehensive performance benchmarking and analysis. Run
 vllm-playground/
 ├── app.py                       # Main FastAPI backend application
 ├── run.py                       # Backend server launcher
+├── container_manager.py         # 🆕 Podman-based container orchestration (local)
 ├── index.html                   # Main HTML interface
 ├── requirements.txt             # Python dependencies
 ├── env.example                  # Example environment variables
@@ -29,15 +54,31 @@ vllm-playground/
 ├── README.md                    # This file
 │
 ├── containers/                  # Container definitions 🐳
-│   ├── Containerfile.cuda      # CUDA/GPU container (RHEL UBI9)
-│   ├── Containerfile.vllm      # vLLM official base image
-│   ├── Containerfile.mac       # macOS/CPU container
-│   └── Containerfile.rhel9     # RHEL 9 container
+│   ├── Containerfile.vllm-playground  # 🆕 Web UI container (orchestrator)
+│   ├── Containerfile.mac       # 🆕 vLLM service container (macOS/CPU)
+│   └── README.md               # Container variants documentation
 │
-├── deployments/                 # Kubernetes/OpenShift deployments ☸️
-│   ├── kubernetes-deployment.yaml    # Kubernetes manifests
-│   ├── openshift-deployment.yaml     # OpenShift manifests
-│   └── deploy-to-openshift.sh       # OpenShift deployment script
+├── openshift/                   # 🆕 OpenShift/Kubernetes deployment ☸️
+│   ├── kubernetes_container_manager.py  # K8s API-based orchestration
+│   ├── Containerfile           # Web UI container for OpenShift
+│   ├── requirements-k8s.txt    # Python dependencies (with K8s client)
+│   ├── deploy.sh               # Automated deployment (CPU/GPU)
+│   ├── undeploy.sh             # Automated undeployment
+│   ├── build.sh                # Container build script
+│   ├── manifests/              # Kubernetes manifests
+│   │   ├── 00-secrets-template.yaml
+│   │   ├── 01-namespace.yaml
+│   │   ├── 02-rbac.yaml
+│   │   ├── 03-configmap.yaml
+│   │   ├── 04-webui-deployment.yaml
+│   │   └── 05-pvc-optional.yaml
+│   ├── README.md               # Architecture overview
+│   └── QUICK_START.md          # Quick deployment guide
+│
+├── deployments/                 # Legacy deployment scripts
+│   ├── kubernetes-deployment.yaml
+│   ├── openshift-deployment.yaml
+│   └── deploy-to-openshift.sh
 │
 ├── static/                      # Frontend assets
 │   ├── css/
@@ -49,14 +90,20 @@ vllm-playground/
 │   ├── run_cpu.sh              # Start vLLM in CPU mode (macOS compatible)
 │   ├── start.sh                # General start script
 │   ├── install.sh              # Installation script
-│   └── verify_setup.py         # Setup verification
+│   ├── verify_setup.py         # Setup verification
+│   ├── kill_playground.py      # Kill running playground instances
+│   └── restart_playground.sh   # Restart playground
 │
 ├── config/                      # Configuration files
 │   ├── vllm_cpu.env            # CPU mode environment variables
 │   └── example_configs.json    # Example configurations
 │
+├── cli_demo/                    # 🆕 Command-line demo workflow
+│   ├── scripts/                # Demo shell scripts
+│   └── docs/                   # Demo documentation
+│
 ├── assets/                      # Images and assets
-│   ├── vllm-playground.png          # WebUI screenshot
+│   ├── vllm-playground.png     # WebUI screenshot
 │   ├── llmcompressor.png       # Model compression UI screenshot
 │   ├── guidellm.png            # GuideLLM benchmark results screenshot
 │   ├── vllm.png                # vLLM logo
@@ -67,7 +114,6 @@ vllm-playground/
     ├── MACOS_CPU_GUIDE.md       # macOS CPU setup guide
     ├── CPU_MODELS_QUICKSTART.md # CPU-optimized models guide
     ├── GATED_MODELS_GUIDE.md    # Guide for accessing Llama, Gemma, etc.
-    ├── CHAT_TEMPLATES.md        # Model-specific chat templates
     ├── TROUBLESHOOTING.md       # Common issues and solutions
     ├── FEATURES.md              # Feature documentation
     ├── PERFORMANCE_METRICS.md   # Performance metrics
@@ -76,33 +122,71 @@ vllm-playground/
 
 ## 🚀 Quick Start
 
-### 🐳 Option 1: Container (Easiest for macOS) **RECOMMENDED**
+### 🐳 Option 1: Container Orchestration (Recommended)
 
-For macOS users, the container provides the easiest setup with everything pre-configured:
+The Web UI can orchestrate vLLM containers automatically - no manual vLLM installation needed!
 
 ```bash
-# 1. Build the container (one-time, ~15-30 min)
-./scripts/build_container.sh
+# 1. Install Podman (if not already installed)
+# macOS: brew install podman
+# Linux: dnf install podman or apt install podman
 
-# 2. Run the container
-./scripts/run_container.sh
+# 2. Install Python dependencies
+pip install -r requirements.txt
 
-# 3. Open http://localhost:7860
+# 3. Start the Web UI
+python run.py
+
+# 4. Open http://localhost:7860
+# 5. Click "Start Server" - vLLM container starts automatically!
 ```
 
 **✨ Benefits:**
-- ✅ No complex installation
-- ✅ Pre-built vLLM optimized for CPU
-- ✅ Isolated environment
-- ✅ Works out of the box
+- ✅ No vLLM installation required
+- ✅ Automatic container lifecycle management
+- ✅ Isolated vLLM environment
+- ✅ Same UI works locally and on OpenShift/Kubernetes
 
-**📖 See [CONTAINER-QUICKSTART.md](CONTAINER-QUICKSTART.md)** for detailed instructions.
+**How it works:**
+- Web UI runs on your host
+- vLLM runs in an isolated container
+- Container manager (`container_manager.py`) orchestrates everything
+
+**Note:** The Web UI will automatically pull and start the vLLM container when you click "Start Server"
 
 ---
 
-### 💻 Option 2: Local Installation
+### ☸️ Option 2: OpenShift/Kubernetes Deployment
 
-For local development or if you prefer not to use containers:
+Deploy the entire stack to OpenShift or Kubernetes with dynamic pod management:
+
+```bash
+# 1. Build and push Web UI container
+cd openshift/
+podman build -f Containerfile -t your-registry/vllm-playground:latest .
+podman push your-registry/vllm-playground:latest
+
+# 2. Deploy to cluster (GPU or CPU mode)
+./deploy.sh --gpu   # For GPU clusters
+./deploy.sh --cpu   # For CPU-only clusters
+
+# 3. Get the URL
+oc get route vllm-playground -n vllm-playground
+```
+
+**✨ Benefits:**
+- ✅ Enterprise-grade deployment
+- ✅ Dynamic vLLM pod creation via Kubernetes API
+- ✅ Same UI and workflow as local setup
+- ✅ Auto-scaling and resource management
+
+**📖 See [openshift/README.md](openshift/README.md)** and **[openshift/QUICK_START.md](openshift/QUICK_START.md)** for detailed instructions.
+
+---
+
+### 💻 Option 3: Local Installation (Traditional)
+
+For local development without containers:
 
 #### 1. Install vLLM
 
@@ -136,30 +220,71 @@ Then open http://localhost:7860 in your browser.
 ./scripts/run_cpu.sh
 ```
 
+## ☸️ OpenShift/Kubernetes Deployment
+
+Deploy vLLM Playground to enterprise Kubernetes/OpenShift clusters with dynamic pod management:
+
+**Features:**
+- ✅ Dynamic vLLM pod creation via Kubernetes API
+- ✅ GPU and CPU mode support with Red Hat images
+- ✅ RBAC-based security model
+- ✅ Automated deployment scripts
+- ✅ Same UI and workflow as local setup
+
+**Quick Deploy:**
+```bash
+cd openshift/
+./deploy.sh --gpu    # For GPU clusters
+./deploy.sh --cpu    # For CPU-only clusters
+```
+
+**📖 Full Documentation:** See [openshift/README.md](openshift/README.md) and [openshift/QUICK_START.md](openshift/QUICK_START.md)
+
+---
+
 ## 💻 macOS Apple Silicon Support
 
-For macOS users, vLLM runs in CPU mode. See [docs/MACOS_CPU_GUIDE.md](docs/MACOS_CPU_GUIDE.md) for detailed setup.
+For macOS users, vLLM runs in CPU mode using containerization:
 
-**Quick CPU Mode Setup:**
+**Container Mode (Recommended):**
+```bash
+# Just start the Web UI - it handles containers automatically
+python run.py
+# Click "Start Server" in the UI
+```
+
+**Direct Mode:**
 ```bash
 # Edit CPU configuration
 nano config/vllm_cpu.env
 
-# Run vLLM
+# Run vLLM directly
 ./scripts/run_cpu.sh
 ```
 
+**📖 See [docs/MACOS_CPU_GUIDE.md](docs/MACOS_CPU_GUIDE.md)** for detailed setup.
+
 ## ✨ Features
 
-- **Model Compression**: LLM-Compressor integration for quantizing and compressing models 🆕
-- **Performance Benchmarking**: GuideLLM integration for comprehensive load testing with detailed metrics 🆕
+- **🐳 Container Orchestration**: Automatic vLLM container lifecycle management 🆕
+  - Local development: Podman-based orchestration
+  - Enterprise deployment: Kubernetes API-based orchestration
+  - Seamless switching between local and cloud environments
+  - Smart container reuse (fast restarts with same config)
+- **☸️ OpenShift/Kubernetes Deployment**: Production-ready cloud deployment 🆕
+  - Dynamic pod creation via Kubernetes API
+  - CPU and GPU mode support
+  - RBAC-based security
+  - Automated deployment scripts
+- **Model Compression**: LLM-Compressor integration for quantizing and compressing models
+- **Performance Benchmarking**: GuideLLM integration for comprehensive load testing with detailed metrics
   - Request statistics (success rate, duration, avg times)
   - Token throughput analysis (mean/median tokens per second)
   - Latency percentiles (P50, P75, P90, P95, P99)
   - Configurable load patterns and request rates
 - **Server Management**: Start/stop vLLM servers from the UI
 - **Chat Interface**: Interactive chat with streaming responses
-- **Smart Chat Templates**: Automatic model-specific template detection (Nov 2025) 🆕
+- **Smart Chat Templates**: Automatic model-specific template detection
 - **Performance Metrics**: Real-time token counts and generation speed
 - **Model Support**: Pre-configured popular models + custom model support
 - **Gated Model Access**: Built-in HuggingFace token support for Llama, Gemma, etc.
@@ -171,23 +296,25 @@ nano config/vllm_cpu.env
 ## 📖 Documentation
 
 ### Getting Started
-- **[Container Quick Start](CONTAINER-QUICKSTART.md)** 🐳 - Easiest way for macOS users (RECOMMENDED)
-- **[Container Full Guide](README-CONTAINER.md)** - Complete container documentation
-- **[Container Workflow](CONTAINER-WORKFLOW.md)** - Step-by-step container workflow
 - **[Quick Start Guide](docs/QUICKSTART.md)** - Get up and running in minutes
-- **[Command-Line Demo Guide](cli_demo/docs/CLI_DEMO_GUIDE.md)** 🆕 - Full workflow demo with vLLM, LLMCompressor & GuideLLM
+- **[Command-Line Demo Guide](cli_demo/docs/CLI_DEMO_GUIDE.md)** - Full workflow demo with vLLM, LLMCompressor & GuideLLM
 - [macOS CPU Setup](docs/MACOS_CPU_GUIDE.md) - Apple Silicon optimization guide
 - [CPU Models Quickstart](docs/CPU_MODELS_QUICKSTART.md) - Best models for CPU
 
+### Container & Deployment
+- **[OpenShift/Kubernetes Deployment](openshift/README.md)** ☸️ - Enterprise deployment guide 🆕
+- **[OpenShift Quick Start](openshift/QUICK_START.md)** - 5-minute deployment 🆕
+- **[Container Variants](containers/README.md)** 🐳 - Local container setup
+- [Legacy Deployment Scripts](deployments/README.md) - Kubernetes manifests
+
 ### Model Configuration
 - **[Gated Models Guide (Llama, Gemma)](docs/GATED_MODELS_GUIDE.md)** ⭐ - Access restricted models
-- **[Chat Templates Explained](docs/CHAT_TEMPLATES.md)** 🆕 - Model-specific templates
 
 ### Reference
 - [Feature Overview](docs/FEATURES.md) - Complete feature list
 - [Performance Metrics](docs/PERFORMANCE_METRICS.md) - Benchmarking and metrics
 - [Command Reference](docs/QUICK_REFERENCE.md) - Command cheat sheet
-- [CLI Quick Reference](cli_demo/docs/CLI_QUICK_REFERENCE.md) - Command-line demo quick reference 🆕
+- [CLI Quick Reference](cli_demo/docs/CLI_QUICK_REFERENCE.md) - Command-line demo quick reference
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
 
 ## 🔧 Configuration
@@ -217,9 +344,29 @@ export VLLM_CPU_OMP_THREADS_BIND=auto
 
 ## 🛠️ Development
 
-### Project Structure
+### Architecture
 
+The project uses a **hybrid architecture** that works seamlessly in both local and cloud environments:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Web UI (FastAPI)                        │
+│              app.py + index.html + static/                  │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ├─→ container_manager.py (Local)
+                         │   └─→ Podman CLI
+                         │       └─→ vLLM Container
+                         │
+                         └─→ kubernetes_container_manager.py (Cloud)
+                             └─→ Kubernetes API
+                                 └─→ vLLM Pods
+```
+
+**Key Components:**
 - **Backend**: FastAPI (`app.py`)
+- **Container Manager (Local)**: Podman orchestration (`container_manager.py`)
+- **Container Manager (K8s)**: Kubernetes API orchestration (`openshift/kubernetes_container_manager.py`)
 - **Frontend**: Vanilla JavaScript (`static/js/app.js`)
 - **Styling**: Custom CSS (`static/css/style.css`)
 - **Scripts**: Bash scripts in `scripts/`
@@ -233,6 +380,19 @@ uvicorn app:app --reload --port 7860
 
 # Or use the run script
 python run.py
+```
+
+### Container Development
+
+```bash
+# Build vLLM service container (macOS/CPU)
+podman build -f containers/Containerfile.mac -t vllm-service:macos .
+
+# Build Web UI orchestrator container
+podman build -f containers/Containerfile.vllm-playground -t vllm-playground:latest .
+
+# Build OpenShift Web UI container
+podman build -f openshift/Containerfile -t vllm-playground-webui:latest .
 ```
 
 ## 📝 License
@@ -249,37 +409,170 @@ Contributions welcome! Please feel free to submit issues and pull requests.
 - [vLLM CPU Mode Guide](https://docs.vllm.ai/en/stable/getting_started/installation/cpu.html)
 - [vLLM GitHub](https://github.com/vllm-project/vllm)
 
+## 🏗️ Architecture Overview
+
+### Local Development (Container Orchestration)
+
+```
+┌──────────────────┐
+│   User Browser   │
+└────────┬─────────┘
+         │ http://localhost:7860
+         ↓
+┌──────────────────┐
+│   Web UI (Host)  │  ← FastAPI app
+│   app.py         │
+└────────┬─────────┘
+         │ Podman CLI
+         ↓
+┌──────────────────┐
+│ container_manager│  ← Podman orchestration
+│     .py          │
+└────────┬─────────┘
+         │ podman run/stop
+         ↓
+┌──────────────────┐
+│  vLLM Container  │  ← Isolated vLLM service
+│  (Port 8000)     │
+└──────────────────┘
+```
+
+### OpenShift/Kubernetes Deployment
+
+```
+┌──────────────────┐
+│   User Browser   │
+└────────┬─────────┘
+         │ https://route-url
+         ↓
+┌──────────────────┐
+│ OpenShift Route  │
+└────────┬─────────┘
+         ↓
+┌──────────────────┐
+│  Web UI Pod      │  ← FastAPI app in container
+│  (Deployment)    │
+└────────┬─────────┘
+         │ Kubernetes API
+         ↓
+┌──────────────────┐
+│   kubernetes_    │  ← K8s API orchestration
+│   container_     │
+│   manager.py     │
+└────────┬─────────┘
+         │ create/delete pods
+         ↓
+┌──────────────────┐
+│  vLLM Pod        │  ← Dynamically created
+│  (Dynamic)       │  ← GPU: Official vLLM image
+│                  │  ← CPU: Self-built optimized image
+└──────────────────┘
+```
+
+**Container Images:**
+- **GPU Mode**: Official vLLM image (`vllm/vllm-openai:v0.11.0`)
+- **CPU Mode**: Self-built optimized image (`quay.io/rh_ee_micyang/vllm-service:cpu`)
+
+**Key Features:**
+- Same UI code works in both environments
+- Container manager is swapped at build time (Podman → Kubernetes)
+- Identical user experience locally and in the cloud
+- Smart container/pod lifecycle management
+- No registry authentication needed (all images are publicly accessible)
+
+---
+
 ## 🆘 Troubleshooting
 
-### macOS Segmentation Fault
+### Container-Related Issues
 
-Use CPU mode with proper environment variables. See [docs/MACOS_CPU_GUIDE.md](docs/MACOS_CPU_GUIDE.md).
+#### Container Won't Start
+```bash
+# Check if Podman is installed
+podman --version
 
-### Server Won't Start
+# Check Podman connectivity
+podman ps
 
+# View container logs
+podman logs vllm-service
+```
+
+#### "Address Already in Use" Error
+If you lose connection to the Web UI and get `ERROR: address already in use`:
+
+```bash
+# Quick Fix: Auto-detect and kill old process
+python run.py
+
+# Alternative: Manual restart
+./scripts/restart_playground.sh
+
+# Or kill manually
+python scripts/kill_playground.py
+```
+
+#### vLLM Container Issues
+```bash
+# Check if container is running
+podman ps -a | grep vllm-service
+
+# View vLLM logs
+podman logs -f vllm-service
+
+# Stop and remove container
+podman stop vllm-service && podman rm vllm-service
+
+# Pull latest vLLM image
+podman pull quay.io/rh_ee_micyang/vllm-service:macos
+```
+
+### OpenShift/Kubernetes Issues
+
+#### Pod Not Starting
+```bash
+# Check pod status
+oc get pods -n vllm-playground
+
+# View pod logs
+oc logs -f deployment/vllm-playground-gpu -n vllm-playground
+
+# Describe pod for events
+oc describe pod <pod-name> -n vllm-playground
+```
+
+#### Image Pull Errors
+
+**Note:** The deployment now uses publicly accessible container images:
+- **GPU**: `vllm/vllm-openai:v0.11.0` (official vLLM image)
+- **CPU**: `quay.io/rh_ee_micyang/vllm-service:cpu` (self-built, publicly accessible)
+
+No registry authentication or pull secrets are required. If you encounter image pull errors:
+
+```bash
+# Verify image accessibility
+podman pull vllm/vllm-openai:v0.11.0  # For GPU
+podman pull quay.io/rh_ee_micyang/vllm-service:cpu  # For CPU
+
+# Check pod events for details
+oc describe pod <pod-name> -n vllm-playground
+```
+
+**📖 See [openshift/QUICK_START.md](openshift/QUICK_START.md)** for detailed OpenShift troubleshooting
+
+### Local Installation Issues
+
+#### macOS Segmentation Fault
+Use CPU mode with proper environment variables or use container mode (recommended).
+See [docs/MACOS_CPU_GUIDE.md](docs/MACOS_CPU_GUIDE.md).
+
+#### Server Won't Start
 1. Check if vLLM is installed: `python -c "import vllm; print(vllm.__version__)"`
 2. Check port availability: `lsof -i :8000`
 3. Review server logs in the WebUI
 
-### Chat Not Streaming
-
+#### Chat Not Streaming
 Check browser console (F12) for errors and ensure the server is running.
-
-### Container: "Address Already in Use" Error
-
-If you lose connection to a container and get `ERROR: address already in use` when rerunning:
-
-**Quick Fix:** Just rerun the script - it now auto-detects and kills the old process:
-```bash
-python run.py
-```
-
-**Alternative:** Use the restart script:
-```bash
-./scripts/restart_playground.sh
-```
-
-See [docs/CONTAINER_TROUBLESHOOTING.md](docs/CONTAINER_TROUBLESHOOTING.md) for details.
 
 ---
 

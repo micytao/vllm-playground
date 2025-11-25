@@ -1,6 +1,21 @@
-# Deployment Configurations
+# Deployment Configurations (Legacy)
 
-This directory contains deployment configurations and scripts for running vLLM Playground on Kubernetes and OpenShift.
+> **⚠️ NOTICE: This directory contains legacy deployment configurations.**
+>
+> **For new deployments, please use the [`openshift/`](../openshift/) directory** which provides:
+> - ✅ Dynamic pod management via Kubernetes API
+> - ✅ Automated deployment scripts (CPU/GPU)
+> - ✅ RBAC-based security
+> - ✅ Smart container orchestration
+> - ✅ Better documentation
+>
+> **Quick Start (New):** See [openshift/QUICK_START.md](../openshift/QUICK_START.md)
+>
+> The files in this directory are kept for backwards compatibility and simple static deployments.
+
+---
+
+This directory contains **legacy** deployment configurations and scripts for running vLLM Playground on Kubernetes and OpenShift.
 
 ## Available Deployments
 

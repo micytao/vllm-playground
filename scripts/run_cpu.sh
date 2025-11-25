@@ -9,7 +9,7 @@ echo ""
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Activate virtual environment
-VENV_PATH="/Users/micyang/.venv"
+VENV_PATH="${HOME}/.venv"
 if [ -d "$VENV_PATH" ]; then
     echo "🐍 Activating virtual environment: $VENV_PATH"
     source "$VENV_PATH/bin/activate"

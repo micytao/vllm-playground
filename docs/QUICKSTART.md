@@ -4,8 +4,8 @@
 
 ### 1. Start the WebUI
 ```bash
-cd webui
-./start.sh
+cd vllm-playground
+./scripts/start.sh
 ```
 Or manually:
 ```bash

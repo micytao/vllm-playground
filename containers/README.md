@@ -1,244 +1,157 @@
 # vLLM Playground Container Images
 
-This directory contains multiple Containerfile variants optimized for different use cases and size requirements.
+This directory contains Containerfile variants optimized for different deployment scenarios.
 
-## Container Variants
+## Container Architecture
 
-### 1. Containerfile (Ultra Minimal - ~800MB - 1.2GB)
-**Smallest practical image with build tools**
+The project uses a **hybrid container approach** for maximum flexibility:
 
-**What's included:**
-- Red Hat UBI9 Minimal base image
-- Python 3.11 + development headers
-- Build tools (gcc, gcc-c++, git, vim)
-- pip (basic version)
-- Application code only
-- curl-minimal (for health checks)
+### 1. Web UI Orchestrator Container
+- **Local Development**: `Containerfile.vllm-playground`
+- **OpenShift/Kubernetes**: `../openshift/Containerfile`
 
-**What's NOT included:**
-- Virtual environment
-- Any Python packages (no requirements.txt)
-- vLLM
-- PyTorch
+The Web UI runs in its own container and orchestrates vLLM service containers/pods dynamically.
 
-**Use this when:**
-- You need a small image size with build capability
-- You want maximum flexibility to install specific versions
-- Storage/bandwidth is limited
-- You're deploying to environments requiring manual dependency installation
+### 2. vLLM Service Containers
 
-**Installation required after deployment:**
-```bash
-# 1. Upgrade pip
-pip3 install --upgrade pip setuptools wheel --user
+**For CPU Mode:**
+- **`Containerfile.cpu`** - Self-built optimized vLLM image for CPU workloads
+  - Built from source with CPU optimizations
+  - Publicly hosted: `quay.io/rh_ee_micyang/vllm-service:cpu`
+  - Used for: Local macOS, CPU-only clusters
+  - Includes: Python 3.12, vLLM with CPU support, startup scripts
 
-# 2. Install vLLM (GPU example)
-pip3 install --user torch torchvision --index-url https://download.pytorch.org/whl/cu121
-pip3 install --user vllm
+**For GPU Mode:**
+- **Official vLLM Image** - `vllm/vllm-openai:v0.11.0`
+  - Community-maintained official image
+  - Pre-built with CUDA support
+  - Publicly accessible from Docker Hub
+  - Used for: GPU-enabled clusters
 
-# 3. Install WebUI dependencies
-pip3 install --user -r /home/vllm/vllm-playground/requirements.txt
-```
+**For macOS Local Development:**
+- **`Containerfile.mac`** - macOS-compatible CPU image
+  - Optimized for Apple Silicon and Intel Macs
+  - Similar to `Containerfile.cpu` but with macOS-specific tuning
+  - Used locally with Podman on macOS
 
----
+## Container Variants Overview
 
-### 2. Containerfile.app (Lightweight - ~2GB - 3GB)
-**Balanced approach with WebUI dependencies pre-installed**
+| Container | Purpose | Size | Use Case |
+|-----------|---------|------|----------|
+| **Containerfile.cpu** | vLLM CPU service | ~5-8GB | CPU-only clusters, self-built optimized image |
+| **Containerfile.mac** | vLLM macOS service | ~5-8GB | Local macOS development (Apple Silicon/Intel) |
+| **Containerfile.vllm-playground** | Web UI orchestrator | ~2-3GB | Local Podman-based deployment |
+| **../openshift/Containerfile** | Web UI orchestrator | ~2-3GB | OpenShift/Kubernetes deployment |
 
-**What's included:**
-- Red Hat UBI9 Minimal base image
-- Python 3.11 + development tools
-- Virtual environment
-- All WebUI dependencies (Flask, requests, etc.)
-- Build tools for compilation
+## Current Container Strategy
 
-**What's NOT included:**
-- vLLM
-- PyTorch
+**GPU Deployments:**
+- ✅ Use official vLLM image: `vllm/vllm-openai:v0.11.0`
+- ✅ No build required - pull directly from Docker Hub
+- ✅ No authentication needed (public image)
 
-**Use this when:**
-- You want faster startup with WebUI dependencies ready
-- You still want flexibility for vLLM installation
-- Moderate image size is acceptable
-- You don't want to install basic dependencies manually
+**CPU Deployments:**
+- ✅ Use self-built image: `quay.io/rh_ee_micyang/vllm-service:cpu`
+- ✅ Built from `Containerfile.cpu` with CPU optimizations
+- ✅ Publicly accessible on Quay.io (no authentication needed)
 
-**Installation required after deployment:**
-```bash
-# Activate virtual environment
-source /home/vllm/vllm_env/bin/activate
-
-# Install vLLM (GPU example)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-pip install vllm
-```
-
----
-
-### 3. Containerfile.cuda (Full-Featured - ~15GB - 20GB)
-**Complete image with everything pre-installed**
-
-**What's included:**
-- Red Hat UBI9 Minimal base image
-- Python 3.11 + development tools
-- PyTorch with CUDA support
-- vLLM with GPU support
-- All WebUI dependencies
-- CUDA libraries
-
-**What's NOT included:**
-- Nothing - it's ready to run!
-
-**Use this when:**
-- You have good storage/bandwidth
-- You want zero-setup deployment
-- You're running on GPU-enabled nodes
-- Build time is less important than runtime convenience
-
-**Installation required after deployment:**
-- None! Ready to use immediately.
-
----
+**Key Benefits:**
+- No registry pull secrets required
+- Fast deployment (official GPU image)
+- Optimized CPU performance (self-built)
+- Same UI and workflow for both modes
 
 ## Build Instructions
 
-### Build Ultra Minimal Image (with build tools)
+### Build CPU vLLM Service Image
 ```bash
-podman build -f containers/Containerfile -t vllm-playground:minimal .
+podman build -f containers/Containerfile.cpu -t vllm-service:cpu .
+
+# Tag and push to registry (if needed)
+podman tag vllm-service:cpu quay.io/yourusername/vllm-service:cpu
+podman push quay.io/yourusername/vllm-service:cpu
 ```
 
-### Build Lightweight Image (with WebUI deps)
+### Build macOS vLLM Service Image
 ```bash
-podman build -f containers/Containerfile.app -t vllm-playground:lightweight .
+podman build -f containers/Containerfile.mac -t vllm-service:macos .
 ```
 
-### Build Full Image (GPU) - if Containerfile.cuda exists
+### Build Web UI Orchestrator (Local)
 ```bash
-podman build -f containers/Containerfile.cuda -t vllm-playground:cuda .
+podman build -f containers/Containerfile.vllm-playground -t vllm-playground:latest .
 ```
 
-### Build vLLM Server Image - if Containerfile.vllm exists
+### Build Web UI Orchestrator (OpenShift)
 ```bash
-podman build -f containers/Containerfile.vllm -t vllm-playground:vllm .
+podman build -f openshift/Containerfile -t vllm-playground-webui:latest .
 ```
 
-## Run Instructions
+## Usage
 
-All variants use the same run command:
+### Local Development (Podman)
 
+**Option 1: Just run the Web UI** (Recommended)
 ```bash
+# Start Web UI - it will pull/manage vLLM containers automatically
+python run.py
+# Open http://localhost:7860
+# Click "Start Server" - vLLM container starts automatically
+```
+
+**Option 2: Run everything in containers**
+```bash
+# Start Web UI container
 podman run -d \
   -p 7860:7860 \
-  -p 8000:8000 \
+  -v /var/run/podman/podman.sock:/var/run/podman/podman.sock:z \
   --name vllm-playground \
-  vllm-playground:minimal
+  vllm-playground:latest
 ```
 
-For GPU support (with CUDA):
-```bash
-podman run -d \
-  -p 7860:7860 \
-  -p 8000:8000 \
-  --device nvidia.com/gpu=all \
-  --security-opt=label=disable \
-  --name vllm-playground \
-  vllm-playground:cuda
-```
+### OpenShift/Kubernetes Deployment
 
-## Expected Image Sizes
+See [../openshift/README.md](../openshift/README.md) and [../openshift/QUICK_START.md](../openshift/QUICK_START.md) for detailed deployment instructions.
 
-| Variant | Compressed | Uncompressed | Build Time | Startup Time |
-|---------|-----------|--------------|------------|--------------|
-| **minimal** | ~500MB | ~800MB - 1.2GB | ~3-5 min | Instant (no deps) |
-| **lightweight** | ~800MB | ~2GB - 3GB | ~5-10 min | Fast (only vLLM needed) |
-| **cuda** | ~6GB | ~15GB - 20GB | ~30-60 min | Ready immediately |
+## Container Images Repository
 
-## Comparison Chart
+| Image | Registry | Public | Authentication |
+|-------|----------|--------|----------------|
+| Web UI (OpenShift) | `quay.io/rh_ee_micyang/vllm-playground:0.2` | ✅ Yes | ❌ None |
+| vLLM GPU | `vllm/vllm-openai:v0.11.0` | ✅ Yes | ❌ None |
+| vLLM CPU | `quay.io/rh_ee_micyang/vllm-service:cpu` | ✅ Yes | ❌ None |
+| vLLM macOS | Local build only | N/A | N/A |
 
-```
-Feature                  | minimal | lightweight | cuda
-------------------------|---------|-------------|------
-Base OS                  |    ✅   |     ✅      |  ✅
-Python 3.11              |    ✅   |     ✅      |  ✅
-Build Tools              |    ✅   |     ✅      |  ✅
-Virtual Environment      |    ❌   |     ✅      |  ✅
-WebUI Dependencies       |    ❌   |     ✅      |  ✅
-PyTorch                  |    ❌   |     ❌      |  ✅
-vLLM                     |    ❌   |     ❌      |  ✅
-CUDA Support             |    ❌   |     ❌      |  ✅
-------------------------|---------|-------------|------
-Image Size               | ~1.2GB  |   ~2GB      | ~15GB
-Setup Required           |   High  |   Medium    |  None
-Flexibility              |   High  |   Medium    |  Low
-Network/Storage Impact   |   Low   |   Medium    |  High
-```
-
-## Recommendation
-
-- **Development/Testing**: Use `Containerfile` (ultra-minimal with build tools)
-- **Production (GPU)**: Use `Containerfile.cuda` if you have storage
-- **Production (CPU)**: Use `Containerfile.app` (lightweight) and install vllm-cpu-only
-- **Edge/IoT**: Use `Containerfile` (smallest with build capability)
-- **Air-gapped**: Use `Containerfile.cuda` (everything pre-bundled)
-
-## OpenShift/Kubernetes Deployment
-
-For OpenShift deployments, the ultra-minimal variant is recommended:
-
-```yaml
-# Use in your deployment YAML
-spec:
-  containers:
-  - name: vllm-playground
-    image: your-registry/vllm-playground:0.1
-    # Container includes build tools (gcc, git)
-    # Users install dependencies manually after deployment
-```
-
-See `deployments/` directory for complete examples.
+**Note:** All container images used in production are publicly accessible. No registry authentication or pull secrets are required.
 
 ## Troubleshooting
 
-### Image still too large?
+### Image Pull Errors
 
-If even the minimal image is too large, consider:
+All images are public - no authentication needed:
+```bash
+# Test GPU image pull
+podman pull vllm/vllm-openai:v0.11.0
 
-1. **Use a different base image**: Alpine Linux (~5MB base) instead of UBI9
-2. **Multi-stage builds**: Build in one stage, copy only runtime files to final stage
-3. **Distroless images**: Google's distroless Python images
-4. **External dependencies**: Mount requirements from a volume instead of copying
+# Test CPU image pull
+podman pull quay.io/rh_ee_micyang/vllm-service:cpu
+```
 
-### Build fails with space issues?
+### Build Fails with Space Issues
 
 ```bash
 # Clean up build cache
 podman system prune -a
 
 # Build with no cache
-podman build --no-cache -f containers/Containerfile.minimal -t vllm-playground:minimal .
+podman build --no-cache -f containers/Containerfile.cpu -t vllm-service:cpu .
 ```
 
-### Container starts but dependencies missing?
+### Container Starts But Dependencies Missing
 
-This is expected for minimal/lightweight variants. Follow the installation instructions shown when the container starts, or check the startup script at `/home/vllm/start.sh`.
+This shouldn't happen with the current images. If it does:
+1. Check the container logs: `podman logs vllm-service`
+2. Verify the image was pulled correctly: `podman images`
+3. Try rebuilding (for custom images) or re-pulling (for public images)
 
-### "Address already in use" error when rerunning?
-
-If you lose connection and try to restart the playground:
-
-```
-ERROR: [Errno 98] error while attempting to bind on address ('0.0.0.0', 7860): address already in use
-```
-
-**Quick Fix**: Simply rerun the script - it will automatically detect and kill the old process:
-
-```bash
-python run.py
-```
-
-**Manual Fix**: Use the kill script:
-
-```bash
-python scripts/kill_playground.py
-```
-
-For detailed troubleshooting, see: [Container Troubleshooting Guide](../docs/CONTAINER_TROUBLESHOOTING.md)
+For detailed troubleshooting, see: [../docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)

@@ -48,6 +48,10 @@ logs/
 .env
 .env.local
 
+# OpenShift/Kubernetes secrets (DO NOT COMMIT!)
+openshift/manifests/00-secrets.yaml
+**/00-secrets.yaml
+
 # Coverage
 htmlcov/
 .coverage

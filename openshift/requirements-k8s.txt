@@ -1,0 +1,20 @@
+# Requirements for vLLM Playground Web UI on Kubernetes/OpenShift
+
+# Web framework
+fastapi>=0.104.0
+uvicorn>=0.24.0
+websockets>=12.0
+aiohttp>=3.9.0
+pydantic>=2.4.0
+python-multipart>=0.0.6
+numpy>=1.24.0
+jinja2>=3.1.0
+psutil>=5.9.0
+
+# vLLM tools
+#llmcompressor==0.7.1
+guidellm==0.3.0
+
+# Kubernetes Python client
+kubernetes>=28.0.0
+

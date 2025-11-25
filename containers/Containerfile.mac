@@ -1,20 +1,20 @@
-# vLLM Playground Container for macOS (CPU-only)
+# vLLM Service Container for macOS (CPU-only)
 # Based on Fedora Minimal (100% free, Red Hat family, ~50% smaller than standard Fedora)
-# Python 3.12 built from source
+# This container runs ONLY vLLM OpenAI-compatible API server
+# For use with vLLM-Playground container orchestrator
 
 FROM registry.fedoraproject.org/fedora-minimal:latest
 
 USER 0
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     VLLM_TARGET_DEVICE=cpu \
     VLLM_BUILD_WITH_CUDA=0 \
-    WEBUI_PORT=7860 \
-    VLLM_PORT=8000 \
+    VLLM_LOGGING_LEVEL=DEBUG \
     HOME=/home/vllm \
-    PYTHON_VERSION=3.12.7
-
-# Install Python 3.12 and build dependencies (using microdnf for Fedora Minimal)
+    PYTHON_VERSION=3.12.7 
+# Install Python 3.12 and build dependencies for vLLM CPU backend
 RUN microdnf install -y \
     python3.12 \
     python3.12-devel \
@@ -25,6 +25,8 @@ RUN microdnf install -y \
     numactl-devel \
     openssl \
     curl \
+    which \
+    findutils \
     && microdnf clean all && \
     ln -sf /usr/bin/python3.12 /usr/bin/python3 && \
     python3.12 -m ensurepip --upgrade && \
@@ -33,50 +35,131 @@ RUN microdnf install -y \
 # Create non-root user
 RUN useradd -m -u 1001 -s /bin/bash vllm
 
-# Switch back to default user
+# Switch to non-root user
 USER 1001
 
 # Set working directory
 WORKDIR ${HOME}
 
-# Create and activate virtual environment, then build vLLM from source
+# Create virtual environment and build vLLM from source for CPU
+# CPU backend MUST be built with VLLM_TARGET_DEVICE=cpu set during build
+# Using regular install (not editable) so we can clean up source files
 RUN python3 -m venv vllm_env && \
     source vllm_env/bin/activate && \
     git clone --single-branch --branch releases/v0.11.0 https://github.com/vllm-project/vllm.git && \
     cd vllm && \
     pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir torch torchvision && \
+    pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
     export VLLM_TARGET_DEVICE=cpu && \
     export VLLM_BUILD_WITH_CUDA=0 && \
-    pip install --no-cache-dir -e .
+    pip install --no-cache-dir -v . && \
+    echo "=== Verifying vLLM installation ===" && \
+    python3 -c "import vllm; print(f'vLLM version: {vllm.__version__}')" && \
+    python3 -c "from vllm import SamplingParams; print('SamplingParams import: OK')" && \
+    echo "=== vLLM installation verified ===" && \
+    cd ${HOME} && \
+    rm -rf vllm && \
+    echo "=== Source files cleaned up ==="
+# Expose vLLM API port
+EXPOSE 8000
 
-# Copy the vLLM Playground project files
-COPY --chown=1001:1001 . ${HOME}/vllm-playground/
+# Create clean startup script using heredoc
+RUN cat > ${HOME}/start_vllm.sh << 'EOF'
+#!/bin/bash
+set -e
 
-# Install WebUI dependencies
-RUN source vllm_env/bin/activate && \
-    cd vllm-playground && \
-    pip install --no-cache-dir -r requirements.txt
+echo "=== Startup Script Debug ==="
+echo "Python version: $(python3 --version)"
+echo "Activating virtual environment..."
 
-# Expose ports
-# 7860 - WebUI interface
-# 8000 - vLLM API server (default)
-EXPOSE 7860 8000
+source ${HOME}/vllm_env/bin/activate
 
-# Set the working directory to the WebUI
-WORKDIR ${HOME}/vllm-playground
+echo "Virtual environment activated"
+echo "Python location: $(which python3)"
+echo "Pip location: $(which pip3)"
 
-# Create a startup script
-RUN echo '#!/bin/bash' > ${HOME}/start.sh && \
-    echo 'source ${HOME}/vllm_env/bin/activate' >> ${HOME}/start.sh && \
-    echo 'cd ${HOME}/vllm-playground' >> ${HOME}/start.sh && \
-    echo 'exec python3 run.py' >> ${HOME}/start.sh && \
-    chmod +x ${HOME}/start.sh
+# Check if vLLM is installed
+echo "Checking vLLM installation..."
+if ! python3 -c "import vllm" 2>/dev/null; then
+    echo "ERROR: vLLM is not installed or cannot be imported!"
+    echo "Attempting to show vLLM version anyway..."
+    pip3 show vllm || echo "vLLM package not found"
+    exit 1
+fi
 
-# Set entrypoint
-ENTRYPOINT ["/bin/bash", "-c", "${HOME}/start.sh"]
+echo "vLLM version: $(python3 -c 'import vllm; print(vllm.__version__)' 2>/dev/null || echo 'unknown')"
+echo "=== End Debug ==="
+echo ""
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-    CMD curl -f http://localhost:7860/api/status || exit 1
+# Force CPU mode (critical for macOS) - these MUST be set before vLLM starts
+export VLLM_TARGET_DEVICE=${VLLM_TARGET_DEVICE:-cpu}
+export VLLM_PLATFORM=${VLLM_PLATFORM:-cpu}
+export CUDA_VISIBLE_DEVICES=""
+
+# CPU performance tuning (configurable from UI)
+export VLLM_CPU_KVCACHE_SPACE=${VLLM_CPU_KVCACHE_SPACE:-4}
+export VLLM_CPU_OMP_THREADS_BIND=${VLLM_CPU_OMP_THREADS_BIND:-auto}
+
+# Configurable parameters (can be passed by orchestrator)
+MODEL=${VLLM_MODEL:-"TinyLlama/TinyLlama-1.1B-Chat-v1.0"}
+HOST=${VLLM_HOST:-"0.0.0.0"}
+PORT=${VLLM_PORT:-8000}
+DTYPE=${VLLM_DTYPE:-"bfloat16"}
+MAX_MODEL_LEN=${VLLM_MAX_MODEL_LEN:-""}
+TRUST_REMOTE_CODE=${VLLM_TRUST_REMOTE_CODE:-""}
+CHAT_TEMPLATE=${VLLM_CHAT_TEMPLATE:-""}
+
+echo "=========================================="
+echo "vLLM Service Container (CPU Mode)"
+echo "=========================================="
+echo "Model: $MODEL"
+echo "Host: $HOST"
+echo "Port: $PORT"
+echo "Dtype: $DTYPE"
+echo "Platform: $VLLM_PLATFORM"
+echo "Device: $VLLM_TARGET_DEVICE"
+echo "CPU KV Cache Space: $VLLM_CPU_KVCACHE_SPACE GB"
+echo "CPU OMP Threads Bind: $VLLM_CPU_OMP_THREADS_BIND"
+echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
+[ -n "$MAX_MODEL_LEN" ] && echo "Max Model Length: $MAX_MODEL_LEN"
+echo "=========================================="
+echo ""
+echo "Environment variables check:"
+env | grep VLLM || echo "No VLLM env vars found"
+echo ""
+
+# Build command
+CMD="python3 -m vllm.entrypoints.openai.api_server"
+CMD="$CMD --model $MODEL"
+CMD="$CMD --host $HOST"
+CMD="$CMD --port $PORT"
+CMD="$CMD --dtype $DTYPE"
+
+# Add optional parameters
+[ -n "$MAX_MODEL_LEN" ] && CMD="$CMD --max-model-len $MAX_MODEL_LEN"
+[ "$TRUST_REMOTE_CODE" = "true" ] && CMD="$CMD --trust-remote-code"
+[ -n "$CHAT_TEMPLATE" ] && CMD="$CMD --chat-template $CHAT_TEMPLATE"
+
+echo "Starting vLLM with: $CMD"
+echo ""
+echo "If the container exits here, check: podman logs vllm-service-test"
+echo ""
+
+# Run with error handling
+set +e
+$CMD
+EXIT_CODE=$?
+echo ""
+echo "vLLM exited with code: $EXIT_CODE"
+exit $EXIT_CODE
+EOF
+
+RUN chmod +x ${HOME}/start_vllm.sh
+
+# Use CMD for easier override if needed
+CMD ["/bin/bash", "/home/vllm/start_vllm.sh"]
+
+# Health check - verify vLLM API is responding
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
+    CMD curl -f http://localhost:8000/health || curl -f http://localhost:8000/v1/models || exit 1
 

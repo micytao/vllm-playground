@@ -61,6 +61,13 @@ class VLLMWebUI {
             modeGpuLabel: document.getElementById('mode-gpu-label'),
             modeHelpText: document.getElementById('mode-help-text'),
             cpuSettings: document.getElementById('cpu-settings'),
+            
+            // Run mode elements
+            runModeSubprocess: document.getElementById('run-mode-subprocess'),
+            runModeContainer: document.getElementById('run-mode-container'),
+            runModeSubprocessLabel: document.getElementById('run-mode-subprocess-label'),
+            runModeContainerLabel: document.getElementById('run-mode-container-label'),
+            runModeHelpText: document.getElementById('run-mode-help-text'),
             gpuSettings: document.getElementById('gpu-settings'),
             
             // GPU settings
@@ -190,6 +197,9 @@ class VLLMWebUI {
         // Initialize compute mode (CPU is default)
         this.toggleComputeMode();
         
+        // Initialize run mode (Subprocess is default)
+        this.toggleRunMode();
+        
         // Initialize model source (HF Hub is default)
         this.toggleModelSource();
         
@@ -227,6 +237,10 @@ class VLLMWebUI {
         // CPU/GPU mode toggle
         this.elements.modeCpu.addEventListener('change', () => this.toggleComputeMode());
         this.elements.modeGpu.addEventListener('change', () => this.toggleComputeMode());
+        
+        // Run mode toggle
+        this.elements.runModeSubprocess.addEventListener('change', () => this.toggleRunMode());
+        this.elements.runModeContainer.addEventListener('change', () => this.toggleRunMode());
         
         // Model Source toggle
         this.elements.modelSourceHub.addEventListener('change', () => this.toggleModelSource());
@@ -525,6 +539,24 @@ class VLLMWebUI {
         this.updateCommandPreview();
     }
 
+    toggleRunMode() {
+        const isSubprocess = this.elements.runModeSubprocess.checked;
+        
+        // Update button active states
+        if (isSubprocess) {
+            this.elements.runModeSubprocessLabel.classList.add('active');
+            this.elements.runModeContainerLabel.classList.remove('active');
+            this.elements.runModeHelpText.textContent = 'Subprocess: Direct execution (simpler, local dev)';
+        } else {
+            this.elements.runModeSubprocessLabel.classList.remove('active');
+            this.elements.runModeContainerLabel.classList.add('active');
+            this.elements.runModeHelpText.textContent = 'Container: Isolated environment (recommended for production)';
+        }
+        
+        // Update command preview
+        this.updateCommandPreview();
+    }
+
     toggleModelSource() {
         const isLocalModel = this.elements.modelSourceLocal.checked;
         
@@ -808,12 +840,16 @@ class VLLMWebUI {
         const isCpuMode = this.elements.modeCpu.checked;
         const hfToken = this.elements.hfToken.value.trim();
         
+        // Get run mode (subprocess or container)
+        const runMode = document.getElementById('run-mode-subprocess').checked ? 'subprocess' : 'container';
+        
         const config = {
             model: model,
             host: this.elements.host.value,
             port: parseInt(this.elements.port.value),
             dtype: this.elements.dtype.value,
             max_model_len: maxModelLen ? parseInt(maxModelLen) : null,
+            run_mode: runMode,  // Add run_mode to config
             trust_remote_code: this.elements.trustRemoteCode.checked,
             enable_prefix_caching: this.elements.enablePrefixCaching.checked,
             disable_log_stats: this.elements.disableLogStats.checked,
@@ -910,7 +946,8 @@ class VLLMWebUI {
             this.addLog(`Model: ${config.model}`, 'info');
         }
         
-        this.addLog(`Mode: ${config.use_cpu ? 'CPU' : 'GPU'}`, 'info');
+        this.addLog(`Run Mode: ${config.run_mode === 'subprocess' ? 'Subprocess (Direct)' : 'Container (Isolated)'}`, 'info');
+        this.addLog(`Compute Mode: ${config.use_cpu ? 'CPU' : 'GPU'}`, 'info');
         
         try {
             const response = await fetch('/api/start', {
@@ -927,7 +964,16 @@ class VLLMWebUI {
             }
             
             const data = await response.json();
-            this.addLog(`✅ Server started with PID: ${data.pid}`, 'success');
+            
+            // Log success with appropriate identifier
+            if (data.mode === 'container') {
+                this.addLog(`✅ Server started in container mode`, 'success');
+                this.addLog(`Container ID: ${data.container_id}`, 'info');
+            } else {
+                this.addLog(`✅ Server started in subprocess mode`, 'success');
+                this.addLog(`Process ID: ${data.pid}`, 'info');
+            }
+            
             this.addLog('⏳ Waiting for server initialization...', 'info');
             this.showNotification('Server started successfully', 'success');
             

@@ -1,0 +1,243 @@
+---
+# GPU-based deployment (default)
+# Uses official community vLLM CUDA image (publicly accessible)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-playground-gpu
+  namespace: vllm-playground
+  labels:
+    app: vllm-playground
+    mode: gpu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-playground
+      mode: gpu
+  template:
+    metadata:
+      labels:
+        app: vllm-playground
+        mode: gpu
+    spec:
+      serviceAccountName: vllm-playground-sa  # Important: Use SA with pod creation permissions
+      containers:
+      - name: webui
+        image: quay.io/rh_ee_micyang/vllm-playground:0.2
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 7860
+          name: http
+          protocol: TCP
+        env:
+        - name: KUBERNETES_NAMESPACE
+          valueFrom:
+            configMapKeyRef:
+              name: vllm-playground-config-gpu
+              key: KUBERNETES_NAMESPACE
+        - name: VLLM_IMAGE
+          valueFrom:
+            configMapKeyRef:
+              name: vllm-playground-config-gpu
+              key: VLLM_IMAGE
+        - name: USE_PERSISTENT_CACHE
+          valueFrom:
+            configMapKeyRef:
+              name: vllm-playground-config-gpu
+              key: USE_PERSISTENT_CACHE
+              optional: true
+        - name: MODEL_CACHE_PVC
+          valueFrom:
+            configMapKeyRef:
+              name: vllm-playground-config-gpu
+              key: MODEL_CACHE_PVC
+              optional: true
+        - name: WEBUI_PORT
+          value: "7860"
+        # Note: VLLM_IMAGE controls which container image is used
+        # when users click "Start Server" in the Web UI
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2"
+        livenessProbe:
+          httpGet:
+            path: /api/status
+            port: 7860
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/features
+            port: 7860
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+---
+# CPU-based deployment
+# Uses self-built optimized CPU image (publicly accessible on Quay.io)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-playground-cpu
+  namespace: vllm-playground
+  labels:
+    app: vllm-playground
+    mode: cpu
+spec:
+  replicas: 0  # Start with 0 replicas - user can scale up if needed
+  selector:
+    matchLabels:
+      app: vllm-playground
+      mode: cpu
+  template:
+    metadata:
+      labels:
+        app: vllm-playground
+        mode: cpu
+    spec:
+      serviceAccountName: vllm-playground-sa  # Important: Use SA with pod creation permissions
+      containers:
+      - name: webui
+        image: quay.io/rh_ee_micyang/vllm-playground:0.2
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 7860
+          name: http
+          protocol: TCP
+        env:
+        - name: KUBERNETES_NAMESPACE
+          valueFrom:
+            configMapKeyRef:
+              name: vllm-playground-config-cpu
+              key: KUBERNETES_NAMESPACE
+        - name: VLLM_IMAGE
+          valueFrom:
+            configMapKeyRef:
+              name: vllm-playground-config-cpu
+              key: VLLM_IMAGE
+        - name: USE_PERSISTENT_CACHE
+          valueFrom:
+            configMapKeyRef:
+              name: vllm-playground-config-cpu
+              key: USE_PERSISTENT_CACHE
+              optional: true
+        - name: MODEL_CACHE_PVC
+          valueFrom:
+            configMapKeyRef:
+              name: vllm-playground-config-cpu
+              key: MODEL_CACHE_PVC
+              optional: true
+        - name: WEBUI_PORT
+          value: "7860"
+        # Note: VLLM_IMAGE controls which container image is used
+        # when users click "Start Server" in the Web UI
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2"
+        livenessProbe:
+          httpGet:
+            path: /api/status
+            port: 7860
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/features
+            port: 7860
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+---
+# Service for Web UI (works with both GPU and CPU deployments)
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-playground
+  namespace: vllm-playground
+  labels:
+    app: vllm-playground
+spec:
+  type: ClusterIP
+  ports:
+  - port: 7860
+    targetPort: 7860
+    protocol: TCP
+    name: http
+  selector:
+    app: vllm-playground  # Selects pods from either deployment
+
+---
+# Route for OpenShift (replace with Ingress for vanilla Kubernetes)
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: vllm-playground
+  namespace: vllm-playground
+  annotations:
+    # Increase timeout for first request CUDA warmup (default is 30s)
+    haproxy.router.openshift.io/timeout: 120s
+spec:
+  to:
+    kind: Service
+    name: vllm-playground
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-playground
+  namespace: vllm-playground
+  labels:
+    app: vllm-playground
+spec:
+  type: ClusterIP
+  ports:
+  - port: 7860
+    targetPort: 7860
+    protocol: TCP
+    name: http
+  selector:
+    app: vllm-playground
+
+---
+# Route for OpenShift (replace with Ingress for vanilla Kubernetes)
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: vllm-playground
+  namespace: vllm-playground
+  annotations:
+    # Increase timeout for first request CUDA warmup (default is 30s)
+    haproxy.router.openshift.io/timeout: 120s
+spec:
+  to:
+    kind: Service
+    name: vllm-playground
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+

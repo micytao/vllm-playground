@@ -1,0 +1,54 @@
+---
+# ConfigMap for GPU-based clusters
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-playground-config-gpu
+  namespace: vllm-playground
+data:
+  # Kubernetes namespace where vLLM pods will be created
+  KUBERNETES_NAMESPACE: "vllm-playground"
+  
+  # GPU vLLM image - Official community vLLM image with CUDA support
+  # This image is used when users click "Start Server" in GPU clusters
+  # Publicly accessible from Docker Hub (no authentication needed)
+  VLLM_IMAGE: "vllm/vllm-openai:v0.11.0"
+  
+  # Web UI port
+  WEBUI_PORT: "7860"
+  
+  # Model cache persistence (optional)
+  # Set to "true" to use PVC for persistent model caching (faster subsequent starts)
+  # Set to "false" to use emptyDir (ephemeral, models re-downloaded each time)
+  USE_PERSISTENT_CACHE: "true"
+  
+  # PVC name for model cache (only used if USE_PERSISTENT_CACHE=true)
+  MODEL_CACHE_PVC: "vllm-model-cache"
+
+---
+# ConfigMap for CPU-based clusters
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-playground-config-cpu
+  namespace: vllm-playground
+data:
+  # Kubernetes namespace where vLLM pods will be created
+  KUBERNETES_NAMESPACE: "vllm-playground"
+  
+  # CPU vLLM image - Self-built optimized image for CPU workloads
+  # This image is built from Containerfile.cpu with CPU optimizations
+  # Publicly accessible on Quay.io (no authentication needed)
+  VLLM_IMAGE: "quay.io/rh_ee_micyang/vllm-service:cpu"
+  
+  # Web UI port
+  WEBUI_PORT: "7860"
+  
+  # Model cache persistence (optional)
+  # Set to "true" to use PVC for persistent model caching (faster subsequent starts)
+  # Set to "false" to use emptyDir (ephemeral, models re-downloaded each time)
+  USE_PERSISTENT_CACHE: "true"
+  
+  # PVC name for model cache (only used if USE_PERSISTENT_CACHE=true)
+  MODEL_CACHE_PVC: "vllm-model-cache"
+
