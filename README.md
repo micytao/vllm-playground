@@ -114,7 +114,7 @@ vllm-playground/
 │   ├── vllm-playground.png     # WebUI screenshot
 │   ├── guidellm.png            # GuideLLM benchmark results screenshot
 │   ├── vllm.png                # vLLM logo
-│   └── vllm.jpeg               # vLLM logo (alternate)
+│   └── vllm_only.png               # vLLM logo (alternate)
 │
 └── docs/                        # Documentation
     ├── QUICKSTART.md            # Quick start guide
