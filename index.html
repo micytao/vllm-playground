@@ -170,6 +170,22 @@
                                 <input type="number" id="gpu-memory" class="form-control" value="90" min="10" max="100" step="5">
                             </div>
                         </div>
+                        <div class="form-group">
+                            <label for="gpu-device">GPU Device (optional)</label>
+                            <input type="text" id="gpu-device" class="form-control" placeholder="0, 1, 0,1 (leave empty for auto)">
+                            <small class="form-help">Specify GPU device ID(s): 0, 1, 0,1, etc. Leave empty for auto-selection.</small>
+                        </div>
+                        
+                        <!-- GPU Status Display -->
+                        <div id="gpu-status-display" class="gpu-status-panel" style="display: none;">
+                            <div class="panel-header">
+                                <h3>🎮 GPU Status</h3>
+                                <span id="gpu-status-refresh" class="refresh-indicator" title="Auto-refresh every 5 seconds">🔄</span>
+                            </div>
+                            <div id="gpu-status-content" class="gpu-status-content">
+                                <div class="gpu-loading">Loading GPU status...</div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- CPU-specific settings (shown in CPU mode) -->

@@ -68,6 +68,7 @@ class VLLMWebUI {
             // GPU settings
             tensorParallel: document.getElementById('tensor-parallel'),
             gpuMemory: document.getElementById('gpu-memory'),
+            gpuDevice: document.getElementById('gpu-device'),
             
             // CPU settings
             cpuKvcache: document.getElementById('cpu-kvcache'),
@@ -178,6 +179,11 @@ class VLLMWebUI {
         // Start status polling
         this.pollStatus();
         setInterval(() => this.pollStatus(), 3000);
+        
+        // Add GPU status refresh button listener
+        document.getElementById('gpu-status-refresh').addEventListener('click', () => {
+            this.fetchGpuStatus();
+        });
     }
 
     attachListeners() {
@@ -402,6 +408,9 @@ class VLLMWebUI {
                 this.elements.modeHelpText.innerHTML = '⚠️ GPU not available - Running in CPU-only mode';
                 this.elements.modeHelpText.style.color = '#f59e0b';
                 
+                // Hide GPU status display
+                document.getElementById('gpu-status-display').style.display = 'none';
+                
                 console.warn('GPU is not available on this system');
                 this.addLog('[SYSTEM] GPU not detected - GPU mode disabled', 'warning');
             } else {
@@ -409,6 +418,12 @@ class VLLMWebUI {
                 console.log('GPU is available on this system');
                 this.elements.modeHelpText.innerHTML = 'CPU and GPU modes available. GPU recommended for larger models.';
                 this.addLog('[SYSTEM] GPU detected - Both CPU and GPU modes available', 'info');
+                
+                // Show GPU status display
+                document.getElementById('gpu-status-display').style.display = 'block';
+                
+                // Start GPU status polling
+                this.startGpuStatusPolling();
             }
         } catch (error) {
             console.error('Failed to check feature availability:', error);
@@ -458,6 +473,97 @@ class VLLMWebUI {
     updateStatus(state, text) {
         this.elements.statusDot.className = `status-dot ${state}`;
         this.elements.statusText.textContent = text;
+    }
+
+    // GPU Status Polling
+    startGpuStatusPolling() {
+        // Stop any existing polling
+        this.stopGpuStatusPolling();
+        
+        // Initial fetch
+        this.fetchGpuStatus();
+        
+        // Start polling every 5 seconds
+        this.gpuStatusInterval = setInterval(() => {
+            this.fetchGpuStatus();
+        }, 5000);
+    }
+
+    stopGpuStatusPolling() {
+        if (this.gpuStatusInterval) {
+            clearInterval(this.gpuStatusInterval);
+            this.gpuStatusInterval = null;
+        }
+    }
+
+    async fetchGpuStatus() {
+        try {
+            const refreshIndicator = document.getElementById('gpu-status-refresh');
+            refreshIndicator.classList.add('refreshing');
+            
+            const response = await fetch('/api/gpu-status');
+            const data = await response.json();
+            
+            refreshIndicator.classList.remove('refreshing');
+            this.renderGpuStatus(data);
+        } catch (error) {
+            console.error('Failed to fetch GPU status:', error);
+            document.getElementById('gpu-status-refresh').classList.remove('refreshing');
+            this.renderGpuStatusError('Failed to fetch GPU status');
+        }
+    }
+
+    renderGpuStatus(data) {
+        const contentElement = document.getElementById('gpu-status-content');
+        
+        if (!data.gpu_available || !data.gpus || data.gpus.length === 0) {
+            contentElement.innerHTML = '<div class="no-gpu">No GPU devices detected</div>';
+            return;
+        }
+
+        let html = '';
+        data.gpus.forEach(gpu => {
+            const memoryUsedPercent = (gpu.memory_used / gpu.memory_total) * 100;
+            const memoryFreeGB = (gpu.memory_total - gpu.memory_used) / 1024;
+            const memoryTotalGB = gpu.memory_total / 1024;
+            const memoryUsedGB = gpu.memory_used / 1024;
+
+            html += `
+                <div class="gpu-device">
+                    <div class="gpu-device-header">
+                        <span class="gpu-name">${gpu.name}</span>
+                        <span class="gpu-index">GPU ${gpu.index}</span>
+                    </div>
+                    <div class="gpu-memory">
+                        <div class="memory-info">
+                            <span>Memory: ${memoryFreeGB.toFixed(1)}GB free / ${memoryTotalGB.toFixed(1)}GB total</span>
+                            <span>${memoryUsedPercent.toFixed(1)}% used</span>
+                        </div>
+                        <div class="memory-bar">
+                            <div class="memory-used" style="width: ${memoryUsedPercent}%"></div>
+                        </div>
+                    </div>
+                    <div class="gpu-utilization">
+                        <span class="utilization-label">GPU Utilization:</span>
+                        <span class="utilization-value">${gpu.utilization_gpu}%</span>
+                        <div class="utilization-bar">
+                            <div class="utilization-fill" style="width: ${gpu.utilization_gpu}%"></div>
+                        </div>
+                    </div>
+                    <div class="gpu-temperature">
+                        <span class="temp-icon">🌡️</span>
+                        <span class="temp-value">${gpu.temperature}°C</span>
+                    </div>
+                </div>
+            `;
+        });
+
+        contentElement.innerHTML = html;
+    }
+
+    renderGpuStatusError(message) {
+        const contentElement = document.getElementById('gpu-status-content');
+        contentElement.innerHTML = `<div class="gpu-error">${message}</div>`;
     }
 
     toggleComputeMode() {
@@ -826,6 +932,11 @@ class VLLMWebUI {
             config.tensor_parallel_size = parseInt(this.elements.tensorParallel.value);
             config.gpu_memory_utilization = parseFloat(this.elements.gpuMemory.value) / 100;
             config.load_format = "auto";
+            // GPU device selection
+            const gpuDevice = this.elements.gpuDevice.value.trim();
+            if (gpuDevice) {
+                config.gpu_device = gpuDevice;
+            }
         }
         
         return config;
@@ -1580,8 +1691,15 @@ class VLLMWebUI {
             }
         } else {
             // GPU mode: use openai.api_server
+            const gpuDevice = this.elements.gpuDevice.value.trim();
+            
+            if (gpuDevice) {
+                cmd = `# GPU Device Selection:\n`;
+                cmd += `export CUDA_VISIBLE_DEVICES=${gpuDevice}\n\n`;
+            }
+            
             if (hfToken) {
-                cmd = `# Set HF token for gated models:\n`;
+                cmd += `# Set HF token for gated models:\n`;
                 cmd += `export HF_TOKEN=[YOUR_TOKEN]\n\n`;
             }
             cmd += `python -m vllm.entrypoints.openai.api_server`;
@@ -2677,6 +2795,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load saved layout preferences
     window.vllmUI.loadLayoutPreferences();
     
-    
+    // Add cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+        if (window.vllmUI) {
+            window.vllmUI.stopGpuStatusPolling();
+        }
+    });
 });
 

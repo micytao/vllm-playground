@@ -86,6 +86,8 @@ class VLLMConfig(BaseModel):
     local_model_path: Optional[str] = None
     # Run mode: subprocess or container
     run_mode: Literal["subprocess", "container"] = "subprocess"
+    # GPU device selection for subprocess mode (e.g., "0", "1", "0,1" for multi-GPU)
+    gpu_device: Optional[str] = None
 
 
 class ChatMessage(BaseModel):
@@ -726,6 +728,67 @@ async def get_hardware_capabilities():
     }
 
 
+@app.get("/api/gpu-status")
+async def get_gpu_status():
+    """
+    Get detailed GPU status information including memory usage and utilization
+    """
+    gpu_info = []
+    
+    try:
+        # Use nvidia-smi to get detailed GPU information
+        result = subprocess.run([
+            'nvidia-smi', 
+            '--query-gpu=index,name,memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu',
+            '--format=csv,noheader,nounits'
+        ], capture_output=True, text=True, timeout=5)
+        
+        if result.returncode == 0 and result.stdout.strip():
+            lines = result.stdout.strip().split('\n')
+            for line in lines:
+                parts = [p.strip() for p in line.split(',')]
+                if len(parts) >= 7:
+                    gpu_info.append({
+                        "index": int(parts[0]),
+                        "name": parts[1],
+                        "memory_used": int(parts[2]),
+                        "memory_total": int(parts[3]),
+                        "memory_free": int(parts[4]),
+                        "utilization": int(parts[5]),
+                        "temperature": int(parts[6])
+                    })
+        
+        return {
+            "gpu_available": len(gpu_info) > 0,
+            "gpu_count": len(gpu_info),
+            "gpus": gpu_info
+        }
+        
+    except FileNotFoundError:
+        logger.info("nvidia-smi not found - no GPU status available")
+        return {
+            "gpu_available": False,
+            "gpu_count": 0,
+            "gpus": []
+        }
+    except subprocess.TimeoutExpired:
+        logger.warning("nvidia-smi timeout")
+        return {
+            "gpu_available": False,
+            "gpu_count": 0,
+            "gpus": [],
+            "error": "GPU query timeout"
+        }
+    except Exception as e:
+        logger.warning(f"Error getting GPU status: {e}")
+        return {
+            "gpu_available": False,
+            "gpu_count": 0,
+            "gpus": [],
+            "error": str(e)
+        }
+
+
 @app.post("/api/start")
 async def start_server(config: VLLMConfig):
     """Start the vLLM server in subprocess or container mode"""
@@ -826,6 +889,12 @@ async def start_server(config: VLLMConfig):
             await broadcast_log("[WEBUI] HuggingFace token configured for gated models")
         elif os.environ.get('HF_TOKEN'):
             await broadcast_log("[WEBUI] Using HF_TOKEN from environment")
+        
+        # Set GPU device selection for subprocess mode
+        if not config.use_cpu and config.gpu_device and config.run_mode == "subprocess":
+            env['CUDA_VISIBLE_DEVICES'] = config.gpu_device
+            logger.info(f"GPU Device Selection - CUDA_VISIBLE_DEVICES={config.gpu_device}")
+            await broadcast_log(f"[WEBUI] GPU Device Selection - CUDA_VISIBLE_DEVICES={config.gpu_device}")
         
         if config.use_cpu:
             env['VLLM_CPU_KVCACHE_SPACE'] = str(config.cpu_kvcache_space)
