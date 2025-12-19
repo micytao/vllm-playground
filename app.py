@@ -3,6 +3,7 @@ vLLM Playground - A web interface for managing and interacting with vLLM
 CONTAINERIZED VERSION - Uses Podman to run vLLM in containers
 """
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -1662,6 +1663,444 @@ async def list_models():
     ]
     
     return {"models": common_models}
+
+
+@app.get("/api/recipes")
+async def get_recipes():
+    """
+    Get the vLLM community recipes catalog.
+    
+    Returns recipes organized by model family (DeepSeek, Qwen, Llama, etc.)
+    with optimized configurations for each model.
+    
+    Source: https://github.com/vllm-project/recipes
+    """
+    recipes_file = BASE_DIR / "recipes" / "recipes_catalog.json"
+    
+    if not recipes_file.exists():
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": "Recipes catalog not found",
+                "message": "Run 'python recipes/sync_recipes.py' to fetch recipes"
+            }
+        )
+    
+    try:
+        with open(recipes_file, "r") as f:
+            catalog = json.load(f)
+        return catalog
+    except Exception as e:
+        logger.error(f"Error loading recipes catalog: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to load recipes: {str(e)}"}
+        )
+
+
+@app.get("/api/recipes/{category_id}")
+async def get_recipes_by_category(category_id: str):
+    """
+    Get recipes for a specific model family/category.
+    
+    Args:
+        category_id: Category identifier (e.g., 'qwen', 'llama', 'deepseek')
+    """
+    recipes_file = BASE_DIR / "recipes" / "recipes_catalog.json"
+    
+    if not recipes_file.exists():
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Recipes catalog not found"}
+        )
+    
+    try:
+        with open(recipes_file, "r") as f:
+            catalog = json.load(f)
+        
+        for category in catalog.get("categories", []):
+            if category["id"] == category_id:
+                return category
+        
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Category '{category_id}' not found"}
+        )
+    except Exception as e:
+        logger.error(f"Error loading recipes: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to load recipes: {str(e)}"}
+        )
+
+
+@app.get("/api/recipes/{category_id}/{recipe_id}")
+async def get_recipe_config(category_id: str, recipe_id: str):
+    """
+    Get the configuration for a specific recipe.
+    
+    Args:
+        category_id: Category identifier (e.g., 'qwen', 'llama')
+        recipe_id: Recipe identifier (e.g., 'qwen3-8b', 'llama3.1-8b')
+        
+    Returns:
+        Recipe configuration ready to be loaded into the playground
+    """
+    recipes_file = BASE_DIR / "recipes" / "recipes_catalog.json"
+    
+    if not recipes_file.exists():
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Recipes catalog not found"}
+        )
+    
+    try:
+        with open(recipes_file, "r") as f:
+            catalog = json.load(f)
+        
+        for category in catalog.get("categories", []):
+            if category["id"] == category_id:
+                for recipe in category.get("recipes", []):
+                    if recipe["id"] == recipe_id:
+                        return {
+                            "recipe": recipe,
+                            "category": {
+                                "id": category["id"],
+                                "name": category["name"]
+                            }
+                        }
+        
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Recipe '{recipe_id}' not found in category '{category_id}'"}
+        )
+    except Exception as e:
+        logger.error(f"Error loading recipe: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to load recipe: {str(e)}"}
+        )
+
+
+@app.post("/api/recipes/sync")
+async def sync_recipes(request: Optional[dict] = None):
+    """
+    Sync recipes from the vLLM recipes GitHub repository.
+    
+    This endpoint runs the sync_recipes.py script to fetch the latest
+    recipes and update the local catalog.
+    
+    Request body (optional):
+        {"github_token": "ghp_xxxxx"}  - GitHub token for higher rate limits
+    
+    Returns:
+        Dictionary with sync status and any discovered updates
+    """
+    import subprocess
+    import sys
+    
+    # Get GitHub token from request body if provided
+    github_token = None
+    if request and isinstance(request, dict):
+        github_token = request.get('github_token')
+    
+    sync_script = BASE_DIR / "recipes" / "sync_recipes.py"
+    
+    if not sync_script.exists():
+        return JSONResponse(
+            status_code=404,
+            content={
+                "success": False,
+                "error": "Sync script not found",
+                "message": "recipes/sync_recipes.py is missing"
+            }
+        )
+    
+    try:
+        # Check if requests is installed
+        try:
+            import requests
+        except ImportError:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": "Missing dependency",
+                    "message": "The 'requests' package is required. Install with: pip install requests"
+                }
+            )
+        
+        # Run the sync script
+        logger.info("Starting recipes sync from GitHub...")
+        
+        # Prepare environment with optional GitHub token
+        env = os.environ.copy()
+        if github_token:
+            env['GITHUB_TOKEN'] = github_token
+            logger.info("Using provided GitHub token for higher rate limits")
+        
+        result = subprocess.run(
+            [sys.executable, str(sync_script)],
+            capture_output=True,
+            text=True,
+            timeout=60,  # 60 second timeout
+            cwd=str(BASE_DIR),
+            env=env
+        )
+        
+        if result.returncode == 0:
+            # Parse output for summary
+            output_lines = result.stdout.strip().split('\n')
+            
+            # Reload the catalog to get updated data
+            recipes_file = BASE_DIR / "recipes" / "recipes_catalog.json"
+            catalog_info = {}
+            if recipes_file.exists():
+                with open(recipes_file, "r") as f:
+                    catalog = json.load(f)
+                    catalog_info = {
+                        "categories": len(catalog.get("categories", [])),
+                        "last_updated": catalog.get("metadata", {}).get("last_updated", "unknown"),
+                        "total_recipes": sum(
+                            len(cat.get("recipes", [])) 
+                            for cat in catalog.get("categories", [])
+                        )
+                    }
+            
+            logger.info(f"Recipes sync completed successfully: {catalog_info}")
+            
+            return {
+                "success": True,
+                "message": "Recipes synced successfully from GitHub",
+                "catalog": catalog_info,
+                "output": result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout  # Limit output size
+            }
+        else:
+            # Combine stdout and stderr for better error reporting
+            error_output = result.stderr or result.stdout or "Unknown error (no output)"
+            logger.error(f"Recipes sync failed: {error_output}")
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "error": "Sync failed",
+                    "message": error_output[-1000:] if len(error_output) > 1000 else error_output,
+                    "return_code": result.returncode
+                }
+            )
+            
+    except subprocess.TimeoutExpired:
+        logger.error("Recipes sync timed out")
+        return JSONResponse(
+            status_code=504,
+            content={
+                "success": False,
+                "error": "Timeout",
+                "message": "Sync operation timed out. GitHub may be slow or rate-limited."
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error syncing recipes: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(type(e).__name__),
+                "message": str(e)
+            }
+        )
+
+
+@app.post("/api/recipes/save")
+async def save_recipe(request: dict):
+    """
+    Save (add or update) a recipe in the catalog.
+    
+    Request body:
+    {
+        "category_id": "deepseek",
+        "recipe": { ... recipe data ... },
+        "is_new": true/false,
+        "original_recipe_id": "old-id" (if editing),
+        "original_category_id": "old-category" (if moving),
+        "new_category_name": "New Category" (if creating new category)
+    }
+    """
+    try:
+        recipes_file = BASE_DIR / "recipes" / "recipes_catalog.json"
+        
+        if not recipes_file.exists():
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "error": "Recipes catalog not found"}
+            )
+        
+        # Load current catalog
+        with open(recipes_file, "r") as f:
+            catalog = json.load(f)
+        
+        category_id = request.get("category_id")
+        recipe_data = request.get("recipe")
+        is_new = request.get("is_new", True)
+        original_recipe_id = request.get("original_recipe_id")
+        original_category_id = request.get("original_category_id")
+        new_category_name = request.get("new_category_name")
+        
+        if not category_id or not recipe_data:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "error": "Missing category_id or recipe data"}
+            )
+        
+        # Find or create category
+        category = None
+        for cat in catalog.get("categories", []):
+            if cat["id"] == category_id:
+                category = cat
+                break
+        
+        if not category:
+            # Create new category
+            category = {
+                "id": category_id,
+                "name": new_category_name or category_id.replace("-", " ").title(),
+                "description": f"{new_category_name or category_id} models",
+                "recipes": []
+            }
+            catalog["categories"].append(category)
+            logger.info(f"Created new category: {category_id}")
+        
+        # If editing (not new) and moving from different category, remove from old
+        if not is_new and original_category_id and original_category_id != category_id:
+            for cat in catalog.get("categories", []):
+                if cat["id"] == original_category_id:
+                    cat["recipes"] = [r for r in cat.get("recipes", []) if r["id"] != original_recipe_id]
+                    logger.info(f"Removed recipe {original_recipe_id} from {original_category_id}")
+                    break
+        
+        # Add or update recipe in target category
+        if is_new:
+            # Check for duplicate ID
+            existing_ids = {r["id"] for r in category.get("recipes", [])}
+            if recipe_data["id"] in existing_ids:
+                # Generate unique ID
+                base_id = recipe_data["id"]
+                counter = 1
+                while f"{base_id}-{counter}" in existing_ids:
+                    counter += 1
+                recipe_data["id"] = f"{base_id}-{counter}"
+            
+            category.setdefault("recipes", []).append(recipe_data)
+            logger.info(f"Added new recipe: {recipe_data['id']} to {category_id}")
+        else:
+            # Update existing recipe
+            recipe_found = False
+            for i, r in enumerate(category.get("recipes", [])):
+                if r["id"] == (original_recipe_id or recipe_data["id"]):
+                    category["recipes"][i] = recipe_data
+                    recipe_found = True
+                    logger.info(f"Updated recipe: {recipe_data['id']} in {category_id}")
+                    break
+            
+            if not recipe_found:
+                # Recipe not found in target category, add it
+                category.setdefault("recipes", []).append(recipe_data)
+                logger.info(f"Added recipe (update-as-new): {recipe_data['id']} to {category_id}")
+        
+        # Update metadata
+        from datetime import datetime
+        catalog.setdefault("metadata", {})["last_updated"] = datetime.now().strftime("%Y-%m-%d")
+        
+        # Save catalog
+        with open(recipes_file, "w") as f:
+            json.dump(catalog, f, indent=2)
+        
+        return {
+            "success": True,
+            "message": f"Recipe {'added' if is_new else 'updated'} successfully",
+            "recipe_id": recipe_data["id"],
+            "category_id": category_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error saving recipe: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@app.post("/api/recipes/delete")
+async def delete_recipe(request: dict):
+    """
+    Delete a recipe from the catalog.
+    
+    Request body:
+    {
+        "category_id": "deepseek",
+        "recipe_id": "deepseek-r1"
+    }
+    """
+    try:
+        recipes_file = BASE_DIR / "recipes" / "recipes_catalog.json"
+        
+        if not recipes_file.exists():
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "error": "Recipes catalog not found"}
+            )
+        
+        category_id = request.get("category_id")
+        recipe_id = request.get("recipe_id")
+        
+        if not category_id or not recipe_id:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "error": "Missing category_id or recipe_id"}
+            )
+        
+        # Load current catalog
+        with open(recipes_file, "r") as f:
+            catalog = json.load(f)
+        
+        # Find category and remove recipe
+        recipe_deleted = False
+        for cat in catalog.get("categories", []):
+            if cat["id"] == category_id:
+                original_count = len(cat.get("recipes", []))
+                cat["recipes"] = [r for r in cat.get("recipes", []) if r["id"] != recipe_id]
+                if len(cat["recipes"]) < original_count:
+                    recipe_deleted = True
+                    logger.info(f"Deleted recipe: {recipe_id} from {category_id}")
+                break
+        
+        if not recipe_deleted:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "error": "Recipe not found"}
+            )
+        
+        # Update metadata
+        from datetime import datetime
+        catalog.setdefault("metadata", {})["last_updated"] = datetime.now().strftime("%Y-%m-%d")
+        
+        # Save catalog
+        with open(recipes_file, "w") as f:
+            json.dump(catalog, f, indent=2)
+        
+        return {
+            "success": True,
+            "message": "Recipe deleted successfully",
+            "recipe_id": recipe_id,
+            "category_id": category_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error deleting recipe: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
 
 
 @app.post("/api/models/validate-local")

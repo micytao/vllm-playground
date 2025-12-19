@@ -65,6 +65,11 @@
                         </select>
                         <small class="form-help">All models support chat interface. Gated models require HF token below.</small>
                         <input type="text" id="custom-model" class="form-control" placeholder="Or enter custom model name">
+                        
+                        <!-- Community Recipes Button -->
+                        <button id="browse-recipes-btn" class="btn btn-secondary btn-sm browse-recipes-btn">
+                            📚 Browse Community Recipes
+                        </button>
                     </div>
 
                     <!-- Local Model Path Section (hidden by default) -->
@@ -605,6 +610,57 @@
                 </div>
             </div>
         </section>
+    </div>
+
+    <!-- Community Recipes Modal -->
+    <div id="recipes-modal" class="modal" style="display: none;">
+        <div class="modal-overlay" id="recipes-modal-overlay"></div>
+        <div class="modal-content recipes-modal-content">
+            <div class="modal-header">
+                <h2>📚 vLLM Community Recipes</h2>
+                <button id="recipes-modal-close" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="recipes-intro">
+                    Optimized configurations from the 
+                    <a href="https://github.com/vllm-project/recipes" target="_blank">vLLM Recipes Repository</a>.
+                    Select a recipe to auto-configure the playground.
+                </p>
+                
+                <!-- Sync Controls -->
+                <div class="sync-controls-section">
+                    <button id="sync-recipes-btn" class="btn btn-secondary btn-sm" title="Sync recipes from GitHub">
+                        🔄 Sync
+                    </button>
+                    <button id="add-recipe-btn" class="btn btn-primary btn-sm" onclick="window.vllmUI.openAddRecipeModal()" title="Add a new recipe manually">
+                        <span class="add-icon">+</span> Add
+                    </button>
+                    <div class="github-token-inline">
+                        <input type="password" id="github-token-input" class="form-control" 
+                               placeholder="GitHub Token (optional, for higher rate limits)">
+                        <a href="https://github.com/settings/tokens" target="_blank" class="token-help-link" title="Get a token">?</a>
+                    </div>
+                </div>
+                
+                <!-- Search/Filter -->
+                <div class="recipes-search">
+                    <input type="text" id="recipes-search-input" class="form-control" placeholder="Search models...">
+                    <div class="recipes-filter-tags" id="recipes-filter-tags">
+                        <button class="tag-btn active" data-tag="all">All</button>
+                        <button class="tag-btn" data-tag="single-gpu">Single GPU</button>
+                        <button class="tag-btn" data-tag="multi-gpu">Multi GPU</button>
+                        <button class="tag-btn" data-tag="cpu">CPU</button>
+                        <button class="tag-btn" data-tag="vision">Vision</button>
+                        <button class="tag-btn" data-tag="reasoning">Reasoning</button>
+                    </div>
+                </div>
+                
+                <!-- Categories List -->
+                <div id="recipes-categories" class="recipes-categories">
+                    <div class="recipes-loading">Loading recipes...</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="/static/js/app.js"></script>

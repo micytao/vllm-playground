@@ -38,6 +38,29 @@ Integrated GuideLLM for comprehensive performance benchmarking and analysis. Run
 
 ![GuideLLM Benchmark Results](assets/guidellm.png)
 
+## 📚 New: vLLM Community Recipes
+
+**One-click model configurations from the official [vLLM Recipes Repository](https://github.com/vllm-project/recipes)!** Browse community-maintained configurations for popular models like DeepSeek, Qwen, Llama, Mistral, and more.
+
+![vLLM Recipes Browser](assets/vllm-recipes-1.png)
+
+*Browse 17+ model categories with optimized configurations - just click "Load Config" to auto-fill all settings!*
+
+![vLLM Recipes Details](assets/vllm-recipes-2.png)
+
+*Each recipe includes hardware requirements, vLLM parameters, and direct links to documentation.*
+
+**Key Features:**
+- ✅ **One-Click Configuration**: Load optimized vLLM settings instantly
+- ✅ **Community-Maintained**: Syncs with official vLLM recipes repository
+- ✅ **Searchable Catalog**: Filter by model name, category, or tags (multi-gpu, vision, reasoning, etc.)
+- ✅ **Hardware Guidance**: See recommended GPU configurations for each model
+- ✅ **Custom Recipes**: Add, edit, or delete your own recipes
+- ✅ **GitHub Sync**: Update catalog from GitHub with optional token for higher rate limits
+
+**Supported Model Families:**
+DeepSeek, Qwen, Llama, Mistral, InternVL, GLM, NVIDIA Nemotron, Moonshot AI (Kimi), MiniMax, Jina AI, Tencent Hunyuan, Ernie, OpenAI, PaddlePaddle, Seed, inclusionAI, and CPU-friendly models.
+
 ## 🔧 Model Compression
 
 **Looking for model compression and quantization?** Check out the separate **[LLMCompressor Playground](https://github.com/micytao/llmcompressor-playground)** project for:
@@ -110,11 +133,17 @@ vllm-playground/
 │   ├── scripts/                # Demo shell scripts
 │   └── docs/                   # Demo documentation
 │
+├── recipes/                     # 🆕 vLLM Community Recipes 📚
+│   ├── recipes_catalog.json    # Model configurations catalog
+│   └── sync_recipes.py         # GitHub sync script
+│
 ├── assets/                      # Images and assets
 │   ├── vllm-playground.png     # WebUI screenshot
 │   ├── guidellm.png            # GuideLLM benchmark results screenshot
+│   ├── vllm-recipes-1.png      # 🆕 Recipes browser screenshot
+│   ├── vllm-recipes-2.png      # 🆕 Recipes details screenshot
 │   ├── vllm.png                # vLLM logo
-│   └── vllm_only.png               # vLLM logo (alternate)
+│   └── vllm_only.png           # vLLM logo (alternate)
 │
 └── docs/                        # Documentation
     ├── QUICKSTART.md            # Quick start guide
@@ -293,6 +322,12 @@ nano config/vllm_cpu.env
   - Token throughput analysis (mean/median tokens per second)
   - Latency percentiles (P50, P75, P90, P95, P99)
   - Configurable load patterns and request rates
+- **📚 vLLM Community Recipes**: One-click model configurations 🆕
+  - Browse 17+ model categories from official vLLM recipes
+  - One-click configuration loading for optimized settings
+  - Searchable by model name, category, or tags
+  - Add, edit, or sync custom recipes
+  - Hardware requirements and documentation links
 - **Server Management**: Start/stop vLLM servers from the UI
 - **Chat Interface**: Interactive chat with streaming responses
 - **Smart Chat Templates**: Automatic model-specific template detection

@@ -1,0 +1,1215 @@
+{
+  "metadata": {
+    "source": "https://github.com/vllm-project/recipes",
+    "last_updated": "2025-12-20",
+    "description": "Community-maintained recipes for running models with vLLM"
+  },
+  "categories": [
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "description": "DeepSeek AI models including R1, V3, and OCR variants",
+      "recipes": [
+        {
+          "id": "deepseek-ocr",
+          "name": "DeepSeek-OCR",
+          "description": "DeepSeek-OCR is a frontier OCR model exploring optical context compression for LLMs.",
+          "model_id": "deepseek-ai/DeepSeek-OCR",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/DeepSeek",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {},
+          "tags": [
+            "chat",
+            "ocr",
+            "instruct",
+            "multimodal",
+            "tpu",
+            "vision",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "deepseek-v3",
+          "name": "DeepSeek-V3 (R1)",
+          "description": "DeepSeek-V3 (R1) - from vLLM recipes",
+          "model_id": "deepseek-ai/DeepSeek-R1-0528",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/DeepSeek",
+          "hardware": {
+            "recommended": "8x H200",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 8,
+            "max_model_len": 65536,
+            "gpu_memory_utilization": 0.95,
+            "trust_remote_code": true,
+            "enable_expert_parallel": true,
+            "data_parallel_size": 8
+          },
+          "tags": [
+            "coding",
+            "fp8",
+            "moe",
+            "large",
+            "vision",
+            "tpu",
+            "multi-gpu"
+          ]
+        },
+        {
+          "id": "deepseek-v3-1",
+          "name": "DeepSeek-V3.1",
+          "description": "DeepSeek-V3.1 is a hybrid model that supports both thinking mode and non-thinking mode.",
+          "model_id": "deepseek-ai/DeepSeek-V3.1",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/DeepSeek",
+          "hardware": {
+            "recommended": "8x H200",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 8,
+            "enable_expert_parallel": true
+          },
+          "tags": [
+            "chat",
+            "moe",
+            "large",
+            "vision",
+            "tpu",
+            "multi-gpu",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "deepseek-v3-2-exp",
+          "name": "DeepSeek-V3.2-Exp",
+          "description": "DeepSeek-V3.2-Exp is a sparse attention model.",
+          "model_id": "deepseek-ai/DeepSeek-V3.2-Exp",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/DeepSeek",
+          "hardware": {
+            "recommended": "8x H200",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "enable_expert_parallel": true
+          },
+          "tags": [
+            "fp8",
+            "moe",
+            "vision",
+            "reasoning",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "deepseek-v3-2",
+          "name": "DeepSeek-V3.2",
+          "description": "DeepSeek-V3.2  is a model that balances computational efficiency with strong reasoning and agent capabilities through three technical innovations:\n- **DeepSeek Sparse Attention (DSA):** An efficient a...",
+          "model_id": "deepseek-ai/DeepSeek-V3.2",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/DeepSeek",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 8,
+            "trust_remote_code": true
+          },
+          "tags": [
+            "multi-gpu",
+            "tpu",
+            "vision",
+            "chat",
+            "reasoning",
+            "coding",
+            "large"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "qwen",
+      "name": "Qwen",
+      "description": "Alibaba's Qwen model family including Qwen3 and vision models",
+      "recipes": [
+        {
+          "id": "qwen3-72b",
+          "name": "Qwen3-72B",
+          "description": "Qwen3 72B - State-of-the-art open model",
+          "model_id": "Qwen/Qwen3-72B",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Qwen",
+          "hardware": {
+            "recommended": "4x H100 80GB",
+            "minimum": "2x A100 80GB"
+          },
+          "config": {
+            "tensor_parallel_size": 4,
+            "max_model_len": 32768,
+            "dtype": "bfloat16",
+            "trust_remote_code": false,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "large",
+            "multi-gpu",
+            "chat"
+          ]
+        },
+        {
+          "id": "qwen3-8b",
+          "name": "Qwen3-8B",
+          "description": "Qwen3 8B - Efficient and capable model",
+          "model_id": "Qwen/Qwen3-8B",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Qwen",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 3090"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 32768,
+            "dtype": "auto",
+            "trust_remote_code": false,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "efficient",
+            "single-gpu",
+            "chat"
+          ]
+        },
+        {
+          "id": "qwen2.5-vl",
+          "name": "Qwen2.5-VL",
+          "description": "Qwen2.5 Vision-Language model for multimodal tasks",
+          "model_id": "Qwen/Qwen2.5-VL-7B-Instruct",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Qwen",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 4090"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 8192,
+            "dtype": "bfloat16",
+            "trust_remote_code": true,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "vision",
+            "multimodal",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "qwen3-coder",
+          "name": "Qwen3-Coder-480B-A35B",
+          "description": "Qwen3 Coder - Massive coding-focused MoE model",
+          "model_id": "Qwen/Qwen3-Coder-480B-A35B",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Qwen",
+          "hardware": {
+            "recommended": "8x H100 80GB",
+            "minimum": "8x A100 80GB"
+          },
+          "config": {
+            "tensor_parallel_size": 8,
+            "max_model_len": 131072,
+            "dtype": "bfloat16",
+            "trust_remote_code": true,
+            "gpu_memory_utilization": 0.95
+          },
+          "tags": [
+            "coding",
+            "moe",
+            "large",
+            "multi-gpu"
+          ]
+        },
+        {
+          "id": "qwen3-coder-480b-a35b",
+          "name": "Qwen3-Coder",
+          "description": "Qwen3-Coder - from vLLM recipes",
+          "model_id": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Qwen",
+          "hardware": {
+            "recommended": "8x H200",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 8,
+            "max_model_len": 32000,
+            "enable_expert_parallel": true,
+            "data_parallel_size": 8
+          },
+          "tags": [
+            "multi-gpu",
+            "tpu",
+            "moe",
+            "vision",
+            "instruct",
+            "fp8",
+            "coding",
+            "large"
+          ]
+        },
+        {
+          "id": "qwen3-next",
+          "name": "Qwen3-Next",
+          "description": "Qwen3-Next - from vLLM recipes",
+          "model_id": "Qwen/Qwen3-Next-80B-A3B-Instruct",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Qwen",
+          "hardware": {
+            "recommended": "4x H200",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 4,
+            "gpu_memory_utilization": 0.8
+          },
+          "tags": [
+            "multi-gpu",
+            "tpu",
+            "moe",
+            "vision",
+            "instruct",
+            "fp8"
+          ]
+        },
+        {
+          "id": "qwen3-vl",
+          "name": "Qwen3-VL",
+          "description": "Qwen3-VL - from vLLM recipes",
+          "model_id": "Qwen/Qwen3-VL-235B-A22B-Instruct-FP8",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Qwen",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 8,
+            "max_model_len": 128000,
+            "gpu_memory_utilization": 0.95,
+            "enable_expert_parallel": true
+          },
+          "tags": [
+            "multi-gpu",
+            "tpu",
+            "moe",
+            "vision",
+            "instruct",
+            "embeddings",
+            "multimodal",
+            "chat",
+            "fp8",
+            "reasoning",
+            "coding",
+            "large"
+          ]
+        },
+        {
+          "id": "qwen3guard-gen",
+          "name": "Qwen3Guard-Gen",
+          "description": "Qwen3Guard-Gen - from vLLM recipes",
+          "model_id": "Qwen/Qwen3Guard-Gen-0.6B",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Qwen",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "max_model_len": 32768
+          },
+          "tags": [
+            "vision",
+            "chat",
+            "single-gpu",
+            "tpu"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "llama",
+      "name": "Llama",
+      "description": "Meta's Llama model family including Llama 3, 3.1, and 4",
+      "recipes": [
+        {
+          "id": "llama4-scout",
+          "name": "Llama4-Scout",
+          "description": "Llama 4 Scout - Latest Llama generation",
+          "model_id": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Llama",
+          "hardware": {
+            "recommended": "4x H100 80GB",
+            "minimum": "2x A100 80GB"
+          },
+          "config": {
+            "tensor_parallel_size": 4,
+            "max_model_len": 131072,
+            "dtype": "bfloat16",
+            "trust_remote_code": false,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "latest",
+            "moe",
+            "multi-gpu"
+          ],
+          "requires_hf_token": true
+        },
+        {
+          "id": "llama3.3-70b",
+          "name": "Llama 3.3 70B",
+          "description": "Llama 3.3 70B - High-performance instruct model",
+          "model_id": "meta-llama/Llama-3.3-70B-Instruct",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Llama",
+          "hardware": {
+            "recommended": "4x A100 80GB",
+            "minimum": "2x A100 80GB"
+          },
+          "config": {
+            "tensor_parallel_size": 4,
+            "max_model_len": 8192,
+            "dtype": "auto",
+            "trust_remote_code": false,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "instruct",
+            "large",
+            "multi-gpu"
+          ],
+          "requires_hf_token": true
+        },
+        {
+          "id": "llama3.1-8b",
+          "name": "Llama 3.1 8B",
+          "description": "Llama 3.1 8B Instruct - Efficient and capable",
+          "model_id": "meta-llama/Llama-3.1-8B-Instruct",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Llama",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 3090"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 8192,
+            "dtype": "auto",
+            "trust_remote_code": false,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "instruct",
+            "efficient",
+            "single-gpu"
+          ],
+          "requires_hf_token": true
+        }
+      ]
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral",
+      "description": "Mistral AI models including Mistral, Mixtral, and Ministral",
+      "recipes": [
+        {
+          "id": "mistral-large-3",
+          "name": "Mistral Large 3 Instruct",
+          "description": "Mistral Large 3 - High-performance instruct model",
+          "model_id": "mistralai/Mistral-Large-Instruct-2411",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Mistral",
+          "hardware": {
+            "recommended": "4x H100 80GB",
+            "minimum": "2x A100 80GB"
+          },
+          "config": {
+            "tensor_parallel_size": 4,
+            "max_model_len": 32768,
+            "dtype": "bfloat16",
+            "trust_remote_code": false,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "large",
+            "instruct",
+            "multi-gpu"
+          ]
+        },
+        {
+          "id": "ministral-3-instruct",
+          "name": "Ministral 3 Instruct",
+          "description": "Ministral 3B - Compact and efficient",
+          "model_id": "mistralai/Ministral-3B-Instruct",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Mistral",
+          "hardware": {
+            "recommended": "1x RTX 4090",
+            "minimum": "1x RTX 3080"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 32768,
+            "dtype": "auto",
+            "trust_remote_code": false,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "compact",
+            "efficient",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "ministral-3-reasoning",
+          "name": "Ministral 3 Reasoning",
+          "description": "Ministral 3B optimized for reasoning tasks",
+          "model_id": "mistralai/Ministral-3B-Reasoning",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Mistral",
+          "hardware": {
+            "recommended": "1x RTX 4090",
+            "minimum": "1x RTX 3080"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 32768,
+            "dtype": "auto",
+            "trust_remote_code": false,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "reasoning",
+            "compact",
+            "single-gpu"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "internvl",
+      "name": "InternVL / InternLM",
+      "description": "Shanghai AI Lab's vision-language and language models",
+      "recipes": [
+        {
+          "id": "internvl3.5",
+          "name": "InternVL3.5",
+          "description": "InternVL3.5 - Advanced vision-language model",
+          "model_id": "OpenGVLab/InternVL3-8B",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/InternVL",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 4090"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 8192,
+            "dtype": "bfloat16",
+            "trust_remote_code": true,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "vision",
+            "multimodal",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "intern-s1",
+          "name": "Intern-S1",
+          "description": "InternLM S1 - Efficient language model",
+          "model_id": "internlm/internlm3-8b-instruct",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/InternLM",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 3090"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 32768,
+            "dtype": "auto",
+            "trust_remote_code": true,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "efficient",
+            "instruct",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "internvl3-5",
+          "name": "InternVL3.5",
+          "description": "InternVL3.5 - from vLLM recipes",
+          "model_id": "OpenGVLab/InternVL3_5-8B",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/InternVL",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "trust_remote_code": true
+          },
+          "tags": [
+            "single-gpu",
+            "vision",
+            "chat",
+            "reasoning",
+            "coding"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "glm",
+      "name": "GLM",
+      "description": "THUDM's GLM model family",
+      "recipes": [
+        {
+          "id": "glm-4.5",
+          "name": "GLM-4.5 / GLM-4.6",
+          "description": "GLM 4.5/4.6 - Powerful general-purpose models",
+          "model_id": "THUDM/glm-4-9b-chat",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/GLM",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 4090"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 8192,
+            "dtype": "bfloat16",
+            "trust_remote_code": true,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "chat",
+            "chinese",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "glm-4.5v",
+          "name": "GLM-4.5V / GLM-4.6V",
+          "description": "GLM Vision models for multimodal tasks",
+          "model_id": "THUDM/glm-4v-9b",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/GLM",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 4090"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 4096,
+            "dtype": "bfloat16",
+            "trust_remote_code": true,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "vision",
+            "multimodal",
+            "chinese",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "glm-v",
+          "name": "GLM-4V",
+          "description": "GLM-4V - from vLLM recipes",
+          "model_id": "zai-org/GLM-4.5V-FP8",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/GLM",
+          "hardware": {
+            "recommended": "4x H100",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 4,
+            "max_model_len": 65536,
+            "gpu_memory_utilization": 0.95,
+            "enable_expert_parallel": true
+          },
+          "tags": [
+            "multi-gpu",
+            "tpu",
+            "moe",
+            "vision",
+            "instruct",
+            "chat",
+            "fp8",
+            "reasoning",
+            "coding"
+          ]
+        },
+        {
+          "id": "glyph",
+          "name": "Glyph",
+          "description": "Glyph is a framework from Zhipu AI for scaling the context length through visual-text compression.",
+          "model_id": "zai-org/Glyph",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/GLM",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {},
+          "tags": [
+            "tpu",
+            "single-gpu",
+            "vision",
+            "multimodal",
+            "ocr",
+            "chat",
+            "reasoning"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nvidia",
+      "name": "NVIDIA",
+      "description": "NVIDIA's Nemotron model family",
+      "recipes": [
+        {
+          "id": "nemotron-nano-30b",
+          "name": "Nemotron-3-Nano-30B-A3B",
+          "description": "NVIDIA Nemotron Nano - Efficient MoE model",
+          "model_id": "nvidia/Nemotron-3-Nano-30B-A3B-Base",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/NVIDIA",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 4090"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 8192,
+            "dtype": "auto",
+            "trust_remote_code": false,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "moe",
+            "efficient",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "nemotron-nano-12b-vl",
+          "name": "Nemotron-Nano-12B-v2-VL",
+          "description": "NVIDIA Nemotron VL - Vision-language model",
+          "model_id": "nvidia/Nemotron-Nano-12B-v2-VL",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/NVIDIA",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 4090"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 4096,
+            "dtype": "bfloat16",
+            "trust_remote_code": true,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "vision",
+            "multimodal",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "nemotron-3-nano-30b-a3b",
+          "name": "NVIDIA Nemotron-3-Nano-30B-A3B User",
+          "description": "NVIDIA Nemotron-3-Nano-30B-A3B User - from vLLM recipes",
+          "model_id": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/NVIDIA",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "trust_remote_code": true
+          },
+          "tags": [
+            "tpu",
+            "single-gpu",
+            "moe",
+            "vision",
+            "fp8",
+            "coding"
+          ]
+        },
+        {
+          "id": "nemotron-nano-12b-v2-vl",
+          "name": "NVIDIA Nemotron-Nano-12B-v2-VL User",
+          "description": "NVIDIA Nemotron-Nano-12B-v2-VL User - from vLLM recipes",
+          "model_id": "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/NVIDIA",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "max_model_len": 131072,
+            "trust_remote_code": true,
+            "data_parallel_size": 1
+          },
+          "tags": [
+            "tpu",
+            "single-gpu",
+            "vision",
+            "chat",
+            "fp8",
+            "coding"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "moonshotai",
+      "name": "Moonshot AI (Kimi)",
+      "description": "Moonshot AI's Kimi model family",
+      "recipes": [
+        {
+          "id": "kimi-k2",
+          "name": "Kimi-K2",
+          "description": "Kimi K2 - High-performance MoE model",
+          "model_id": "moonshotai/Kimi-K2-Instruct",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/moonshotai",
+          "hardware": {
+            "recommended": "8x H100 80GB",
+            "minimum": "4x A100 80GB"
+          },
+          "config": {
+            "tensor_parallel_size": 8,
+            "max_model_len": 131072,
+            "dtype": "bfloat16",
+            "trust_remote_code": true,
+            "gpu_memory_utilization": 0.95
+          },
+          "tags": [
+            "moe",
+            "large",
+            "multi-gpu"
+          ]
+        },
+        {
+          "id": "kimi-k2-think",
+          "name": "Kimi-K2-Think",
+          "description": "Kimi K2 optimized for reasoning",
+          "model_id": "moonshotai/Kimi-K2-Think",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/moonshotai",
+          "hardware": {
+            "recommended": "8x H100 80GB",
+            "minimum": "4x A100 80GB"
+          },
+          "config": {
+            "tensor_parallel_size": 8,
+            "max_model_len": 131072,
+            "dtype": "bfloat16",
+            "trust_remote_code": true,
+            "gpu_memory_utilization": 0.95
+          },
+          "tags": [
+            "reasoning",
+            "moe",
+            "large",
+            "multi-gpu"
+          ]
+        },
+        {
+          "id": "kimi-linear",
+          "name": "Kimi-Linear",
+          "description": "Kimi-Linear - from vLLM recipes",
+          "model_id": "moonshotai/Kimi-Linear-48B-A3B-Instruct",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/moonshotai",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 4,
+            "max_model_len": 1048576,
+            "trust_remote_code": true
+          },
+          "tags": [
+            "multi-gpu",
+            "vision",
+            "instruct",
+            "chat",
+            "coding"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "minimax",
+      "name": "MiniMax",
+      "description": "MiniMax AI models",
+      "recipes": [
+        {
+          "id": "minimax-m2",
+          "name": "MiniMax-M2",
+          "description": "MiniMax M2 - Efficient instruction-following model",
+          "model_id": "MiniMaxAI/MiniMax-M2-7B",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/MiniMax",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 4090"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 8192,
+            "dtype": "auto",
+            "trust_remote_code": true,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "efficient",
+            "instruct",
+            "single-gpu"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "jina",
+      "name": "Jina AI",
+      "description": "Jina AI embedding and reranker models",
+      "recipes": [
+        {
+          "id": "jina-reranker-m0",
+          "name": "Jina Reranker M0",
+          "description": "Jina Reranker - Document reranking model",
+          "model_id": "jinaai/jina-reranker-m0",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Jina",
+          "hardware": {
+            "recommended": "1x RTX 3090",
+            "minimum": "1x RTX 3070"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 8192,
+            "dtype": "auto",
+            "trust_remote_code": true,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "reranking",
+            "embeddings",
+            "single-gpu"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hunyuan",
+      "name": "Tencent Hunyuan",
+      "description": "Tencent's Hunyuan model family",
+      "recipes": [
+        {
+          "id": "hunyuan-ocr",
+          "name": "HunyuanOCR",
+          "description": "Hunyuan OCR - Document understanding model",
+          "model_id": "Tencent-Hunyuan/HunyuanCustom",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Tencent-Hunyuan",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 4090"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "max_model_len": 4096,
+            "dtype": "bfloat16",
+            "trust_remote_code": true,
+            "gpu_memory_utilization": 0.9
+          },
+          "tags": [
+            "ocr",
+            "vision",
+            "document",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "hunyuanocr",
+          "name": "HunyuanOCR",
+          "description": "HunyuanOCR stands as a leading end-to-end OCR expert VLM powered by Hunyuan's native multimodal architecture.",
+          "model_id": "tencent/HunyuanOCR",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Tencent-Hunyuan",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {},
+          "tags": [
+            "single-gpu",
+            "moe",
+            "vision",
+            "multimodal",
+            "ocr",
+            "chat"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cpu-friendly",
+      "name": "CPU-Friendly Models",
+      "description": "Models optimized for CPU inference (ideal for macOS/development)",
+      "recipes": [
+        {
+          "id": "tinyllama-cpu",
+          "name": "TinyLlama 1.1B (CPU)",
+          "description": "TinyLlama - Perfect for CPU inference and testing",
+          "model_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+          "docs_url": "https://docs.vllm.ai/en/stable/getting_started/installation/cpu.html",
+          "hardware": {
+            "recommended": "16GB RAM",
+            "minimum": "8GB RAM"
+          },
+          "config": {
+            "use_cpu": true,
+            "max_model_len": 2048,
+            "dtype": "bfloat16",
+            "cpu_kvcache_space": 4,
+            "trust_remote_code": false
+          },
+          "tags": [
+            "cpu",
+            "compact",
+            "testing"
+          ]
+        },
+        {
+          "id": "qwen3-0.6b-cpu",
+          "name": "Qwen3-0.6B (CPU)",
+          "description": "Qwen3 0.6B - Ultra-compact for CPU",
+          "model_id": "Qwen/Qwen3-0.6B",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Qwen",
+          "hardware": {
+            "recommended": "8GB RAM",
+            "minimum": "4GB RAM"
+          },
+          "config": {
+            "use_cpu": true,
+            "max_model_len": 2048,
+            "dtype": "bfloat16",
+            "cpu_kvcache_space": 2,
+            "trust_remote_code": false
+          },
+          "tags": [
+            "cpu",
+            "ultra-compact",
+            "testing"
+          ]
+        },
+        {
+          "id": "opt-125m-cpu",
+          "name": "OPT-125M (CPU)",
+          "description": "Facebook OPT 125M - Minimal testing model",
+          "model_id": "facebook/opt-125m",
+          "docs_url": "https://docs.vllm.ai/en/stable/getting_started/installation/cpu.html",
+          "hardware": {
+            "recommended": "4GB RAM",
+            "minimum": "2GB RAM"
+          },
+          "config": {
+            "use_cpu": true,
+            "max_model_len": 1024,
+            "dtype": "bfloat16",
+            "cpu_kvcache_space": 1,
+            "trust_remote_code": false
+          },
+          "tags": [
+            "cpu",
+            "minimal",
+            "testing"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ernie",
+      "name": "Ernie",
+      "description": "Ernie models from vLLM recipes",
+      "recipes": [
+        {
+          "id": "ernie4.5-vl",
+          "name": "Ernie4.5 VL Model",
+          "description": "Ernie4.5 VL Model - from vLLM recipes",
+          "model_id": "baidu/ERNIE-4.5-VL-28B-A3B-PT",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Ernie",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 8,
+            "trust_remote_code": true
+          },
+          "tags": [
+            "multi-gpu",
+            "tpu",
+            "moe",
+            "vision",
+            "fp8",
+            "coding",
+            "large"
+          ]
+        },
+        {
+          "id": "ernie4.5",
+          "name": "Ernie4.5 Text Model",
+          "description": "Ernie4.5 Text Model - from vLLM recipes",
+          "model_id": "baidu/ERNIE-4.5-21B-A3B-PT",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Ernie",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 8,
+            "gpu_memory_utilization": 0.95
+          },
+          "tags": [
+            "multi-gpu",
+            "tpu",
+            "vision",
+            "fp8",
+            "coding",
+            "large"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "description": "OpenAI models from vLLM recipes",
+      "recipes": [
+        {
+          "id": "gpt-oss",
+          "name": "openai/gpt-oss-20b should run on a single A100",
+          "description": "openai/gpt-oss-20b should run on a single A100 - from vLLM recipes",
+          "model_id": "openai/gpt-oss-20b",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/OpenAI",
+          "hardware": {
+            "recommended": "8x H100",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 2,
+            "max_model_len": 131072,
+            "gpu_memory_utilization": 0.85,
+            "trust_remote_code": true
+          },
+          "tags": [
+            "multi-gpu",
+            "tpu",
+            "moe",
+            "vision",
+            "instruct",
+            "chat",
+            "fp8",
+            "reasoning",
+            "coding"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "paddle",
+      "name": "PaddlePaddle",
+      "description": "PaddlePaddle models from vLLM recipes",
+      "recipes": [
+        {
+          "id": "paddleocr-vl",
+          "name": "PaddleOCR-VL",
+          "description": "PaddleOCR-VL is a SOTA and resource-efficient model tailored for document parsing.",
+          "model_id": "PaddlePaddle/PaddleOCR-VL",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/PaddlePaddle",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "trust_remote_code": true
+          },
+          "tags": [
+            "tpu",
+            "single-gpu",
+            "vision",
+            "multimodal",
+            "ocr",
+            "chat",
+            "coding"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "seed",
+      "name": "Seed",
+      "description": "Seed models from vLLM recipes",
+      "recipes": [
+        {
+          "id": "seed-oss-36b",
+          "name": "Seed-OSS-36B",
+          "description": "Seed-OSS-36B - from vLLM recipes",
+          "model_id": "ByteDance-Seed/Seed-OSS-36B-Instruct",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/Seed",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 8,
+            "max_model_len": 65536,
+            "gpu_memory_utilization": 0.95
+          },
+          "tags": [
+            "multi-gpu",
+            "tpu",
+            "vision",
+            "instruct",
+            "chat",
+            "reasoning",
+            "coding",
+            "large"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inclusionai",
+      "name": "inclusionAI",
+      "description": "inclusionAI models from vLLM recipes",
+      "recipes": [
+        {
+          "id": "ring-1t-fp8",
+          "name": "Ring-1T-FP8",
+          "description": "Ring-1T-FP8 - from vLLM recipes",
+          "model_id": "inclusionAI/Ring-1T-FP8",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/inclusionAI",
+          "hardware": {
+            "recommended": "8x H200",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "tensor_parallel_size": 8,
+            "max_model_len": 65536,
+            "gpu_memory_utilization": 0.97,
+            "trust_remote_code": true
+          },
+          "tags": [
+            "multi-gpu",
+            "vision",
+            "chat",
+            "fp8",
+            "coding",
+            "large"
+          ]
+        }
+      ]
+    }
+  ]
+}

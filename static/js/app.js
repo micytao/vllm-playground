@@ -44,6 +44,15 @@ class VLLMWebUI {
             localModelPath: document.getElementById('local-model-path'),
             browseFolderBtn: document.getElementById('browse-folder-btn'),
             validatePathBtn: document.getElementById('validate-path-btn'),
+            browseRecipesBtn: document.getElementById('browse-recipes-btn'),
+            recipesModal: document.getElementById('recipes-modal'),
+            recipesModalOverlay: document.getElementById('recipes-modal-overlay'),
+            recipesModalClose: document.getElementById('recipes-modal-close'),
+            recipesSearchInput: document.getElementById('recipes-search-input'),
+            recipesFilterTags: document.getElementById('recipes-filter-tags'),
+            recipesCategories: document.getElementById('recipes-categories'),
+            syncRecipesBtn: document.getElementById('sync-recipes-btn'),
+            githubTokenInput: document.getElementById('github-token-input'),
             localModelValidation: document.getElementById('local-model-validation'),
             validationIcon: document.getElementById('validation-icon'),
             validationMessage: document.getElementById('validation-message'),
@@ -206,6 +215,30 @@ class VLLMWebUI {
         // Local model path validation and browse
         this.elements.browseFolderBtn.addEventListener('click', () => this.browseForFolder());
         this.elements.validatePathBtn.addEventListener('click', () => this.validateLocalModelPath());
+        
+        // Community Recipes modal
+        if (this.elements.browseRecipesBtn) {
+            this.elements.browseRecipesBtn.addEventListener('click', () => this.openRecipesModal());
+        }
+        if (this.elements.recipesModalClose) {
+            this.elements.recipesModalClose.addEventListener('click', () => this.closeRecipesModal());
+        }
+        if (this.elements.recipesModalOverlay) {
+            this.elements.recipesModalOverlay.addEventListener('click', () => this.closeRecipesModal());
+        }
+        if (this.elements.recipesSearchInput) {
+            this.elements.recipesSearchInput.addEventListener('input', () => this.filterRecipes());
+        }
+        if (this.elements.recipesFilterTags) {
+            this.elements.recipesFilterTags.addEventListener('click', (e) => {
+                if (e.target.classList.contains('tag-btn')) {
+                    this.filterRecipesByTag(e.target.dataset.tag);
+                }
+            });
+        }
+        if (this.elements.syncRecipesBtn) {
+            this.elements.syncRecipesBtn.addEventListener('click', () => this.syncRecipesFromGitHub());
+        }
         
         // Optional: validate on blur (can be removed if you want manual-only validation)
         this.elements.localModelPath.addEventListener('blur', () => {
@@ -2760,7 +2793,794 @@ class VLLMWebUI {
         }
     }
     
+    // ===============================================
+    // COMMUNITY RECIPES
+    // ===============================================
+    
+    recipesData = null;
+    currentRecipeFilter = 'all';
+    
+    async openRecipesModal() {
+        if (this.elements.recipesModal) {
+            this.elements.recipesModal.style.display = 'flex';
+            
+            // Load recipes if not already loaded
+            if (!this.recipesData) {
+                await this.loadRecipes();
+            }
+            this.renderRecipes();
         }
+    }
+    
+    closeRecipesModal() {
+        if (this.elements.recipesModal) {
+            this.elements.recipesModal.style.display = 'none';
+        }
+    }
+    
+    async loadRecipes() {
+        try {
+            const response = await fetch('/api/recipes');
+            if (response.ok) {
+                this.recipesData = await response.json();
+            } else {
+                console.error('Failed to load recipes');
+                this.recipesData = { categories: [] };
+            }
+        } catch (error) {
+            console.error('Error loading recipes:', error);
+            this.recipesData = { categories: [] };
+        }
+    }
+    
+    renderRecipes() {
+        if (!this.elements.recipesCategories || !this.recipesData) return;
+        
+        const searchTerm = this.elements.recipesSearchInput?.value?.toLowerCase() || '';
+        const categories = this.recipesData.categories || [];
+        
+        if (categories.length === 0) {
+            this.elements.recipesCategories.innerHTML = `
+                <div class="no-recipes-found">
+                    <p>No recipes found.</p>
+                    <p>Run <code>python recipes/sync_recipes.py</code> to fetch recipes.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '';
+        
+        for (const category of categories) {
+            // Filter recipes based on search and tag
+            const filteredRecipes = category.recipes.filter(recipe => {
+                // Search matches recipe fields OR category name/id
+                const matchesSearch = !searchTerm || 
+                    recipe.name.toLowerCase().includes(searchTerm) ||
+                    recipe.model_id.toLowerCase().includes(searchTerm) ||
+                    recipe.description.toLowerCase().includes(searchTerm) ||
+                    category.name.toLowerCase().includes(searchTerm) ||
+                    category.id.toLowerCase().includes(searchTerm);
+                
+                const matchesTag = this.currentRecipeFilter === 'all' || 
+                    (recipe.tags && recipe.tags.includes(this.currentRecipeFilter));
+                
+                return matchesSearch && matchesTag;
+            });
+            
+            // Skip empty categories
+            if (filteredRecipes.length === 0) continue;
+            
+            html += `
+                <div class="recipe-category" data-category="${category.id}">
+                    <div class="category-header" onclick="window.vllmUI.toggleCategoryExpand('${category.id}')">
+                        <div class="category-info">
+                            <div>
+                                <span class="category-name">${category.name}</span>
+                                <p class="category-description">${category.description}</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span class="category-count">${filteredRecipes.length} recipes</span>
+                            <span class="category-expand" id="expand-${category.id}">▼</span>
+                        </div>
+                    </div>
+                    <div class="category-recipes" id="recipes-${category.id}">
+                        ${filteredRecipes.map(recipe => this.renderRecipeCard(recipe, category)).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        if (!html) {
+            html = `<div class="no-recipes-found">No recipes match your search.</div>`;
+        }
+        
+        this.elements.recipesCategories.innerHTML = html;
+    }
+    
+    renderRecipeCard(recipe, category) {
+        const tags = (recipe.tags || []).map(tag => 
+            `<span class="recipe-tag ${tag}">${tag}</span>`
+        ).join('');
+        
+        const requiresToken = recipe.requires_hf_token ? 
+            '<span class="recipe-tag" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b;">requires HF token</span>' : '';
+        
+        // Build config display
+        const config = recipe.config || {};
+        const configItems = [];
+        if (config.tensor_parallel_size) configItems.push(`<span class="config-item"><span class="config-label">TP:</span> ${config.tensor_parallel_size}</span>`);
+        if (config.pipeline_parallel_size) configItems.push(`<span class="config-item"><span class="config-label">PP:</span> ${config.pipeline_parallel_size}</span>`);
+        if (config.data_parallel_size) configItems.push(`<span class="config-item"><span class="config-label">DP:</span> ${config.data_parallel_size}</span>`);
+        if (config.max_model_len) configItems.push(`<span class="config-item"><span class="config-label">Max Len:</span> ${config.max_model_len.toLocaleString()}</span>`);
+        if (config.dtype) configItems.push(`<span class="config-item"><span class="config-label">Dtype:</span> ${config.dtype}</span>`);
+        if (config.gpu_memory_utilization) configItems.push(`<span class="config-item"><span class="config-label">GPU Mem:</span> ${Math.round(config.gpu_memory_utilization * 100)}%</span>`);
+        if (config.trust_remote_code) configItems.push(`<span class="config-item config-flag">trust-remote-code</span>`);
+        if (config.enable_expert_parallel) configItems.push(`<span class="config-item config-flag">expert-parallel</span>`);
+        
+        const configHtml = configItems.length > 0 ? `
+            <div class="recipe-config">
+                <div class="config-header">
+                    <span class="config-icon">⚙️</span>
+                    <span>vLLM Config</span>
+                </div>
+                <div class="config-grid">
+                    ${configItems.join('')}
+                </div>
+            </div>
+        ` : '';
+        
+        return `
+            <div class="recipe-card" data-recipe-id="${recipe.id}" data-category-id="${category.id}">
+                <div class="recipe-header">
+                    <div>
+                        <div class="recipe-title">${recipe.name}</div>
+                        <div class="recipe-model-id">${recipe.model_id}</div>
+                    </div>
+                    <button class="btn-edit-recipe" onclick="window.vllmUI.openEditRecipeModal('${category.id}', '${recipe.id}')" title="Edit Recipe">
+                        ✏️
+                    </button>
+                </div>
+                <p class="recipe-description">${recipe.description}</p>
+                ${configHtml}
+                <div class="recipe-hardware">
+                    <div class="hardware-item">
+                        <span class="label">Recommended:</span>
+                        <span class="value">${recipe.hardware?.recommended || 'See docs'}</span>
+                    </div>
+                    <div class="hardware-item">
+                        <span class="label">Minimum:</span>
+                        <span class="value">${recipe.hardware?.minimum || 'See docs'}</span>
+                    </div>
+                </div>
+                <div class="recipe-tags">${tags}${requiresToken}</div>
+                <div class="recipe-actions">
+                    <a href="${recipe.docs_url}" target="_blank" class="btn btn-view-docs">
+                        📖 Docs
+                    </a>
+                    <button class="btn btn-load-recipe" onclick="window.vllmUI.loadRecipeConfig('${category.id}', '${recipe.id}')">
+                        ⚡ Load Config
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
+    toggleCategoryExpand(categoryId) {
+        const recipesDiv = document.getElementById(`recipes-${categoryId}`);
+        const expandIcon = document.getElementById(`expand-${categoryId}`);
+        
+        if (recipesDiv && expandIcon) {
+            recipesDiv.classList.toggle('expanded');
+            expandIcon.classList.toggle('expanded');
+        }
+    }
+    
+    filterRecipes() {
+        this.renderRecipes();
+    }
+    
+    filterRecipesByTag(tag) {
+        this.currentRecipeFilter = tag;
+        
+        // Update active state on buttons
+        const buttons = this.elements.recipesFilterTags?.querySelectorAll('.tag-btn');
+        buttons?.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tag === tag);
+        });
+        
+        this.renderRecipes();
+    }
+    
+    async loadRecipeConfig(categoryId, recipeId) {
+        try {
+            const response = await fetch(`/api/recipes/${categoryId}/${recipeId}`);
+            if (!response.ok) {
+                throw new Error('Failed to load recipe');
+            }
+            
+            const data = await response.json();
+            const recipe = data.recipe;
+            const config = recipe.config || {};
+            
+            // Set model
+            if (recipe.model_id) {
+                this.elements.customModel.value = recipe.model_id;
+                // Clear the select dropdown
+                this.elements.modelSelect.value = '';
+            }
+            
+            // Set CPU/GPU mode
+            if (config.use_cpu) {
+                this.elements.modeCpu.checked = true;
+                this.toggleComputeMode();
+            } else {
+                this.elements.modeGpu.checked = true;
+                this.toggleComputeMode();
+            }
+            
+            // Set tensor parallel size
+            if (config.tensor_parallel_size && this.elements.tensorParallel) {
+                this.elements.tensorParallel.value = config.tensor_parallel_size;
+            }
+            
+            // Set GPU memory utilization
+            if (config.gpu_memory_utilization && this.elements.gpuMemory) {
+                this.elements.gpuMemory.value = config.gpu_memory_utilization;
+            }
+            
+            // Set max model length
+            if (config.max_model_len && this.elements.maxModelLen) {
+                this.elements.maxModelLen.value = config.max_model_len;
+            }
+            
+            // Set dtype
+            if (config.dtype && this.elements.dtype) {
+                this.elements.dtype.value = config.dtype;
+            }
+            
+            // Set trust remote code
+            if (config.trust_remote_code !== undefined && this.elements.trustRemoteCode) {
+                this.elements.trustRemoteCode.checked = config.trust_remote_code;
+            }
+            
+            // Set CPU-specific settings
+            if (config.cpu_kvcache_space && this.elements.cpuKvcache) {
+                this.elements.cpuKvcache.value = config.cpu_kvcache_space;
+            }
+            
+            // Update command preview
+            this.updateCommandPreview();
+            
+            // Close modal
+            this.closeRecipesModal();
+            
+            // Show success toast
+            this.showRecipeToast(`✅ Loaded: ${recipe.name}`);
+            
+            // Highlight if HF token is required
+            if (recipe.requires_hf_token && this.elements.hfToken) {
+                this.elements.hfToken.focus();
+                this.showNotification('This model requires a HuggingFace token', 'warning');
+            }
+            
+        } catch (error) {
+            console.error('Error loading recipe config:', error);
+            this.showNotification('Failed to load recipe configuration', 'error');
+        }
+    }
+    
+    showRecipeToast(message) {
+        // Remove existing toast
+        const existingToast = document.querySelector('.recipe-toast');
+        if (existingToast) {
+            existingToast.remove();
+        }
+        
+        const toast = document.createElement('div');
+        toast.className = 'recipe-toast';
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        // Auto-remove after 3 seconds
+        setTimeout(() => {
+            toast.classList.add('hide');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+    
+    async syncRecipesFromGitHub() {
+        const syncBtn = this.elements.syncRecipesBtn;
+        if (!syncBtn) return;
+        
+        // Get GitHub token if provided
+        const githubToken = this.elements.githubTokenInput?.value?.trim() || '';
+        
+        // Show loading state
+        const originalText = syncBtn.innerHTML;
+        syncBtn.innerHTML = '⏳ Syncing';
+        syncBtn.disabled = true;
+        
+        // Show loading in categories area
+        if (this.elements.recipesCategories) {
+            this.elements.recipesCategories.innerHTML = `
+                <div class="recipes-loading">
+                    <div style="font-size: 2rem; margin-bottom: 16px;">🔄</div>
+                    <p>Fetching recipes from GitHub...</p>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px;">
+                        This may take a moment...
+                    </p>
+                </div>
+            `;
+        }
+        
+        try {
+            const response = await fetch('/api/recipes/sync', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    github_token: githubToken || null
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Clear cached data to force reload
+                this.recipesData = null;
+                
+                // Reload recipes
+                await this.loadRecipes();
+                this.renderRecipes();
+                
+                // Show success message
+                const catalogInfo = data.catalog || {};
+                this.showRecipeToast(
+                    `✅ Synced! ${catalogInfo.categories || 0} categories, ${catalogInfo.total_recipes || 0} recipes`
+                );
+                
+                console.log('Recipes sync result:', data);
+            } else {
+                // Show error
+                this.showNotification(
+                    `Sync failed: ${data.message || data.error || 'Unknown error'}`,
+                    'error'
+                );
+                
+                // Restore previous recipes display
+                if (this.recipesData) {
+                    this.renderRecipes();
+                } else {
+                    this.elements.recipesCategories.innerHTML = `
+                        <div class="no-recipes-found">
+                            <p>❌ Sync failed: ${data.message || data.error}</p>
+                            <p style="margin-top: 12px; font-size: 0.9rem;">
+                                Try running manually: <code>python recipes/sync_recipes.py</code>
+                            </p>
+                        </div>
+                    `;
+                }
+            }
+        } catch (error) {
+            console.error('Error syncing recipes:', error);
+            this.showNotification('Failed to sync recipes from GitHub', 'error');
+            
+            // Restore previous recipes display
+            if (this.recipesData) {
+                this.renderRecipes();
+            } else {
+                this.elements.recipesCategories.innerHTML = `
+                    <div class="no-recipes-found">
+                        <p>❌ Connection error</p>
+                        <p style="margin-top: 12px; font-size: 0.9rem;">
+                            Check your network connection and try again.
+                        </p>
+                    </div>
+                `;
+            }
+        } finally {
+            // Restore button state
+            syncBtn.innerHTML = originalText;
+            syncBtn.disabled = false;
+        }
+    }
+    
+    // ===============================================
+    // RECIPE EDIT/ADD FUNCTIONALITY
+    // ===============================================
+    
+    editingRecipe = null;
+    editingCategory = null;
+    
+    openEditRecipeModal(categoryId, recipeId) {
+        // Find the recipe in the data
+        const category = this.recipesData?.categories?.find(c => c.id === categoryId);
+        const recipe = category?.recipes?.find(r => r.id === recipeId);
+        
+        if (!recipe) {
+            this.showNotification('Recipe not found', 'error');
+            return;
+        }
+        
+        this.editingRecipe = recipe;
+        this.editingCategory = category;
+        
+        // Show the edit modal
+        const modal = document.getElementById('edit-recipe-modal');
+        if (!modal) {
+            this.createEditRecipeModal();
+        }
+        
+        this.populateEditForm(recipe, category);
+        document.getElementById('edit-recipe-modal').style.display = 'flex';
+    }
+    
+    openAddRecipeModal() {
+        this.editingRecipe = null;
+        this.editingCategory = null;
+        
+        // Show the edit modal in "add" mode
+        const modal = document.getElementById('edit-recipe-modal');
+        if (!modal) {
+            this.createEditRecipeModal();
+        }
+        
+        // Clear form and set to add mode
+        this.populateEditForm(null, null);
+        document.getElementById('edit-recipe-modal').style.display = 'flex';
+    }
+    
+    closeEditRecipeModal() {
+        const modal = document.getElementById('edit-recipe-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+        this.editingRecipe = null;
+        this.editingCategory = null;
+    }
+    
+    createEditRecipeModal() {
+        const modalHtml = `
+            <div id="edit-recipe-modal" class="modal" style="display: none;">
+                <div class="modal-overlay" onclick="window.vllmUI.closeEditRecipeModal()"></div>
+                <div class="modal-content edit-recipe-modal-content">
+                    <div class="modal-header">
+                        <h2 id="edit-recipe-title">✏️ Edit Recipe</h2>
+                        <button class="modal-close" onclick="window.vllmUI.closeEditRecipeModal()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="edit-recipe-form" onsubmit="window.vllmUI.saveRecipe(event)">
+                            <!-- Basic Info -->
+                            <div class="edit-form-section">
+                                <h3>📋 Basic Information</h3>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="edit-recipe-name">Recipe Name *</label>
+                                        <input type="text" id="edit-recipe-name" class="form-control" required placeholder="e.g., DeepSeek-R1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-recipe-category">Category *</label>
+                                        <select id="edit-recipe-category" class="form-control" required>
+                                            <option value="">Select category...</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit-recipe-model-id">Model ID (HuggingFace) *</label>
+                                    <input type="text" id="edit-recipe-model-id" class="form-control" required placeholder="e.g., deepseek-ai/DeepSeek-R1">
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit-recipe-description">Description</label>
+                                    <textarea id="edit-recipe-description" class="form-control" rows="2" placeholder="Brief description of the model..."></textarea>
+                                </div>
+                            </div>
+                            
+                            <!-- vLLM Config -->
+                            <div class="edit-form-section">
+                                <h3>⚙️ vLLM Configuration</h3>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="edit-recipe-tp">Tensor Parallel Size</label>
+                                        <input type="number" id="edit-recipe-tp" class="form-control" min="1" max="16" value="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-recipe-pp">Pipeline Parallel Size</label>
+                                        <input type="number" id="edit-recipe-pp" class="form-control" min="1" max="8" value="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-recipe-dp">Data Parallel Size</label>
+                                        <input type="number" id="edit-recipe-dp" class="form-control" min="1" max="8" value="1">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="edit-recipe-max-len">Max Model Length</label>
+                                        <input type="number" id="edit-recipe-max-len" class="form-control" min="256" placeholder="e.g., 32768">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-recipe-dtype">Data Type</label>
+                                        <select id="edit-recipe-dtype" class="form-control">
+                                            <option value="">Auto</option>
+                                            <option value="auto">auto</option>
+                                            <option value="float16">float16</option>
+                                            <option value="bfloat16">bfloat16</option>
+                                            <option value="float32">float32</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-recipe-gpu-mem">GPU Memory %</label>
+                                        <input type="number" id="edit-recipe-gpu-mem" class="form-control" min="10" max="100" step="5" placeholder="e.g., 90">
+                                    </div>
+                                </div>
+                                <div class="form-row checkbox-row">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="edit-recipe-trust-remote">
+                                        <span>Trust Remote Code</span>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="edit-recipe-expert-parallel">
+                                        <span>Enable Expert Parallel (MoE)</span>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="edit-recipe-hf-token">
+                                        <span>Requires HF Token</span>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <!-- Hardware -->
+                            <div class="edit-form-section">
+                                <h3>🖥️ Hardware Requirements</h3>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="edit-recipe-hw-rec">Recommended</label>
+                                        <input type="text" id="edit-recipe-hw-rec" class="form-control" placeholder="e.g., 8x H100 80GB">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="edit-recipe-hw-min">Minimum</label>
+                                        <input type="text" id="edit-recipe-hw-min" class="form-control" placeholder="e.g., 8x A100 80GB">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Tags -->
+                            <div class="edit-form-section">
+                                <h3>🏷️ Tags</h3>
+                                <div class="form-group">
+                                    <label for="edit-recipe-tags">Tags (comma-separated)</label>
+                                    <input type="text" id="edit-recipe-tags" class="form-control" placeholder="e.g., reasoning, multi-gpu, large">
+                                    <small class="form-help">Common tags: single-gpu, multi-gpu, cpu, vision, reasoning, coding, chat, moe, fp8</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit-recipe-docs-url">Documentation URL</label>
+                                    <input type="url" id="edit-recipe-docs-url" class="form-control" placeholder="https://github.com/...">
+                                </div>
+                            </div>
+                            
+                            <!-- Actions -->
+                            <div class="edit-form-actions">
+                                <button type="button" class="btn btn-secondary" onclick="window.vllmUI.closeEditRecipeModal()">Cancel</button>
+                                <button type="button" class="btn btn-danger" id="delete-recipe-btn" onclick="window.vllmUI.deleteRecipe()" style="display: none;">🗑️ Delete</button>
+                                <button type="submit" class="btn btn-primary">💾 Save Recipe</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+    
+    populateEditForm(recipe, category) {
+        const isEdit = !!recipe;
+        
+        // Update title
+        document.getElementById('edit-recipe-title').textContent = isEdit ? '✏️ Edit Recipe' : '➕ Add New Recipe';
+        
+        // Show/hide delete button
+        const deleteBtn = document.getElementById('delete-recipe-btn');
+        if (deleteBtn) {
+            deleteBtn.style.display = isEdit ? 'inline-block' : 'none';
+        }
+        
+        // Populate category dropdown
+        const categorySelect = document.getElementById('edit-recipe-category');
+        categorySelect.innerHTML = '<option value="">Select category...</option>';
+        if (this.recipesData?.categories) {
+            for (const cat of this.recipesData.categories) {
+                const option = document.createElement('option');
+                option.value = cat.id;
+                option.textContent = cat.name;
+                if (isEdit && category && cat.id === category.id) {
+                    option.selected = true;
+                }
+                categorySelect.appendChild(option);
+            }
+            // Add option to create new category
+            const newOption = document.createElement('option');
+            newOption.value = '__new__';
+            newOption.textContent = '➕ Create New Category...';
+            categorySelect.appendChild(newOption);
+        }
+        
+        // Populate form fields
+        document.getElementById('edit-recipe-name').value = recipe?.name || '';
+        document.getElementById('edit-recipe-model-id').value = recipe?.model_id || '';
+        document.getElementById('edit-recipe-description').value = recipe?.description || '';
+        
+        // Config
+        const config = recipe?.config || {};
+        document.getElementById('edit-recipe-tp').value = config.tensor_parallel_size || 1;
+        document.getElementById('edit-recipe-pp').value = config.pipeline_parallel_size || 1;
+        document.getElementById('edit-recipe-dp').value = config.data_parallel_size || 1;
+        document.getElementById('edit-recipe-max-len').value = config.max_model_len || '';
+        document.getElementById('edit-recipe-dtype').value = config.dtype || '';
+        document.getElementById('edit-recipe-gpu-mem').value = config.gpu_memory_utilization ? Math.round(config.gpu_memory_utilization * 100) : '';
+        document.getElementById('edit-recipe-trust-remote').checked = config.trust_remote_code || false;
+        document.getElementById('edit-recipe-expert-parallel').checked = config.enable_expert_parallel || false;
+        document.getElementById('edit-recipe-hf-token').checked = recipe?.requires_hf_token || false;
+        
+        // Hardware
+        document.getElementById('edit-recipe-hw-rec').value = recipe?.hardware?.recommended || '';
+        document.getElementById('edit-recipe-hw-min').value = recipe?.hardware?.minimum || '';
+        
+        // Tags
+        document.getElementById('edit-recipe-tags').value = (recipe?.tags || []).join(', ');
+        document.getElementById('edit-recipe-docs-url').value = recipe?.docs_url || '';
+    }
+    
+    async saveRecipe(event) {
+        event.preventDefault();
+        
+        // Gather form data
+        let categoryId = document.getElementById('edit-recipe-category').value;
+        
+        // Handle new category creation
+        if (categoryId === '__new__') {
+            const newCatName = prompt('Enter new category name:');
+            if (!newCatName) return;
+            categoryId = newCatName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        }
+        
+        if (!categoryId) {
+            this.showNotification('Please select a category', 'error');
+            return;
+        }
+        
+        const name = document.getElementById('edit-recipe-name').value.trim();
+        const modelId = document.getElementById('edit-recipe-model-id').value.trim();
+        
+        if (!name || !modelId) {
+            this.showNotification('Name and Model ID are required', 'error');
+            return;
+        }
+        
+        // Build recipe object
+        const recipeData = {
+            id: this.editingRecipe?.id || name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+            name: name,
+            model_id: modelId,
+            description: document.getElementById('edit-recipe-description').value.trim(),
+            docs_url: document.getElementById('edit-recipe-docs-url').value.trim(),
+            requires_hf_token: document.getElementById('edit-recipe-hf-token').checked,
+            hardware: {
+                recommended: document.getElementById('edit-recipe-hw-rec').value.trim() || 'See documentation',
+                minimum: document.getElementById('edit-recipe-hw-min').value.trim() || 'See documentation'
+            },
+            config: {},
+            tags: document.getElementById('edit-recipe-tags').value
+                .split(',')
+                .map(t => t.trim().toLowerCase())
+                .filter(t => t)
+        };
+        
+        // Add config values only if set
+        const tp = parseInt(document.getElementById('edit-recipe-tp').value);
+        if (tp && tp > 1) recipeData.config.tensor_parallel_size = tp;
+        
+        const pp = parseInt(document.getElementById('edit-recipe-pp').value);
+        if (pp && pp > 1) recipeData.config.pipeline_parallel_size = pp;
+        
+        const dp = parseInt(document.getElementById('edit-recipe-dp').value);
+        if (dp && dp > 1) recipeData.config.data_parallel_size = dp;
+        
+        const maxLen = parseInt(document.getElementById('edit-recipe-max-len').value);
+        if (maxLen) recipeData.config.max_model_len = maxLen;
+        
+        const dtype = document.getElementById('edit-recipe-dtype').value;
+        if (dtype) recipeData.config.dtype = dtype;
+        
+        const gpuMem = parseInt(document.getElementById('edit-recipe-gpu-mem').value);
+        if (gpuMem) recipeData.config.gpu_memory_utilization = gpuMem / 100;
+        
+        if (document.getElementById('edit-recipe-trust-remote').checked) {
+            recipeData.config.trust_remote_code = true;
+        }
+        
+        if (document.getElementById('edit-recipe-expert-parallel').checked) {
+            recipeData.config.enable_expert_parallel = true;
+        }
+        
+        // Determine if creating new category
+        const existingCategory = this.recipesData?.categories?.find(c => c.id === categoryId);
+        const newCategoryName = document.getElementById('edit-recipe-category').value === '__new__' 
+            ? prompt('Enter new category name:') 
+            : null;
+        
+        try {
+            const response = await fetch('/api/recipes/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category_id: categoryId,
+                    recipe: recipeData,
+                    is_new: !this.editingRecipe,
+                    original_recipe_id: this.editingRecipe?.id,
+                    original_category_id: this.editingCategory?.id,
+                    new_category_name: newCategoryName
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Reload recipes
+                this.recipesData = null;
+                await this.loadRecipes();
+                this.renderRecipes();
+                
+                this.closeEditRecipeModal();
+                this.showRecipeToast(`✅ Recipe ${this.editingRecipe ? 'updated' : 'added'}: ${name}`);
+            } else {
+                this.showNotification(data.error || 'Failed to save recipe', 'error');
+            }
+        } catch (error) {
+            console.error('Error saving recipe:', error);
+            this.showNotification('Failed to save recipe', 'error');
+        }
+    }
+    
+    async deleteRecipe() {
+        if (!this.editingRecipe || !this.editingCategory) {
+            return;
+        }
+        
+        const confirmed = confirm(`Are you sure you want to delete "${this.editingRecipe.name}"?`);
+        if (!confirmed) return;
+        
+        try {
+            const response = await fetch('/api/recipes/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category_id: this.editingCategory.id,
+                    recipe_id: this.editingRecipe.id
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Reload recipes
+                this.recipesData = null;
+                await this.loadRecipes();
+                this.renderRecipes();
+                
+                this.closeEditRecipeModal();
+                this.showRecipeToast(`🗑️ Deleted: ${this.editingRecipe.name}`);
+            } else {
+                this.showNotification(data.error || 'Failed to delete recipe', 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting recipe:', error);
+            this.showNotification('Failed to delete recipe', 'error');
+        }
+    }
+}
 // Add CSS animations for notifications
 const style = document.createElement('style');
 style.textContent = `
