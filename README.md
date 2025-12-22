@@ -4,6 +4,49 @@ A modern web interface for managing and interacting with vLLM servers (www.githu
 
 ![vLLM Playground Interface](assets/vllm-playground.png)
 
+## 📦 Quick Install via PyPI
+
+```bash
+# Basic installation
+pip install vllm-playground
+
+# With GuideLLM benchmarking support
+pip install vllm-playground[benchmark]
+
+# First time? Pre-download the container image (~10GB for GPU)
+vllm-playground pull
+
+# Start the playground
+vllm-playground
+```
+
+Open http://localhost:7860 in your browser - that's it! 🚀
+
+> 💡 **Tip**: The `vllm-playground pull` command pre-downloads the large container image with progress display, so you don't have to wait during server startup!
+
+![Pre-pull Container Image](assets/vllm-playground-pull.png)
+
+*Pre-download the ~10GB GPU container image with progress display - no more waiting during server startup!*
+
+## 📦 New: PyPI Package
+
+**One-command installation!** vLLM Playground is now available on PyPI for easy distribution and installation.
+
+```bash
+pip install vllm-playground
+vllm-playground
+```
+
+**Key Benefits:**
+- ✅ **Simple Installation**: Just `pip install` - no cloning required
+- ✅ **CLI Support**: `vllm-playground` command with options
+- ✅ **Pre-Pull Images**: `vllm-playground pull` downloads container images with progress display
+- ✅ **Auto GPU/CPU**: Automatically uses sudo for GPU containers, rootless for CPU
+- ✅ **Optional Extras**: Install with `[benchmark]` for GuideLLM support
+- ✅ **Easy Updates**: `pip install --upgrade vllm-playground`
+
+---
+
 ## 🐳 New: Containerized vLLM Service
 
 **No more manual vLLM installation!** The Web UI now automatically manages vLLM in isolated containers, providing a seamless experience from local development to enterprise deployment.
@@ -79,10 +122,18 @@ vllm-playground/
 ├── run.py                       # Backend server launcher
 ├── container_manager.py         # 🆕 Podman-based container orchestration (local)
 ├── index.html                   # Main HTML interface
+├── pyproject.toml               # 🆕 PyPI package configuration
 ├── requirements.txt             # Python dependencies
 ├── env.example                  # Example environment variables
 ├── LICENSE                      # MIT License
 ├── README.md                    # This file
+│
+├── vllm_playground/             # 🆕 PyPI package source
+│   ├── __init__.py              # Package version and exports
+│   ├── app.py                   # FastAPI application
+│   ├── cli.py                   # CLI entry point
+│   ├── container_manager.py     # Container orchestration
+│   └── ...                      # Static assets and templates
 │
 ├── containers/                  # Container definitions 🐳
 │   ├── Containerfile.vllm-playground  # 🆕 Web UI container (orchestrator)
@@ -158,23 +209,58 @@ vllm-playground/
 
 ## 🚀 Quick Start
 
-### 🐳 Option 1: Container Orchestration (Recommended)
+### 📦 Option 1: PyPI Installation (Easiest)
 
-The Web UI can orchestrate vLLM containers automatically - no manual vLLM installation needed!
+Install and run with a single command:
 
 ```bash
-# 1. Install Podman (if not already installed)
+# Install from PyPI
+pip install vllm-playground
+
+# Or with benchmarking support
+pip install vllm-playground[benchmark]
+
+# Start the playground
+vllm-playground
+```
+
+Open http://localhost:7860 and click "Start Server" - vLLM container starts automatically!
+
+**CLI Options:**
+```bash
+vllm-playground --help              # Show all options
+vllm-playground pull                # Pre-download GPU image (~10GB) with progress
+vllm-playground pull --cpu          # Pre-download CPU image
+vllm-playground pull --all          # Pre-download all images
+vllm-playground --port 8080         # Use custom port
+vllm-playground --host localhost    # Bind to localhost only
+vllm-playground stop                # Stop running instance
+vllm-playground status              # Check if running
+```
+
+---
+
+### 🐳 Option 2: Container Orchestration (From Source)
+
+For development or customization:
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/micytao/vllm-playground.git
+cd vllm-playground
+
+# 2. Install Podman (if not already installed)
 # macOS: brew install podman
 # Linux: dnf install podman or apt install podman
 
-# 2. Install Python dependencies
+# 3. Install Python dependencies
 pip install -r requirements.txt
 
-# 3. Start the Web UI
+# 4. Start the Web UI
 python run.py
 
-# 4. Open http://localhost:7860
-# 5. Click "Start Server" - vLLM container starts automatically!
+# 5. Open http://localhost:7860
+# 6. Click "Start Server" - vLLM container starts automatically!
 ```
 
 **✨ Benefits:**
@@ -192,7 +278,7 @@ python run.py
 
 ---
 
-### ☸️ Option 2: OpenShift/Kubernetes Deployment
+### ☸️ Option 3: OpenShift/Kubernetes Deployment
 
 Deploy the entire stack to OpenShift or Kubernetes with dynamic pod management:
 
@@ -220,7 +306,7 @@ oc get route vllm-playground -n vllm-playground
 
 ---
 
-### 💻 Option 3: Local Installation (Traditional)
+### 💻 Option 4: Local Installation (Traditional)
 
 For local development without containers:
 

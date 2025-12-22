@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>vLLM Playground - Server Management & Chat Interface</title>
+    <link rel="icon" type="image/png" href="/assets/vllm_only.png">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo-container">
+                    <img src="/assets/vllm.png" alt="vLLM" class="logo" onerror="this.style.display='none'">
+                    <h1><span class="logo-text">vLLM</span> Playground</h1>
+                </div>
+                <div class="status-indicator">
+                    <span id="status-dot" class="status-dot"></span>
+                    <span id="status-text">Disconnected</span>
+                    <span id="uptime" class="uptime"></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Sidebar - Configuration -->
+            <aside class="sidebar resizable" id="config-panel">
+                <div class="panel">
+                    <h2>⚙️ Server Configuration</h2>
+                    
+                    <!-- Model Source Toggle -->
+                    <div class="form-group mode-toggle-group">
+                        <label>Model Source</label>
+                        <div class="mode-toggle-buttons">
+                            <label class="mode-button active" id="model-source-hub-label">
+                                <input type="radio" name="model-source" id="model-source-hub" value="hub" checked>
+                                <span>🤗 HuggingFace</span>
+                            </label>
+                            <label class="mode-button" id="model-source-local-label">
+                                <input type="radio" name="model-source" id="model-source-local" value="local">
+                                <span>📁 Local</span>
+                            </label>
+                        </div>
+                        <small class="form-help" id="model-source-help-text">Select model from HuggingFace or local directory</small>
+                    </div>
+
+                    <!-- HuggingFace Hub Model Selection (default visible) -->
+                    <div id="hub-model-section" class="form-group">
+                        <label for="model-select">Model</label>
+                        <select id="model-select" class="form-control">
+                            <!-- CPU-Optimized Models (Recommended for macOS) -->
+                            <optgroup label="🖥️ CPU-Friendly Models">
+                                <option value="TinyLlama/TinyLlama-1.1B-Chat-v1.0" selected>TinyLlama 1.1B Chat (Fast, No token)</option>
+                                <option value="meta-llama/Llama-3.2-1B-Instruct">Llama 3.2 1B Instruct (Gated, needs HF token)</option>
+                            </optgroup>
+                            <!-- Larger Models (Slower on CPU) -->
+                            <optgroup label="🎮 GPU-Optimized Models (Slow on CPU)">
+                                <option value="mistralai/Mistral-7B-Instruct-v0.2">Mistral 7B Instruct</option>
+                                <option value="RedHatAI/Llama-3.2-1B-Instruct-FP8">Llama 3.2 1B Instruct FP8 (Gated, needs HF token)</option>
+                                <option value="RedHatAI/Llama-3.1-8B-Instruct">Llama 3.1 8B Instruct (Gated, needs HF token)</option>
+                            </optgroup>
+                        </select>
+                        <small class="form-help">All models support chat interface. Gated models require HF token below.</small>
+                        <input type="text" id="custom-model" class="form-control" placeholder="Or enter custom model name">
+                        
+                        <!-- Community Recipes Button -->
+                        <button id="browse-recipes-btn" class="btn btn-secondary btn-sm browse-recipes-btn">
+                            📚 Browse Community Recipes
+                        </button>
+                    </div>
+
+                    <!-- Local Model Path Section (hidden by default) -->
+                    <div id="local-model-section" class="form-group" style="display: none;">
+                        <label for="local-model-path">Local Model Directory Path</label>
+                        <input type="text" id="local-model-path" class="form-control" placeholder="~/models/my-model or /absolute/path/to/model">
+                        <div class="local-path-buttons">
+                            <button id="browse-folder-btn" class="btn btn-secondary btn-sm" title="Browse for folder">
+                                📁 Browse
+                            </button>
+                            <button id="validate-path-btn" class="btn btn-secondary btn-sm" title="Validate path">
+                                Validate
+                            </button>
+                        </div>
+                        <small class="form-help">Enter absolute path to directory containing model files (config.json, weights, etc.). Supports ~ for home directory.</small>
+                        
+                        <!-- Validation Status -->
+                        <div id="local-model-validation" class="validation-status" style="display: none; margin-top: 8px;">
+                            <span id="validation-icon"></span>
+                            <span id="validation-message"></span>
+                        </div>
+                        
+                        <!-- Model Info Display -->
+                        <div id="local-model-info" class="model-info-box" style="display: none; margin-top: 10px; padding: 10px; background: #1e293b; border-radius: 6px; border-left: 3px solid #10b981;">
+                            <div class="info-row">
+                                <span class="info-label">Model Name:</span>
+                                <span id="info-model-name" class="info-value">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Model Type:</span>
+                                <span id="info-model-type" class="info-value">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Size:</span>
+                                <span id="info-model-size" class="info-value">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Has Tokenizer:</span>
+                                <span id="info-has-tokenizer" class="info-value">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- HuggingFace Token for Gated Models -->
+                    <div class="form-group">
+                        <label for="hf-token">HuggingFace Token (Optional)</label>
+                        <input type="password" id="hf-token" class="form-control" placeholder="hf_xxxxxxxxxxxxx">
+                        <small class="form-help">Required for gated models (Llama 3.1, Llama 3.2). Get token from <a href="https://huggingface.co/settings/tokens" target="_blank">HuggingFace Settings</a></small>
+                    </div>
+
+                    <!-- Run Mode Toggle -->
+                    <div class="form-group mode-toggle-group">
+                        <label>Run Mode</label>
+                        <div class="mode-toggle-buttons">
+                            <label class="mode-button active" id="run-mode-subprocess-label">
+                                <input type="radio" name="run-mode" id="run-mode-subprocess" value="subprocess" checked>
+                                <span>⚡ Subprocess</span>
+                            </label>
+                            <label class="mode-button" id="run-mode-container-label">
+                                <input type="radio" name="run-mode" id="run-mode-container" value="container">
+                                <span>📦 Container</span>
+                            </label>
+                        </div>
+                        <small class="form-help" id="run-mode-help-text">Subprocess: Direct (local dev), Container: Isolated (production)</small>
+                    </div>
+
+                    <!-- CPU/GPU Mode Toggle -->
+                    <div class="form-group mode-toggle-group">
+                        <label>Compute Mode</label>
+                        <div class="mode-toggle-buttons">
+                            <label class="mode-button active" id="mode-cpu-label">
+                                <input type="radio" name="compute-mode" id="mode-cpu" value="cpu" checked>
+                                <span>🖥️ CPU</span>
+                            </label>
+                            <label class="mode-button" id="mode-gpu-label">
+                                <input type="radio" name="compute-mode" id="mode-gpu" value="gpu">
+                                <span>🎮 GPU</span>
+                            </label>
+                        </div>
+                        <small class="form-help" id="mode-help-text">CPU mode is recommended for macOS</small>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="host">Host</label>
+                            <input type="text" id="host" class="form-control" value="0.0.0.0">
+                        </div>
+                        <div class="form-group">
+                            <label for="port">Port</label>
+                            <input type="number" id="port" class="form-control" value="8000">
+                        </div>
+                    </div>
+
+                    <!-- GPU-specific settings (hidden in CPU mode) -->
+                    <div id="gpu-settings">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="tensor-parallel">Tensor Parallel Size</label>
+                                <input type="number" id="tensor-parallel" class="form-control" value="1" min="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="gpu-memory">GPU Memory (%)</label>
+                                <input type="number" id="gpu-memory" class="form-control" value="90" min="10" max="100" step="5">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="gpu-device">GPU Device (optional)</label>
+                            <input type="text" id="gpu-device" class="form-control" placeholder="0, 1, 0,1 (leave empty for auto)">
+                            <small class="form-help">Specify GPU device ID(s): 0, 1, 0,1, etc. Leave empty for auto-selection.</small>
+                        </div>
+                        
+                        <!-- GPU Status Display -->
+                        <div id="gpu-status-display" class="gpu-status-panel" style="display: none;">
+                            <div class="panel-header">
+                                <h3>🎮 GPU Status</h3>
+                                <span id="gpu-status-refresh" class="refresh-indicator" title="Auto-refresh every 5 seconds">🔄</span>
+                            </div>
+                            <div id="gpu-status-content" class="gpu-status-content">
+                                <div class="gpu-loading">Loading GPU status...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CPU-specific settings (shown in CPU mode) -->
+                    <div id="cpu-settings" style="display: block;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="cpu-kvcache">CPU KV Cache Space (GB)</label>
+                                <input type="number" id="cpu-kvcache" class="form-control" value="4" min="1" max="200">
+                                <small class="form-help">Memory allocated for KV cache (start with 4GB)</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="cpu-threads">CPU Thread Binding</label>
+                                <select id="cpu-threads" class="form-control">
+                                    <option value="auto">Auto (Recommended)</option>
+                                    <option value="cores">Cores</option>
+                                    <option value="none">None</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="dtype">Data Type</label>
+                        <select id="dtype" class="form-control">
+                            <option value="auto">Auto</option>
+                            <option value="float16">Float16</option>
+                            <option value="bfloat16" selected>BFloat16</option>
+                            <option value="float32">Float32</option>
+                        </select>
+                        <small class="form-help" id="dtype-help-text">BFloat16 recommended for CPU</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="max-model-len">Max Model Length (optional)</label>
+                        <input type="number" id="max-model-len" class="form-control" placeholder="2048 (CPU) / 8192 (GPU)">
+                        <small class="form-help">Leave empty to use safe defaults: 2048 (CPU) or 8192 (GPU)</small>
+                    </div>
+
+                    <!-- Advanced: Chat Template Settings -->
+                    <div class="template-settings-section">
+                        <div class="template-settings-header" id="template-settings-toggle">
+                            <h3>Chat Template Reference (Advanced)</h3>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                        <div class="template-settings-content" id="template-settings-content" style="display: none;">
+                            <div class="info-box" style="background: #1e40af20; border-left: 3px solid #1e40af; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
+                                <strong>ℹ️ Note:</strong> vLLM automatically loads chat templates and stop tokens from each model's tokenizer config. The fields below show reference templates for documentation purposes only. Modern models (2023+) all have built-in templates that work correctly.
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="chat-template">Chat Template (Jinja2) <span style="color: #10b981; font-size: 0.85em;">🔄 Reference Only</span></label>
+                                <textarea id="chat-template" class="form-control template-textarea" rows="4" spellcheck="false" placeholder="Will be loaded from model's tokenizer config..." readonly></textarea>
+                                <small class="form-help">vLLM automatically uses the model's chat template from tokenizer config. Shown for reference only.</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="stop-tokens">Stop Tokens (comma-separated) <span style="color: #10b981; font-size: 0.85em;">🔄 Reference Only</span></label>
+                                <input type="text" id="stop-tokens" class="form-control" placeholder="Will be loaded from model's tokenizer config..." readonly>
+                                <small class="form-help">vLLM automatically handles stop tokens via chat template. Shown for reference only. Use 'custom_stop_tokens' in server config to override.</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="trust-remote-code">
+                            <span>Trust Remote Code</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="enable-prefix-caching">
+                            <span>Enable Prefix Caching</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="disable-log-stats">
+                            <span>Disable Log Stats</span>
+                        </label>
+                    </div>
+
+                    <!-- Command Preview Section -->
+                    <div class="command-preview-section">
+                        <div class="command-preview-header">
+                            <h3>Command Preview</h3>
+                            <button id="copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command">Copy</button>
+                        </div>
+                        <textarea id="command-text" class="command-preview-textarea" rows="8" spellcheck="false">python -m vllm.entrypoints.openai.api_server --model facebook/opt-125m</textarea>
+                        <small class="command-help">Edit the command directly or use the form above. Your edits will be used when starting the server.</small>
+                    </div>
+
+                    <div class="button-group">
+                        <button id="start-btn" class="btn btn-primary">Start Server</button>
+                        <button id="stop-btn" class="btn btn-danger" disabled>Stop Server</button>
+                    </div>
+                </div>
+                <div class="resize-handle resize-handle-vertical" data-direction="horizontal"></div>
+            </aside>
+
+            <!-- Center - Chat Interface -->
+            <main class="chat-section resizable" id="chat-panel">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>💬 Chat Interface</h2>
+                        <button id="clear-chat-btn" class="btn btn-secondary btn-sm" style="min-width: 80px; padding: 6px 16px;">Clear</button>
+                    </div>
+                    
+                    <div id="chat-container" class="chat-container">
+                        <div class="chat-message system">
+                            <div class="message-content">
+                                <strong>System:</strong> Start the vLLM server and begin chatting with your model.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="chat-input-area">
+                        <!-- System Prompt -->
+                        <div class="system-prompt-section">
+                            <div class="system-prompt-header">
+                                <label for="system-prompt">System Prompt:</label>
+                                <button id="clear-system-prompt-btn" class="btn btn-secondary btn-sm" style="min-width: 80px; padding: 6px 16px;" title="Clear system prompt">Clear</button>
+                            </div>
+                            <textarea id="system-prompt" class="system-prompt-input" rows="2" placeholder="Set system prompt (e.g., 'You are a helpful coding assistant')">You are a helpful assistant.</textarea>
+                            <small class="form-help">💡 System prompt is sent with every message. Clear or simplify for small models (TinyLlama) if responses are poor.</small>
+                        </div>
+                        
+                        <div class="generation-params">
+                            <div class="param-group">
+                                <label for="temperature">Temperature: <span id="temp-value">0.7</span></label>
+                                <input type="range" id="temperature" min="0" max="1" step="0.05" value="0.7">
+                            </div>
+                            <div class="param-group">
+                                <label for="max-tokens">Max Tokens: <span id="tokens-value">256</span></label>
+                                <input type="range" id="max-tokens" min="1" max="4096" step="1" value="256">
+                            </div>
+                        </div>
+                        
+                        <div class="input-group">
+                            <div class="input-with-templates">
+                                <textarea id="chat-input" class="chat-input" placeholder="Type your message here..." rows="1"></textarea>
+                                <select id="message-templates" class="message-templates">
+                                    <option value="">Quick messages...</option>
+                                    <option value="Hello!">Hello!</option>
+                                    <option value="Hi, how are you?">Hi, how are you?</option>
+                                    <option value="Can you help me with something?">Can you help me with something?</option>
+                                    <option value="Thank you!">Thank you!</option>
+                                    <option value="What can you do?">What can you do?</option>
+                                    <option value="Tell me more about this.">Tell me more about this.</option>
+                                </select>
+                            </div>
+                            <button id="send-btn" class="btn btn-primary" disabled>Send</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Chat Performance Metrics Section -->
+                <div class="chat-metrics-below">
+                    <div class="panel-header">
+                        <h3>Last Response Metrics</h3>
+                    </div>
+                    <div id="chat-metrics" class="chat-metrics-grid">
+                        <div class="chat-metric-item">
+                            <span class="metric-label">Prompt Tokens:</span>
+                            <span class="metric-value" id="metric-prompt-tokens">-</span>
+                        </div>
+                        <div class="chat-metric-item">
+                            <span class="metric-label">Completion Tokens:</span>
+                            <span class="metric-value" id="metric-completion-tokens">-</span>
+                        </div>
+                        <div class="chat-metric-item">
+                            <span class="metric-label">Total Tokens:</span>
+                            <span class="metric-value" id="metric-total-tokens">-</span>
+                        </div>
+                        <div class="chat-metric-item">
+                            <span class="metric-label">Time Taken:</span>
+                            <span class="metric-value" id="metric-time-taken">-</span>
+                        </div>
+                        <div class="chat-metric-item">
+                            <span class="metric-label">Tokens/sec:</span>
+                            <span class="metric-value" id="metric-tokens-per-sec">-</span>
+                        </div>
+                        <div class="chat-metric-item">
+                            <span class="metric-label">Avg Prompt Throughput:</span>
+                            <span class="metric-value" id="metric-prompt-throughput">-</span>
+                        </div>
+                        <div class="chat-metric-item">
+                            <span class="metric-label">Avg Generation Throughput:</span>
+                            <span class="metric-value" id="metric-generation-throughput">-</span>
+                        </div>
+                        <div class="chat-metric-item">
+                            <span class="metric-label">GPU KV Cache Usage:</span>
+                            <span class="metric-value" id="metric-kv-cache-usage">-</span>
+                        </div>
+                        <div class="chat-metric-item">
+                            <span class="metric-label">Prefix Cache Hit Rate:</span>
+                            <span class="metric-value" id="metric-prefix-cache-hit">-</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="resize-handle resize-handle-vertical" data-direction="horizontal"></div>
+            </main>
+
+            <!-- Right Panel - Logs -->
+            <aside class="logs-section resizable" id="logs-panel">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>📋 Server Logs</h2>
+                        <button id="clear-logs-btn" class="btn btn-secondary btn-sm" style="min-width: 80px; padding: 6px 16px;">Clear</button>
+                    </div>
+                    <div id="logs-container" class="logs-container">
+                        <div class="log-entry info">Waiting for connection...</div>
+                    </div>
+                    <div class="logs-footer">
+                        <label>
+                            <input type="checkbox" id="auto-scroll" checked>
+                            <span>Auto-scroll</span>
+                        </label>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Horizontal Resize Handle for Metrics Section -->
+        <div class="resize-handle resize-handle-horizontal" id="metrics-resize-handle" data-direction="vertical"></div>
+
+        <!-- Performance Metrics Section -->
+        <section class="metrics-section resizable" id="metrics-panel">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>📊 Performance Metrics (GuideLLM)</h2>
+                    <div class="metrics-controls">
+                        <button id="run-benchmark-btn" class="btn btn-primary btn-sm" disabled>Run Benchmark</button>
+                        <button id="stop-benchmark-btn" class="btn btn-danger btn-sm" disabled style="display: none;">Stop</button>
+                    </div>
+                </div>
+
+                <div id="metrics-section-content">
+                <!-- Benchmark Configuration -->
+                <div class="benchmark-config">
+                    <!-- Benchmark Method Selection -->
+                    <div class="config-row" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #2a3142;">
+                        <div class="config-item" style="flex: 1;">
+                            <label style="font-weight: 600; margin-bottom: 8px; display: block;">Benchmark Method:</label>
+                            <div style="display: flex; gap: 20px;">
+                                <label style="display: flex; align-items: center; cursor: pointer;">
+                                    <input type="radio" name="benchmark-method" id="benchmark-method-builtin" value="builtin" checked style="margin-right: 8px;">
+                                    <span>Built-in (Fast)</span>
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer;">
+                                    <input type="radio" name="benchmark-method" id="benchmark-method-guidellm" value="guidellm" style="margin-right: 8px;">
+                                    <span>GuideLLM (Advanced)</span>
+                                </label>
+                            </div>
+                            <small class="form-help" style="display: block; margin-top: 5px;">Built-in: Fast & simple. GuideLLM: More detailed metrics & HTML reports</small>
+                        </div>
+                    </div>
+                    
+                    <div class="config-row">
+                        <div class="config-item">
+                            <label for="benchmark-requests">Total Requests:</label>
+                            <input type="number" id="benchmark-requests" class="form-control-sm" value="100" min="10" max="1000">
+                        </div>
+                        <div class="config-item">
+                            <label for="benchmark-rate">Request Rate (req/s):</label>
+                            <input type="number" id="benchmark-rate" class="form-control-sm" value="5" min="1" max="50">
+                        </div>
+                        <div class="config-item">
+                            <label for="benchmark-prompt-tokens">Prompt Tokens:</label>
+                            <input type="number" id="benchmark-prompt-tokens" class="form-control-sm" value="100" min="10" max="2048">
+                        </div>
+                        <div class="config-item">
+                            <label for="benchmark-output-tokens">Output Tokens:</label>
+                            <input type="number" id="benchmark-output-tokens" class="form-control-sm" value="100" min="10" max="2048">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Command Preview Section -->
+                <div class="command-preview-section" style="margin-top: 15px;">
+                    <div class="command-preview-header">
+                        <h3>Command Preview</h3>
+                        <button id="copy-benchmark-command-btn" class="btn btn-secondary btn-sm" title="Copy command">Copy</button>
+                    </div>
+                    <textarea id="benchmark-command-text" class="command-preview-textarea" rows="6" spellcheck="false" readonly>guidellm --target http://localhost:8000/v1 --rate 5 --max-requests 100</textarea>
+                    <small class="command-help">Equivalent GuideLLM command for this benchmark configuration</small>
+                </div>
+
+                <!-- Raw GuideLLM Output Section -->
+                <div class="command-preview-section" id="guidellm-raw-output-section" style="margin-top: 15px; display: none;">
+                    <div class="command-preview-header">
+                        <h3>GuideLLM Raw Output</h3>
+                        <div style="display: flex; gap: 8px;">
+                            <button id="toggle-raw-output-btn" class="btn btn-secondary btn-sm" title="Hide/Show raw output">Hide</button>
+                            <button id="copy-guidellm-output-btn" class="btn btn-secondary btn-sm" title="Copy output">Copy</button>
+                        </div>
+                    </div>
+                    <div id="guidellm-raw-output-content">
+                        <textarea id="guidellm-raw-output" class="command-preview-textarea" rows="15" spellcheck="false" readonly style="font-family: monospace; font-size: 11px;"></textarea>
+                        <small class="command-help">Complete output from GuideLLM benchmark</small>
+                    </div>
+                </div>
+
+                <!-- GuideLLM JSON Output Section -->
+                <div class="command-preview-section" id="guidellm-json-output-section" style="margin-top: 15px; display: none;">
+                    <div class="command-preview-header">
+                        <h3>📊 GuideLLM Benchmark Results (JSON)</h3>
+                        <div style="display: flex; gap: 8px;">
+                            <button id="toggle-json-output-btn" class="btn btn-secondary btn-sm" title="Hide/Show JSON output">Hide</button>
+                            <button id="copy-guidellm-json-btn" class="btn btn-secondary btn-sm" title="Copy JSON">Copy</button>
+                        </div>
+                    </div>
+                    <div id="guidellm-json-output-content">
+                        <pre id="guidellm-json-output" class="json-display" style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 6px; max-height: 500px; overflow: auto; font-family: 'Monaco', 'Menlo', 'Courier New', monospace; font-size: 12px; line-height: 1.5; margin: 0;"></pre>
+                        <small class="command-help">Structured benchmark data in JSON format</small>
+                    </div>
+                </div>
+
+                <!-- GuideLLM Table View Section -->
+                <div class="benchmark-table-section" id="guidellm-table-section" style="margin-top: 15px; display: none;">
+                    <div class="command-preview-header">
+                        <h3>📈 Benchmark Summary Table</h3>
+                    </div>
+                    <div id="guidellm-table-content" class="table-container">
+                        <!-- Tables will be populated here by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Metrics Display -->
+                <div id="metrics-display" class="metrics-display">
+                    <div class="metrics-placeholder">
+                        <p>No benchmark data available</p>
+                        <p class="metrics-help">Start the vLLM server and click "Run Benchmark" to test performance</p>
+                    </div>
+                </div>
+
+                <!-- Metrics Grid -->
+                <div id="metrics-grid" class="metrics-grid" style="display: none;">
+                    <!-- Throughput Metrics -->
+                    <div class="metric-card">
+                        <div class="metric-icon">🚀</div>
+                        <div class="metric-label">Throughput</div>
+                        <div class="metric-value" id="metric-throughput">-- req/s</div>
+                        <div class="metric-subtext">Requests per second</div>
+                    </div>
+
+                    <!-- Latency Metrics -->
+                    <div class="metric-card">
+                        <div class="metric-icon">⏱️</div>
+                        <div class="metric-label">Avg Latency</div>
+                        <div class="metric-value" id="metric-latency">-- ms</div>
+                        <div class="metric-subtext">Mean response time</div>
+                    </div>
+
+                    <!-- Tokens per Second -->
+                    <div class="metric-card">
+                        <div class="metric-icon">📝</div>
+                        <div class="metric-label">Token Throughput</div>
+                        <div class="metric-value" id="benchmark-tokens-per-sec">-- tok/s</div>
+                        <div class="metric-subtext">Output tokens per second</div>
+                    </div>
+
+                    <!-- P50 Latency -->
+                    <div class="metric-card">
+                        <div class="metric-icon">📊</div>
+                        <div class="metric-label">P50 Latency</div>
+                        <div class="metric-value" id="metric-p50">-- ms</div>
+                        <div class="metric-subtext">50th percentile</div>
+                    </div>
+
+                    <!-- P95 Latency -->
+                    <div class="metric-card">
+                        <div class="metric-icon">📈</div>
+                        <div class="metric-label">P95 Latency</div>
+                        <div class="metric-value" id="metric-p95">-- ms</div>
+                        <div class="metric-subtext">95th percentile</div>
+                    </div>
+
+                    <!-- P99 Latency -->
+                    <div class="metric-card">
+                        <div class="metric-icon">⚡</div>
+                        <div class="metric-label">P99 Latency</div>
+                        <div class="metric-value" id="metric-p99">-- ms</div>
+                        <div class="metric-subtext">99th percentile</div>
+                    </div>
+
+                    <!-- Total Tokens -->
+                    <div class="metric-card">
+                        <div class="metric-icon">💬</div>
+                        <div class="metric-label">Total Tokens</div>
+                        <div class="metric-value" id="benchmark-total-tokens">--</div>
+                        <div class="metric-subtext">Input + Output tokens</div>
+                    </div>
+
+                    <!-- Success Rate -->
+                    <div class="metric-card">
+                        <div class="metric-icon">✅</div>
+                        <div class="metric-label">Success Rate</div>
+                        <div class="metric-value" id="metric-success-rate">-- %</div>
+                        <div class="metric-subtext">Successful requests</div>
+                    </div>
+                </div>
+
+                <!-- Benchmark Progress -->
+                <div id="benchmark-progress" class="benchmark-progress" style="display: none;">
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-text">
+                        <span id="progress-status">Running benchmark...</span>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Community Recipes Modal -->
+    <div id="recipes-modal" class="modal" style="display: none;">
+        <div class="modal-overlay" id="recipes-modal-overlay"></div>
+        <div class="modal-content recipes-modal-content">
+            <div class="modal-header">
+                <h2>📚 vLLM Community Recipes</h2>
+                <button id="recipes-modal-close" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="recipes-intro">
+                    Optimized configurations from the 
+                    <a href="https://github.com/vllm-project/recipes" target="_blank">vLLM Recipes Repository</a>.
+                    Select a recipe to auto-configure the playground.
+                </p>
+                
+                <!-- Sync Controls -->
+                <div class="sync-controls-section">
+                    <button id="sync-recipes-btn" class="btn btn-secondary btn-sm" title="Sync recipes from GitHub">
+                        🔄 Sync
+                    </button>
+                    <button id="add-recipe-btn" class="btn btn-primary btn-sm" onclick="window.vllmUI.openAddRecipeModal()" title="Add a new recipe manually">
+                        <span class="add-icon">+</span> Add
+                    </button>
+                    <div class="github-token-inline">
+                        <input type="password" id="github-token-input" class="form-control" 
+                               placeholder="GitHub Token (optional, for higher rate limits)">
+                        <a href="https://github.com/settings/tokens" target="_blank" class="token-help-link" title="Get a token">?</a>
+                    </div>
+                </div>
+                
+                <!-- Search/Filter -->
+                <div class="recipes-search">
+                    <input type="text" id="recipes-search-input" class="form-control" placeholder="Search models...">
+                    <div class="recipes-filter-tags" id="recipes-filter-tags">
+                        <button class="tag-btn active" data-tag="all">All</button>
+                        <button class="tag-btn" data-tag="single-gpu">Single GPU</button>
+                        <button class="tag-btn" data-tag="multi-gpu">Multi GPU</button>
+                        <button class="tag-btn" data-tag="cpu">CPU</button>
+                        <button class="tag-btn" data-tag="vision">Vision</button>
+                        <button class="tag-btn" data-tag="reasoning">Reasoning</button>
+                    </div>
+                </div>
+                
+                <!-- Categories List -->
+                <div id="recipes-categories" class="recipes-categories">
+                    <div class="recipes-loading">Loading recipes...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
+

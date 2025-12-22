@@ -1,0 +1,113 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vllm-playground"
+version = "0.0.13"
+description = "A web interface for managing and interacting with vLLM servers"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.9"
+authors = [
+    { name = "micytao" }
+]
+keywords = [
+    "vllm",
+    "llm",
+    "ai",
+    "machine-learning",
+    "inference",
+    "web-interface",
+    "playground"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+]
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "websockets>=12.0",
+    "aiohttp>=3.9.0",
+    "pydantic>=2.4.0",
+    "python-multipart>=0.0.6",
+    "numpy>=1.24.0",
+    "jinja2>=3.1.0",
+    "psutil>=5.9.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+benchmark = [
+    "guidellm>=0.3.1",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+all = [
+    "vllm-playground[benchmark,dev]",
+]
+
+[project.scripts]
+vllm-playground = "vllm_playground.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/micytao/vllm-playground"
+Documentation = "https://github.com/micytao/vllm-playground#readme"
+Repository = "https://github.com/micytao/vllm-playground"
+Issues = "https://github.com/micytao/vllm-playground/issues"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/vllm_playground",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["vllm_playground"]
+
+[tool.hatch.build]
+include = [
+    "vllm_playground/**/*.py",
+    "vllm_playground/**/*.html",
+    "vllm_playground/**/*.css",
+    "vllm_playground/**/*.js",
+    "vllm_playground/**/*.json",
+    "vllm_playground/**/*.png",
+    "vllm_playground/**/*.jpeg",
+    "vllm_playground/**/*.jpg",
+    "vllm_playground/**/*.gif",
+    "vllm_playground/**/*.svg",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
