@@ -2,7 +2,11 @@
 
 A modern web interface for managing and interacting with vLLM servers (www.github.com/vllm-project/vllm). Supports both GPU and CPU modes, with special optimizations for macOS Apple Silicon and enterprise deployment on OpenShift/Kubernetes.
 
+### ✨ New UI with Tool Calling Support
 ![vLLM Playground Interface](assets/vllm-playground-newUI.png)
+
+### ✨ New UI with Structured Outputs Support
+![vLLM Playground with Structured Outputs](assets/vllm-playground-structured-outputs.png)
 
 ### ✨ New UI Enhancements
 
