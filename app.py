@@ -1256,6 +1256,72 @@ def is_jetson_device(gpu_name: str) -> bool:
     return any(keyword in name_lower for keyword in jetson_keywords)
 
 
+def get_jetson_temperature():
+    """
+    Get temperature for Jetson devices from thermal zones.
+    Jetson uses Linux thermal zones instead of nvidia-smi for temperature.
+    
+    Priority order:
+    1. tj-thermal (Thermal Junction - most accurate)
+    2. gpu-thermal
+    3. Any available thermal zone
+    
+    Returns temperature in Celsius or None if not available.
+    """
+    thermal_base = '/sys/devices/virtual/thermal'
+    preferred_zones = ['tj-thermal', 'gpu-thermal']
+    
+    try:
+        import os
+        
+        # First, try preferred thermal zones
+        for zone_name in preferred_zones:
+            for zone_dir in os.listdir(thermal_base):
+                if zone_dir.startswith('thermal_zone'):
+                    zone_path = os.path.join(thermal_base, zone_dir)
+                    type_path = os.path.join(zone_path, 'type')
+                    temp_path = os.path.join(zone_path, 'temp')
+                    
+                    try:
+                        with open(type_path, 'r') as f:
+                            zone_type = f.read().strip()
+                        
+                        if zone_type == zone_name:
+                            with open(temp_path, 'r') as f:
+                                # Temperature is in milli-Celsius
+                                temp_mc = int(f.read().strip())
+                                temp_c = temp_mc // 1000
+                                logger.debug(f"Jetson temperature from {zone_name}: {temp_c}°C")
+                                return temp_c
+                    except (IOError, ValueError):
+                        continue
+        
+        # Fallback: try any thermal zone with 'gpu' in name
+        for zone_dir in os.listdir(thermal_base):
+            if zone_dir.startswith('thermal_zone'):
+                zone_path = os.path.join(thermal_base, zone_dir)
+                type_path = os.path.join(zone_path, 'type')
+                temp_path = os.path.join(zone_path, 'temp')
+                
+                try:
+                    with open(type_path, 'r') as f:
+                        zone_type = f.read().strip()
+                    
+                    if 'gpu' in zone_type.lower() or 'tj' in zone_type.lower():
+                        with open(temp_path, 'r') as f:
+                            temp_mc = int(f.read().strip())
+                            temp_c = temp_mc // 1000
+                            logger.debug(f"Jetson temperature from {zone_type}: {temp_c}°C")
+                            return temp_c
+                except (IOError, ValueError):
+                    continue
+                    
+    except Exception as e:
+        logger.warning(f"Failed to read Jetson temperature: {e}")
+    
+    return None
+
+
 @app.get("/api/gpu-status")
 async def get_gpu_status():
     """
@@ -1287,12 +1353,22 @@ async def get_gpu_status():
                     
                     # Check if this is a Jetson device with unified memory
                     is_jetson = is_jetson_device(gpu_name)
-                    if is_jetson and memory_total == 0:
+                    temperature = safe_int(parts[6], 0)
+                    
+                    if is_jetson:
                         # Jetson uses unified memory, get from /proc/meminfo
-                        unified_mem = get_jetson_unified_memory()
-                        if unified_mem:
-                            memory_used, memory_total, memory_free = unified_mem
-                            logger.info(f"Jetson unified memory: {memory_used}MB used, {memory_total}MB total, {memory_free}MB free")
+                        if memory_total == 0:
+                            unified_mem = get_jetson_unified_memory()
+                            if unified_mem:
+                                memory_used, memory_total, memory_free = unified_mem
+                                logger.info(f"Jetson unified memory: {memory_used}MB used, {memory_total}MB total, {memory_free}MB free")
+                        
+                        # Jetson temperature from thermal zones (nvidia-smi returns [N/A])
+                        if temperature == 0:
+                            jetson_temp = get_jetson_temperature()
+                            if jetson_temp is not None:
+                                temperature = jetson_temp
+                                logger.info(f"Jetson temperature from thermal zone: {temperature}°C")
                     
                     gpu_info.append({
                         "index": safe_int(parts[0], 0),
@@ -1301,7 +1377,7 @@ async def get_gpu_status():
                         "memory_total": memory_total,
                         "memory_free": memory_free,
                         "utilization": safe_int(parts[5], 0),
-                        "temperature": safe_int(parts[6], 0),
+                        "temperature": temperature,
                         "is_jetson": is_jetson,
                         "unified_memory": is_jetson  # Jetson uses unified CPU/GPU memory
                     })
