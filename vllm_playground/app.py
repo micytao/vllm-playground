@@ -1213,11 +1213,53 @@ def safe_int(value, default=0):
         return default
 
 
+def get_jetson_unified_memory():
+    """
+    Get unified memory info for Jetson devices from /proc/meminfo.
+    Jetson uses unified memory shared between CPU and GPU.
+    Returns (memory_used_mb, memory_total_mb, memory_free_mb) or None if not available.
+    """
+    try:
+        with open('/proc/meminfo', 'r') as f:
+            meminfo = {}
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2:
+                    key = parts[0].rstrip(':')
+                    # Values are in kB
+                    value = int(parts[1])
+                    meminfo[key] = value
+            
+            mem_total_kb = meminfo.get('MemTotal', 0)
+            mem_available_kb = meminfo.get('MemAvailable', meminfo.get('MemFree', 0))
+            mem_used_kb = mem_total_kb - mem_available_kb
+            
+            # Convert to MB for consistency with nvidia-smi output
+            return (
+                mem_used_kb // 1024,
+                mem_total_kb // 1024,
+                mem_available_kb // 1024
+            )
+    except Exception as e:
+        logger.warning(f"Failed to read /proc/meminfo for Jetson memory: {e}")
+        return None
+
+
+def is_jetson_device(gpu_name: str) -> bool:
+    """Check if the GPU is a Jetson device based on name."""
+    jetson_keywords = ['thor', 'orin', 'xavier', 'nano', 'tx1', 'tx2', 'agx', 'jetson']
+    name_lower = gpu_name.lower()
+    return any(keyword in name_lower for keyword in jetson_keywords)
+
+
 @app.get("/api/gpu-status")
 async def get_gpu_status():
     """
     Get detailed GPU status information including memory usage and utilization.
     Supports both desktop GPUs (4090, etc.) and NVIDIA Jetson devices (Thor, Orin, etc.)
+    
+    For Jetson devices with unified memory, memory info is read from /proc/meminfo
+    since nvidia-smi returns [N/A] for memory fields.
     """
     gpu_info = []
     
@@ -1234,15 +1276,30 @@ async def get_gpu_status():
             for line in lines:
                 parts = [p.strip() for p in line.split(',')]
                 if len(parts) >= 7:
-                    # Use safe_int to handle [N/A] values on Jetson devices
+                    gpu_name = parts[1]
+                    memory_used = safe_int(parts[2], 0)
+                    memory_total = safe_int(parts[3], 0)
+                    memory_free = safe_int(parts[4], 0)
+                    
+                    # Check if this is a Jetson device with unified memory
+                    is_jetson = is_jetson_device(gpu_name)
+                    if is_jetson and memory_total == 0:
+                        # Jetson uses unified memory, get from /proc/meminfo
+                        unified_mem = get_jetson_unified_memory()
+                        if unified_mem:
+                            memory_used, memory_total, memory_free = unified_mem
+                            logger.info(f"Jetson unified memory: {memory_used}MB used, {memory_total}MB total, {memory_free}MB free")
+                    
                     gpu_info.append({
                         "index": safe_int(parts[0], 0),
-                        "name": parts[1],
-                        "memory_used": safe_int(parts[2], 0),
-                        "memory_total": safe_int(parts[3], 0),
-                        "memory_free": safe_int(parts[4], 0),
+                        "name": gpu_name,
+                        "memory_used": memory_used,
+                        "memory_total": memory_total,
+                        "memory_free": memory_free,
                         "utilization": safe_int(parts[5], 0),
-                        "temperature": safe_int(parts[6], 0)
+                        "temperature": safe_int(parts[6], 0),
+                        "is_jetson": is_jetson,
+                        "unified_memory": is_jetson  # Jetson uses unified CPU/GPU memory
                     })
         
         return {
