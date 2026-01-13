@@ -62,6 +62,7 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "black>=23.0.0",
     "ruff>=0.1.0",
+    "pre-commit>=4.0.0",
 ]
 all = [
     "vllm-playground[benchmark,mcp,dev]",
