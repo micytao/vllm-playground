@@ -91,7 +91,7 @@
     background: var(--bg-tertiary);
     padding: 12px 16px;
     border-radius: 8px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
     font-size: 0.85rem;
     color: var(--text-primary);
     border: 1px solid var(--border-color);
@@ -175,7 +175,11 @@
    ============================================================================= */
 
 .benchmark-server-status {
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(239, 68, 68, 0.1) 100%);
+    background: linear-gradient(
+        135deg,
+        rgba(245, 158, 11, 0.15) 0%,
+        rgba(239, 68, 68, 0.1) 100%
+    );
     border: 1px solid rgba(245, 158, 11, 0.3);
     border-radius: 10px;
     padding: 16px 20px;
@@ -183,7 +187,11 @@
 }
 
 .benchmark-server-status.connected {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(59, 130, 246, 0.1) 100%);
+    background: linear-gradient(
+        135deg,
+        rgba(16, 185, 129, 0.15) 0%,
+        rgba(59, 130, 246, 0.1) 100%
+    );
     border-color: rgba(16, 185, 129, 0.3);
 }
 
@@ -269,7 +277,11 @@
 }
 
 .metric-card {
-    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-tertiary) 100%);
+    background: linear-gradient(
+        135deg,
+        var(--bg-primary) 0%,
+        var(--bg-tertiary) 100%
+    );
     border-radius: 12px;
     padding: 20px;
     text-align: center;
@@ -280,13 +292,17 @@
 }
 
 .metric-card::before {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     height: 3px;
-    background: linear-gradient(90deg, var(--primary-color), var(--success-color));
+    background: linear-gradient(
+        90deg,
+        var(--primary-color),
+        var(--success-color)
+    );
     opacity: 0;
     transition: opacity 0.3s;
 }
@@ -320,7 +336,7 @@
     font-weight: 700;
     color: var(--text-primary);
     margin-bottom: 5px;
-    font-family: 'Monaco', 'Courier New', monospace;
+    font-family: "Monaco", "Courier New", monospace;
 }
 
 .metric-subtext {
@@ -369,8 +385,12 @@
 }
 
 @keyframes shimmer {
-    0% { background-position: -200% center; }
-    100% { background-position: 200% center; }
+    0% {
+        background-position: -200% center;
+    }
+    100% {
+        background-position: 200% center;
+    }
 }
 
 .progress-text {
@@ -383,9 +403,15 @@
 
 /* Metric Card Animations */
 @keyframes metricUpdate {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-    100% { transform: scale(1); }
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    100% {
+        transform: scale(1);
+    }
 }
 
 .metric-card.updated {
@@ -475,7 +501,7 @@
 .benchmark-data-table td.value {
     font-weight: 600;
     color: var(--text-primary);
-    font-family: 'Monaco', 'Menlo', monospace;
+    font-family: "Monaco", "Menlo", monospace;
 }
 
 .benchmark-data-table td.value.success {
@@ -500,15 +526,15 @@
     .metrics-grid {
         grid-template-columns: repeat(2, 1fr);
     }
-    
+
     .config-row {
         grid-template-columns: 1fr;
     }
-    
+
     .metric-value {
         font-size: 1.5rem;
     }
-    
+
     .table-container {
         grid-template-columns: 1fr;
     }
@@ -546,11 +572,19 @@
 }
 
 [data-theme="light"] .benchmark-server-status {
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%);
+    background: linear-gradient(
+        135deg,
+        rgba(245, 158, 11, 0.1) 0%,
+        rgba(239, 68, 68, 0.05) 100%
+    );
 }
 
 [data-theme="light"] .benchmark-server-status.connected {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
+    background: linear-gradient(
+        135deg,
+        rgba(16, 185, 129, 0.1) 0%,
+        rgba(59, 130, 246, 0.05) 100%
+    );
 }
 
 [data-theme="light"] .metric-card {
@@ -582,4 +616,3 @@
 [data-theme="light"] .icon-guidellm {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230f172a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20V10'/%3E%3Cpath d='M18 20V4'/%3E%3Cpath d='M6 20v-4'/%3E%3C/svg%3E");
 }
-

@@ -96,13 +96,7 @@
           "config": {
             "enable_expert_parallel": true
           },
-          "tags": [
-            "fp8",
-            "moe",
-            "vision",
-            "reasoning",
-            "single-gpu"
-          ]
+          "tags": ["fp8", "moe", "vision", "reasoning", "single-gpu"]
         },
         {
           "id": "deepseek-v3-2",
@@ -152,11 +146,7 @@
             "trust_remote_code": false,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "large",
-            "multi-gpu",
-            "chat"
-          ]
+          "tags": ["large", "multi-gpu", "chat"]
         },
         {
           "id": "qwen3-8b",
@@ -175,11 +165,7 @@
             "trust_remote_code": false,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "efficient",
-            "single-gpu",
-            "chat"
-          ]
+          "tags": ["efficient", "single-gpu", "chat"]
         },
         {
           "id": "qwen2.5-vl",
@@ -198,11 +184,7 @@
             "trust_remote_code": true,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "vision",
-            "multimodal",
-            "single-gpu"
-          ]
+          "tags": ["vision", "multimodal", "single-gpu"]
         },
         {
           "id": "qwen3-coder",
@@ -221,12 +203,7 @@
             "trust_remote_code": true,
             "gpu_memory_utilization": 0.95
           },
-          "tags": [
-            "coding",
-            "moe",
-            "large",
-            "multi-gpu"
-          ]
+          "tags": ["coding", "moe", "large", "multi-gpu"]
         },
         {
           "id": "qwen3-coder-480b-a35b",
@@ -269,14 +246,7 @@
             "tensor_parallel_size": 4,
             "gpu_memory_utilization": 0.8
           },
-          "tags": [
-            "multi-gpu",
-            "tpu",
-            "moe",
-            "vision",
-            "instruct",
-            "fp8"
-          ]
+          "tags": ["multi-gpu", "tpu", "moe", "vision", "instruct", "fp8"]
         },
         {
           "id": "qwen3-vl",
@@ -322,12 +292,7 @@
           "config": {
             "max_model_len": 32768
           },
-          "tags": [
-            "vision",
-            "chat",
-            "single-gpu",
-            "tpu"
-          ]
+          "tags": ["vision", "chat", "single-gpu", "tpu"]
         }
       ]
     },
@@ -353,11 +318,7 @@
             "trust_remote_code": false,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "latest",
-            "moe",
-            "multi-gpu"
-          ],
+          "tags": ["latest", "moe", "multi-gpu"],
           "requires_hf_token": true
         },
         {
@@ -377,11 +338,7 @@
             "trust_remote_code": false,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "instruct",
-            "large",
-            "multi-gpu"
-          ],
+          "tags": ["instruct", "large", "multi-gpu"],
           "requires_hf_token": true
         },
         {
@@ -401,11 +358,7 @@
             "trust_remote_code": false,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "instruct",
-            "efficient",
-            "single-gpu"
-          ],
+          "tags": ["instruct", "efficient", "single-gpu"],
           "requires_hf_token": true
         }
       ]
@@ -432,11 +385,7 @@
             "trust_remote_code": false,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "large",
-            "instruct",
-            "multi-gpu"
-          ]
+          "tags": ["large", "instruct", "multi-gpu"]
         },
         {
           "id": "ministral-3-instruct",
@@ -455,11 +404,7 @@
             "trust_remote_code": false,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "compact",
-            "efficient",
-            "single-gpu"
-          ]
+          "tags": ["compact", "efficient", "single-gpu"]
         },
         {
           "id": "ministral-3-reasoning",
@@ -478,11 +423,7 @@
             "trust_remote_code": false,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "reasoning",
-            "compact",
-            "single-gpu"
-          ]
+          "tags": ["reasoning", "compact", "single-gpu"]
         }
       ]
     },
@@ -508,11 +449,7 @@
             "trust_remote_code": true,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "vision",
-            "multimodal",
-            "single-gpu"
-          ]
+          "tags": ["vision", "multimodal", "single-gpu"]
         },
         {
           "id": "intern-s1",
@@ -531,11 +468,7 @@
             "trust_remote_code": true,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "efficient",
-            "instruct",
-            "single-gpu"
-          ]
+          "tags": ["efficient", "instruct", "single-gpu"]
         },
         {
           "id": "internvl3-5",
@@ -550,13 +483,7 @@
           "config": {
             "trust_remote_code": true
           },
-          "tags": [
-            "single-gpu",
-            "vision",
-            "chat",
-            "reasoning",
-            "coding"
-          ]
+          "tags": ["single-gpu", "vision", "chat", "reasoning", "coding"]
         }
       ]
     },
@@ -582,11 +509,7 @@
             "trust_remote_code": true,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "chat",
-            "chinese",
-            "single-gpu"
-          ]
+          "tags": ["chat", "chinese", "single-gpu"]
         },
         {
           "id": "glm-4.5v",
@@ -605,12 +528,7 @@
             "trust_remote_code": true,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "vision",
-            "multimodal",
-            "chinese",
-            "single-gpu"
-          ]
+          "tags": ["vision", "multimodal", "chinese", "single-gpu"]
         },
         {
           "id": "glm-v",
@@ -685,11 +603,7 @@
             "trust_remote_code": false,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "moe",
-            "efficient",
-            "single-gpu"
-          ]
+          "tags": ["moe", "efficient", "single-gpu"]
         },
         {
           "id": "nemotron-nano-12b-vl",
@@ -708,11 +622,7 @@
             "trust_remote_code": true,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "vision",
-            "multimodal",
-            "single-gpu"
-          ]
+          "tags": ["vision", "multimodal", "single-gpu"]
         },
         {
           "id": "nemotron-3-nano-30b-a3b",
@@ -728,14 +638,7 @@
             "tensor_parallel_size": 1,
             "trust_remote_code": true
           },
-          "tags": [
-            "tpu",
-            "single-gpu",
-            "moe",
-            "vision",
-            "fp8",
-            "coding"
-          ]
+          "tags": ["tpu", "single-gpu", "moe", "vision", "fp8", "coding"]
         },
         {
           "id": "nemotron-nano-12b-v2-vl",
@@ -752,14 +655,7 @@
             "trust_remote_code": true,
             "data_parallel_size": 1
           },
-          "tags": [
-            "tpu",
-            "single-gpu",
-            "vision",
-            "chat",
-            "fp8",
-            "coding"
-          ]
+          "tags": ["tpu", "single-gpu", "vision", "chat", "fp8", "coding"]
         }
       ]
     },
@@ -785,11 +681,7 @@
             "trust_remote_code": true,
             "gpu_memory_utilization": 0.95
           },
-          "tags": [
-            "moe",
-            "large",
-            "multi-gpu"
-          ]
+          "tags": ["moe", "large", "multi-gpu"]
         },
         {
           "id": "kimi-k2-think",
@@ -808,12 +700,7 @@
             "trust_remote_code": true,
             "gpu_memory_utilization": 0.95
           },
-          "tags": [
-            "reasoning",
-            "moe",
-            "large",
-            "multi-gpu"
-          ]
+          "tags": ["reasoning", "moe", "large", "multi-gpu"]
         },
         {
           "id": "kimi-linear",
@@ -830,13 +717,7 @@
             "max_model_len": 1048576,
             "trust_remote_code": true
           },
-          "tags": [
-            "multi-gpu",
-            "vision",
-            "instruct",
-            "chat",
-            "coding"
-          ]
+          "tags": ["multi-gpu", "vision", "instruct", "chat", "coding"]
         }
       ]
     },
@@ -862,11 +743,7 @@
             "trust_remote_code": true,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "efficient",
-            "instruct",
-            "single-gpu"
-          ]
+          "tags": ["efficient", "instruct", "single-gpu"]
         }
       ]
     },
@@ -892,11 +769,7 @@
             "trust_remote_code": true,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "reranking",
-            "embeddings",
-            "single-gpu"
-          ]
+          "tags": ["reranking", "embeddings", "single-gpu"]
         }
       ]
     },
@@ -922,12 +795,7 @@
             "trust_remote_code": true,
             "gpu_memory_utilization": 0.9
           },
-          "tags": [
-            "ocr",
-            "vision",
-            "document",
-            "single-gpu"
-          ]
+          "tags": ["ocr", "vision", "document", "single-gpu"]
         },
         {
           "id": "hunyuanocr",
@@ -940,14 +808,7 @@
             "minimum": "See documentation"
           },
           "config": {},
-          "tags": [
-            "single-gpu",
-            "moe",
-            "vision",
-            "multimodal",
-            "ocr",
-            "chat"
-          ]
+          "tags": ["single-gpu", "moe", "vision", "multimodal", "ocr", "chat"]
         }
       ]
     },
@@ -973,11 +834,7 @@
             "cpu_kvcache_space": 4,
             "trust_remote_code": false
           },
-          "tags": [
-            "cpu",
-            "compact",
-            "testing"
-          ]
+          "tags": ["cpu", "compact", "testing"]
         },
         {
           "id": "qwen3-0.6b-cpu",
@@ -996,11 +853,7 @@
             "cpu_kvcache_space": 2,
             "trust_remote_code": false
           },
-          "tags": [
-            "cpu",
-            "ultra-compact",
-            "testing"
-          ]
+          "tags": ["cpu", "ultra-compact", "testing"]
         },
         {
           "id": "opt-125m-cpu",
@@ -1019,11 +872,7 @@
             "cpu_kvcache_space": 1,
             "trust_remote_code": false
           },
-          "tags": [
-            "cpu",
-            "minimal",
-            "testing"
-          ]
+          "tags": ["cpu", "minimal", "testing"]
         }
       ]
     },
@@ -1070,14 +919,7 @@
             "tensor_parallel_size": 8,
             "gpu_memory_utilization": 0.95
           },
-          "tags": [
-            "multi-gpu",
-            "tpu",
-            "vision",
-            "fp8",
-            "coding",
-            "large"
-          ]
+          "tags": ["multi-gpu", "tpu", "vision", "fp8", "coding", "large"]
         }
       ]
     },
@@ -1200,14 +1042,7 @@
             "gpu_memory_utilization": 0.97,
             "trust_remote_code": true
           },
-          "tags": [
-            "multi-gpu",
-            "vision",
-            "chat",
-            "fp8",
-            "coding",
-            "large"
-          ]
+          "tags": ["multi-gpu", "vision", "chat", "fp8", "coding", "large"]
         }
       ]
     }
