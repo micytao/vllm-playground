@@ -197,28 +197,19 @@ Apache 2.0 License - See [LICENSE](LICENSE) file for details.
 
 Contributions welcome! Please feel free to submit issues and pull requests.
 
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/micytao/vllm-playground.git
-cd vllm-playground
-
-# Install dependencies (including dev tools)
-pip install -e ".[dev]"
-
-# Install pre-commit hooks (to lint and format the codebase)
-pip install pre-commit
-pre-commit install
-```
-
 ### Code Style
 
 This project uses automated formatting to ensure consistent code style:
 
+```bash
+# Install pre-commit hooks (to format the codebase)
+pip install pre-commit
+pre-commit install
+```
+
 | Tool | Purpose | Files |
 |------|---------|-------|
-| **[Ruff](https://docs.astral.sh/ruff/)** | Python linting & formatting | `*.py` |
+| **[Ruff](https://docs.astral.sh/ruff/)** | Python formatting | `*.py` |
 | **[Prettier](https://prettier.io/)** | JavaScript/CSS/HTML formatting | `*.js`, `*.css`, `*.html` |
 | **[EditorConfig](https://editorconfig.org/)** | Editor settings (indent, line endings) | All files |
 
