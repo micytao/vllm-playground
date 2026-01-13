@@ -83,7 +83,7 @@ if [ "$FORCE" = false ]; then
     echo
     read -p "Are you sure you want to continue? (yes/no): " -r
     echo
-    
+
     if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
         echo -e "${GREEN}Undeployment cancelled.${NC}"
         exit 0
@@ -120,7 +120,7 @@ while ${K8S_CMD} get namespace vllm-playground &> /dev/null; do
         echo "You may need to manually remove finalizers if stuck."
         exit 1
     fi
-    
+
     echo -n "."
     sleep 2
     ELAPSED=$((ELAPSED + 2))
@@ -143,4 +143,3 @@ echo "  ./deploy.sh"
 echo
 
 echo -e "${GREEN}Cleanup successful! 🗑️${NC}"
-

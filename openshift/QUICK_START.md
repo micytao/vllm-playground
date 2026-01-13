@@ -256,7 +256,7 @@ Then enter your token in the Web UI under "Advanced Settings" when starting a se
 
 **Cause 3:** Wrong mode (GPU model on CPU deployment)
 
-**Solution:** 
+**Solution:**
 - For GPU models: Use GPU deployment (`./deploy.sh --gpu`)
 - For CPU models: Check "Enable CPU Mode" in Web UI
 
@@ -342,4 +342,3 @@ oc scale deployment/vllm-playground-gpu --replicas=1 -n vllm-playground
 # Undeploy
 ./undeploy.sh
 ```
-

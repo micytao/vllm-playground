@@ -2,14 +2,14 @@
 # vLLM Playground Development OpenShift/Kubernetes Deployment
 # Ultra-minimal container for manual vLLM installation and testing
 # Image: quay.io/rh_ee_micyang/vllm-playground:0.1
-# 
+#
 # This deployment creates an ultra-minimal development environment (based on UBI9-minimal)
 # Container includes Python 3.11, build tools (gcc, git, vim), and application code (~800MB-1.2GB)
 # Users must install Python dependencies after deployment:
 # - vLLM (or vllm-cpu-only)
 # - PyTorch
 # - WebUI dependencies (from requirements.txt)
-# 
+#
 # Benefits:
 # - Smallest possible image size for fast deployment
 # - Maximum flexibility - choose your own vLLM version and backend
@@ -84,18 +84,18 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      
+
       containers:
       - name: vllm-playground-dev
         image: quay.io/rh_ee_micyang/vllm-playground:0.1
         imagePullPolicy: Always
-        
+
         # Command to keep container running for interactive access
         # Use uid_entrypoint.sh wrapper to fix "I have no name" issue with arbitrary UIDs
         # Override the default entrypoint to allow manual installation
         command: ["/home/vllm/uid_entrypoint.sh"]
         args: ["/bin/bash", "-c", "while true; do sleep 3600; done"]
-        
+
         # Ports
         ports:
         - name: webui
@@ -104,7 +104,7 @@ spec:
         - name: vllm-api
           containerPort: 8000
           protocol: TCP
-        
+
         # Environment Variables
         env:
         - name: WEBUI_PORT
@@ -123,14 +123,14 @@ spec:
         # Set work directory for user operations
         - name: WORKDIR
           value: "/workspace"
-        
+
         # Uncomment to use HuggingFace token from secret
         # - name: HF_TOKEN
         #   valueFrom:
         #     secretKeyRef:
         #       name: hf-token
         #       key: HF_TOKEN
-        
+
         # Resource Limits and Requests
         # Configured for GPU-enabled development
         # Uncomment the GPU lines below to enable GPU access
@@ -145,7 +145,7 @@ spec:
             memory: "16Gi"
             # Uncomment for GPU access:
             nvidia.com/gpu: "1"
-        
+
         # Health Checks
         # Using simple exec probe since this is a development container
         livenessProbe:
@@ -159,7 +159,7 @@ spec:
           timeoutSeconds: 5
           successThreshold: 1
           failureThreshold: 5
-        
+
         readinessProbe:
           exec:
             command:
@@ -171,7 +171,7 @@ spec:
           timeoutSeconds: 5
           successThreshold: 1
           failureThreshold: 3
-        
+
         # Security Context
         securityContext:
           runAsNonRoot: true
@@ -180,27 +180,27 @@ spec:
           capabilities:
             drop:
             - ALL
-        
+
         # Volume Mounts for persistent workspace
         volumeMounts:
         - name: workspace
           mountPath: /workspace
-      
+
       # Volumes for persistent workspace
       volumes:
       - name: workspace
         persistentVolumeClaim:
           claimName: vllm-dev-workspace
-      
+
       restartPolicy: Always
-      
+
       # Optional: Node selector for GPU nodes
       # Uncomment to schedule on GPU nodes only
       # nodeSelector:
       #   nvidia.com/gpu.present: "true"
       # Or use OpenShift GPU label:
       #   node-role.kubernetes.io/gpu: ""
-      
+
       # Optional: Tolerations for GPU nodes
       # Uncomment if GPU nodes have taints
       # tolerations:
@@ -334,18 +334,18 @@ metadata:
 data:
   README.md: |
     # vLLM Playground Development Environment
-    
+
     This is an ultra-minimal development container (UBI9-minimal based).
     Container includes Python 3.11, build tools (gcc, git, vim), and application code.
     You must install Python dependencies (vLLM, PyTorch, WebUI libs) manually.
-    
+
     ## Getting Started
-    
+
     1. Access the container shell:
        ```bash
        oc exec -it deployment/vllm-playground-dev -n vllm-playground-dev -- /bin/bash
        ```
-    
+
     2. Verify build tools (pre-installed):
        ```bash
        # Build tools (gcc, gcc-c++, python3.11-devel, git, vim) are pre-installed
@@ -353,78 +353,76 @@ data:
        git --version
        vim --version
        ```
-    
+
     3. Upgrade pip:
        ```bash
        pip3 install --upgrade pip setuptools wheel --user
        ```
-    
+
     4. Install vLLM (choose based on your hardware):
        ```bash
        # For CUDA GPU:
        pip3 install --user torch torchvision --index-url https://download.pytorch.org/whl/cu121
        pip3 install --user vllm
-       
+
        # For CPU only:
        pip3 install --user torch torchvision --index-url https://download.pytorch.org/whl/cpu
        pip3 install --user vllm-cpu-only
-       
+
        # For ROCm (AMD GPU):
        pip3 install --user torch torchvision --index-url https://download.pytorch.org/whl/rocm6.1
        pip3 install --user vllm
        ```
-    
+
     5. Install WebUI dependencies:
        ```bash
        pip3 install --user -r /home/vllm/vllm-playground/requirements.txt
        ```
-    
+
        ```bash
        ```
-    
+
     ## Workspace Layout
-    
+
     - `/workspace` - Your persistent workspace (80GB)
     - `/workspace/.cache/huggingface` - Model cache directory
     - `/home/vllm/vllm-playground` - Application code directory
     - All your work should be done in `/workspace` to ensure persistence
-    
+
     ## Starting the WebUI Application
-    
+
     After installing all dependencies:
     ```bash
     cd /home/vllm/vllm-playground
     python3 app.py
     ```
-    
+
     ## Downloading Models
-    
+
     Models will be automatically cached in `/workspace/.cache/huggingface/hub/`
-    
+
     Example:
     ```python
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    
+
     model_name = "meta-llama/Llama-2-7b-hf"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(model_name)
     ```
-    
+
     ## Running vLLM Server
-    
+
     ```bash
     vllm serve <model-name> --host 0.0.0.0 --port 8000
     ```
-    
+
     ## Tips
-    
+
     - Monitor disk usage: `df -h /workspace`
     - Check model cache: `du -sh /workspace/.cache/huggingface/hub/*`
     - Clean up old models if needed to free space
-    
+
     ## Exposing Services
-    
+
     Once you have services running, uncomment the Route sections in the deployment
     file to expose them externally.
-
-

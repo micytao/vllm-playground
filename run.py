@@ -2,6 +2,7 @@
 """
 Launcher script for vLLM Playground with process management
 """
+
 import sys
 import os
 import signal
@@ -23,8 +24,8 @@ PID_FILE = WORKSPACE_ROOT / ".vllm_playground.pid"
 def find_process_by_port(port: int = 7860) -> Optional[psutil.Process]:
     """Find process using a specific port"""
     try:
-        for conn in psutil.net_connections(kind='inet'):
-            if conn.laddr.port == port and conn.status == 'LISTEN':
+        for conn in psutil.net_connections(kind="inet"):
+            if conn.laddr.port == port and conn.status == "LISTEN":
                 try:
                     return psutil.Process(conn.pid)
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -40,33 +41,40 @@ def get_existing_process() -> Optional[psutil.Process]:
     # First, try PID file method
     if PID_FILE.exists():
         try:
-            with open(PID_FILE, 'r') as f:
+            with open(PID_FILE, "r") as f:
                 pid = int(f.read().strip())
-            
+
             # Check if process exists and is still running
             if psutil.pid_exists(pid):
                 proc = psutil.Process(pid)
                 # Verify it's actually our process (check command line)
-                cmdline = ' '.join(proc.cmdline())
-                if 'run.py' in cmdline or 'vllm-playground' in cmdline or 'app.py' in cmdline or 'uvicorn' in cmdline:
+                cmdline = " ".join(proc.cmdline())
+                if (
+                    "run.py" in cmdline
+                    or "vllm-playground" in cmdline
+                    or "app.py" in cmdline
+                    or "uvicorn" in cmdline
+                ):
                     return proc
         except (ValueError, psutil.NoSuchProcess, psutil.AccessDenied):
             pass
-        
+
         # PID file exists but process doesn't, clean it up
         PID_FILE.unlink(missing_ok=True)
-    
+
     # Fallback: check if port 7860 is in use
     port_proc = find_process_by_port(7860)
     if port_proc:
         try:
-            cmdline = ' '.join(port_proc.cmdline())
+            cmdline = " ".join(port_proc.cmdline())
             # Only return if it looks like our process
-            if 'python' in cmdline.lower() and ('run.py' in cmdline or 'app.py' in cmdline or 'uvicorn' in cmdline):
+            if "python" in cmdline.lower() and (
+                "run.py" in cmdline or "app.py" in cmdline or "uvicorn" in cmdline
+            ):
                 return port_proc
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
-    
+
     return None
 
 
@@ -75,7 +83,7 @@ def kill_existing_process(proc: psutil.Process) -> bool:
     try:
         print(f"Terminating existing process (PID: {proc.pid})...")
         proc.terminate()
-        
+
         # Wait up to 5 seconds for graceful termination
         try:
             proc.wait(timeout=5)
@@ -97,7 +105,7 @@ def kill_existing_process(proc: psutil.Process) -> bool:
 
 def write_pid_file():
     """Write current process PID to file"""
-    with open(PID_FILE, 'w') as f:
+    with open(PID_FILE, "w") as f:
         f.write(str(os.getpid()))
 
 
@@ -124,24 +132,26 @@ if __name__ == "__main__":
         print(f"  PID: {existing_proc.pid}")
         print(f"  Started: {existing_proc.create_time()}")
         print(f"  Status: {existing_proc.status()}")
-        
+
         # Auto-kill the existing process
         print("\n🔄 Automatically stopping the existing process...")
         if kill_existing_process(existing_proc):
             print("✅ Ready to start new instance\n")
         else:
-            print(f"❌ Failed to stop existing process. Please manually kill PID {existing_proc.pid}")
+            print(
+                f"❌ Failed to stop existing process. Please manually kill PID {existing_proc.pid}"
+            )
             print(f"   Command: kill {existing_proc.pid}")
             sys.exit(1)
-    
+
     # Register cleanup handlers
     atexit.register(cleanup_pid_file)
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
-    
+
     # Write PID file
     write_pid_file()
-    
+
     print("=" * 60)
     print("🚀 vLLM Playground - Starting...")
     print("=" * 60)
@@ -155,9 +165,10 @@ if __name__ == "__main__":
     print(f"Process ID: {os.getpid()}")
     print(f"PID file: {PID_FILE}")
     print("=" * 60)
-    
+
     try:
         from app import main
+
         main()
     except KeyboardInterrupt:
         print("\n🛑 Interrupted by user")
@@ -166,4 +177,3 @@ if __name__ == "__main__":
         sys.exit(1)
     finally:
         cleanup_pid_file()
-

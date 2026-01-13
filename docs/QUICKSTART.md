@@ -207,4 +207,3 @@ Update "Port" field in configuration panel.
 ---
 
 Happy chatting! 🚀
-

@@ -246,4 +246,3 @@ The deployment supports both **CPU-only** and **GPU-enabled** clusters:
 - ✅ Dedicated ConfigMaps for each mode
 - ✅ Separate deployments (one active at a time)
 - ✅ Single command deployment: `./deploy.sh --gpu` or `./deploy.sh --cpu`
-

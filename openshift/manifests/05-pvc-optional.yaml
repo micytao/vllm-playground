@@ -1,7 +1,7 @@
 ---
 # Optional: Persistent Volume Claim for Model Cache
 # This allows downloaded models to persist across pod restarts
-# 
+#
 # Enable this for:
 # - Production deployments
 # - Repeated testing with same models
@@ -31,4 +31,3 @@ spec:
   # Uncomment and set if you need a specific storage class
   # Common values: gp3, gp3-csi, nfs, local-path, etc.
   # Leave commented to use cluster default
-

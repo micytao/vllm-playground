@@ -62,42 +62,42 @@ check_namespace() {
 show_resources() {
     log_info "Checking existing resources in namespace '${NAMESPACE}'..."
     echo ""
-    
+
     # Check for deployment
     if oc get deployment "${APP_NAME}" -n "${NAMESPACE}" &> /dev/null; then
         echo "Deployment:"
         oc get deployment "${APP_NAME}" -n "${NAMESPACE}" 2>/dev/null || true
         echo ""
     fi
-    
+
     # Check for pods
     if oc get pods -l app="${APP_NAME}" -n "${NAMESPACE}" 2>/dev/null | grep -q "${APP_NAME}"; then
         echo "Pods:"
         oc get pods -l app="${APP_NAME}" -n "${NAMESPACE}" 2>/dev/null || true
         echo ""
     fi
-    
+
     # Check for services
     if oc get svc -l app="${APP_NAME}" -n "${NAMESPACE}" 2>/dev/null | tail -n +2 | grep -q .; then
         echo "Services:"
         oc get svc -l app="${APP_NAME}" -n "${NAMESPACE}" 2>/dev/null || true
         echo ""
     fi
-    
+
     # Check for routes
     if oc get routes -l app="${APP_NAME}" -n "${NAMESPACE}" 2>/dev/null | tail -n +2 | grep -q .; then
         echo "Routes:"
         oc get routes -l app="${APP_NAME}" -n "${NAMESPACE}" 2>/dev/null || true
         echo ""
     fi
-    
+
     # Check for secrets
     if oc get secret hf-token -n "${NAMESPACE}" &> /dev/null; then
         echo "Secrets:"
         oc get secret hf-token -n "${NAMESPACE}" 2>/dev/null || true
         echo ""
     fi
-    
+
     # Check for PVCs
     if oc get pvc -l app="${APP_NAME}" -n "${NAMESPACE}" 2>/dev/null | tail -n +2 | grep -q .; then
         echo "Persistent Volume Claims:"
@@ -116,7 +116,7 @@ confirm_deletion() {
     echo "Namespace: ${NAMESPACE}"
     echo "Application: ${APP_NAME}"
     echo ""
-    
+
     read -p "Are you sure you want to continue? (yes/no): " -r
     echo ""
     if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
@@ -143,7 +143,7 @@ delete_yaml_resources() {
 # Delete resources by label
 delete_by_label() {
     log_step "Deleting remaining resources by label (app=${APP_NAME})..."
-    
+
     # Delete all resources with the app label
     if oc delete all -l app="${APP_NAME}" -n "${NAMESPACE}" --ignore-not-found=true 2>&1; then
         log_info "Label-based resources deleted successfully"
@@ -201,31 +201,31 @@ delete_namespace_prompt() {
 verify_cleanup() {
     log_step "Verifying cleanup..."
     echo ""
-    
+
     local resources_found=false
-    
+
     # Check for remaining resources
     if oc get deployment "${APP_NAME}" -n "${NAMESPACE}" &> /dev/null; then
         log_warn "Deployment still exists"
         resources_found=true
     fi
-    
+
     if oc get pods -l app="${APP_NAME}" -n "${NAMESPACE}" 2>/dev/null | tail -n +2 | grep -q .; then
         log_warn "Pods still exist (may be terminating)"
         oc get pods -l app="${APP_NAME}" -n "${NAMESPACE}" 2>/dev/null || true
         resources_found=true
     fi
-    
+
     if oc get svc -l app="${APP_NAME}" -n "${NAMESPACE}" 2>/dev/null | tail -n +2 | grep -q .; then
         log_warn "Services still exist"
         resources_found=true
     fi
-    
+
     if oc get routes -l app="${APP_NAME}" -n "${NAMESPACE}" 2>/dev/null | tail -n +2 | grep -q .; then
         log_warn "Routes still exist"
         resources_found=true
     fi
-    
+
     if [ "$resources_found" = false ]; then
         log_info "All vLLM Playground resources have been successfully removed!"
     else
@@ -259,16 +259,16 @@ show_summary() {
 main() {
     log_info "Starting OpenShift undeployment for vLLM Playground..."
     echo ""
-    
+
     check_login
     check_namespace
     show_resources
     confirm_deletion
-    
+
     echo ""
     log_info "Beginning cleanup process..."
     echo ""
-    
+
     delete_yaml_resources
     delete_by_label
     delete_secrets
@@ -276,10 +276,9 @@ main() {
     delete_namespace_prompt
     verify_cleanup
     show_summary
-    
+
     log_info "Undeployment process completed!"
 }
 
 # Run main function
 main
-

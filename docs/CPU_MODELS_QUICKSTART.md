@@ -201,4 +201,3 @@ open http://localhost:7860
 - Full gated models guide: [docs/GATED_MODELS_GUIDE.md](GATED_MODELS_GUIDE.md)
 - Troubleshooting: [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 - macOS setup: [docs/MACOS_CPU_GUIDE.md](MACOS_CPU_GUIDE.md)
-

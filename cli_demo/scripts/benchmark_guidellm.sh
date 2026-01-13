@@ -105,13 +105,13 @@ eval $CMD 2>&1 | tee "$LOG_FILE"
 if [ ${PIPESTATUS[0]} -eq 0 ]; then
     echo ""
     log_success "Benchmark completed successfully!"
-    
+
     # Display results
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     echo -e "${CYAN}Results Summary${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
-    
+
     # Try to parse and display results
     if command -v jq &> /dev/null && [ -f "$RESULT_FILE" ]; then
         cat "$RESULT_FILE" | jq -r '
@@ -133,21 +133,20 @@ if [ ${PIPESTATUS[0]} -eq 0 ]; then
             grep -E "(Request|Latency|Throughput|Success|tokens/s)" "$LOG_FILE" | tail -10 || true
         fi
     fi
-    
+
     echo ""
     echo "Files:"
     echo "  📊 Results: $RESULT_FILE"
     echo "  📝 Logs: $LOG_FILE"
-    
+
     # Provide viewing commands
     echo ""
     echo "View results:"
     echo "  cat $RESULT_FILE | jq ."
     echo "  cat $LOG_FILE"
-    
+
 else
     log_error "Benchmark failed"
     echo "Check logs: $LOG_FILE"
     exit 1
 fi
-

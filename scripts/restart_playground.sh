@@ -27,4 +27,3 @@ sleep 2
 echo "🚀 Starting fresh instance..."
 cd "$WORKSPACE_ROOT"
 exec python3 run.py
-

@@ -234,4 +234,3 @@ The updated WebUI now:
 - ✅ **Sets dtype=bfloat16** automatically for CPU
 
 Enjoy using vLLM on macOS! 🚀
-

@@ -107,14 +107,14 @@ WEBUI_POD=$(oc get pod -n $NAMESPACE -l app=vllm-playground-webui -o jsonpath='{
 
 if [ -n "$WEBUI_POD" ]; then
     echo "✅ Web UI pod: $WEBUI_POD"
-    
+
     # Check service account token
     if oc exec -n $NAMESPACE $WEBUI_POD -- test -f /var/run/secrets/kubernetes.io/serviceaccount/token &>/dev/null; then
         echo "✅ Service account token is mounted"
     else
         echo "❌ Service account token NOT mounted"
     fi
-    
+
     # Check namespace env var
     K8S_NAMESPACE=$(oc exec -n $NAMESPACE $WEBUI_POD -- printenv KUBERNETES_NAMESPACE 2>/dev/null || echo "")
     if [ -n "$K8S_NAMESPACE" ]; then
@@ -122,7 +122,7 @@ if [ -n "$WEBUI_POD" ]; then
     else
         echo "⚠️  KUBERNETES_NAMESPACE env var not set"
     fi
-    
+
     # Check container manager type
     CONTAINER_MGR=$(oc exec -n $NAMESPACE $WEBUI_POD -- head -4 container_manager.py 2>/dev/null | grep -i kubernetes || echo "")
     if [ -n "$CONTAINER_MGR" ]; then
@@ -152,4 +152,3 @@ else
     echo "Please review the test results above."
 fi
 echo "========================================"
-

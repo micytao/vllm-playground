@@ -225,4 +225,3 @@ echo "  ✓ Text completions"
 echo ""
 echo "Server: ${BASE_URL}"
 echo "Model: ${MODEL}"
-

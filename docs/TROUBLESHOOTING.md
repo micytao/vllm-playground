@@ -412,4 +412,3 @@ When reporting issues, please include:
 2. Your system specs (macOS version, RAM, CPU)
 3. Model and configuration you're trying to use
 4. Steps to reproduce the error
-

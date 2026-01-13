@@ -196,4 +196,3 @@ This demo is part of vLLM Playground - MIT License
 - [Main Project README](../README.md)
 - [vLLM Documentation](https://docs.vllm.ai/)
 **Ready to start? Run:** `./cli_demo/scripts/demo_full_workflow.sh` 🚀
-

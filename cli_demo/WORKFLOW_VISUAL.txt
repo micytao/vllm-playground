@@ -90,7 +90,7 @@
 OPTION A: Full Automated Demo
 ──────────────────────────────────────────────────────────────────────────
   $ ./scripts/demo_full_workflow.sh
-  
+
   ✅ Runs all 5 steps automatically
   ✅ Handles cleanup and errors
   ✅ Interactive prompts
@@ -101,10 +101,10 @@ OPTION B: Individual Components
 ──────────────────────────────────────────────────────────────────────────
   # Test serving
   $ ./scripts/test_vllm_serving.sh
-  
+
   # Compress model
   $ ./scripts/compress_model.sh MODEL OUTPUT FORMAT ALGO SAMPLES
-  
+
   # Benchmark
   $ ./scripts/benchmark_guidellm.sh REQUESTS RATE PROMPT_TOK OUTPUT_TOK
 
@@ -121,7 +121,7 @@ OPTION D: Quick Test (Fast Demo)
 ──────────────────────────────────────────────────────────────────────────
   $ CALIBRATION_SAMPLES=128 BENCHMARK_REQUESTS=50 \
     ./scripts/demo_full_workflow.sh
-  
+
   ⏱️  Total time: ~10-15 minutes
 
 
@@ -247,4 +247,3 @@ Ready to start? Run: ./scripts/demo_full_workflow.sh 🚀
 
 ════════════════════════════════════════════════════════════════════════════
 ```
-

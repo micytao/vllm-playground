@@ -35,13 +35,13 @@ log_error() {
 # Check if deployment YAML exists
 check_yaml_file() {
     log_info "Checking for deployment YAML file..."
-    
+
     if [ ! -f "${SCRIPT_DIR}/${DEPLOYMENT_YAML}" ]; then
         log_error "Deployment YAML file not found: ${DEPLOYMENT_YAML}"
         log_error "Make sure ${DEPLOYMENT_YAML} exists in the same directory as this script."
         exit 1
     fi
-    
+
     log_info "Found deployment file: ${DEPLOYMENT_YAML}"
 }
 
@@ -58,7 +58,7 @@ check_login() {
 # Deploy using YAML file
 deploy_resources() {
     log_info "Deploying vLLM Playground using ${DEPLOYMENT_YAML}..."
-    
+
     # If custom namespace is specified, apply to that namespace
     if [ "${NAMESPACE}" != "vllm-playground" ]; then
         log_info "Deploying to custom namespace: ${NAMESPACE}"
@@ -68,14 +68,14 @@ deploy_resources() {
         log_info "Deploying to default namespace: vllm-playground"
         oc apply -f "${SCRIPT_DIR}/${DEPLOYMENT_YAML}"
     fi
-    
+
     log_info "Resources deployed successfully"
 }
 
 # Wait for deployment to be ready
 wait_for_deployment() {
     log_info "Waiting for deployment to be ready..."
-    
+
     # Wait up to 2 minutes for deployment to exist
     local max_wait=120
     local waited=0
@@ -87,7 +87,7 @@ wait_for_deployment() {
         sleep 2
         waited=$((waited + 2))
     done
-    
+
     log_info "Waiting for pods to be ready (this may take a few minutes)..."
     oc rollout status deployment/"${APP_NAME}" -n "${NAMESPACE}" --timeout=5m || true
 }
@@ -104,11 +104,11 @@ show_info() {
     echo "Application: ${APP_NAME}"
     echo "Image: ${IMAGE}"
     echo ""
-    
+
     # Get route URLs
     WEBUI_URL=$(oc get route "${APP_NAME}-webui" -n "${NAMESPACE}" -o jsonpath='{.spec.host}' 2>/dev/null || echo "Not available yet")
     API_URL=$(oc get route "${APP_NAME}-api" -n "${NAMESPACE}" -o jsonpath='{.spec.host}' 2>/dev/null || echo "Not available yet")
-    
+
     echo "WebUI URL: https://${WEBUI_URL}"
     echo "API URL: https://${API_URL}"
     echo ""
@@ -125,12 +125,12 @@ show_info() {
     echo "Delete deployment:      oc delete -f ${DEPLOYMENT_YAML}"
     echo "Delete by label:        oc delete all -l app=${APP_NAME} -n ${NAMESPACE}"
     echo ""
-    
+
     # Check pod status
     log_info "Checking pod status..."
     oc get pods -n "${NAMESPACE}" -l app="${APP_NAME}" 2>/dev/null || log_warn "No pods found yet"
     echo ""
-    
+
     log_info "To watch the deployment progress, run:"
     echo "  oc logs -f deployment/${APP_NAME} -n ${NAMESPACE}"
 }
@@ -149,13 +149,13 @@ create_hf_token_prompt() {
                 --from-literal=HF_TOKEN="${HF_TOKEN}" \
                 -n "${NAMESPACE}" \
                 --dry-run=client -o yaml | oc apply -f -
-            
+
             # Patch deployment to use the secret
             log_info "Updating deployment to use HuggingFace token..."
             oc set env deployment/"${APP_NAME}" \
                 --from=secret/hf-token \
                 -n "${NAMESPACE}"
-            
+
             log_info "HuggingFace token configured successfully"
             log_info "The deployment will automatically restart to apply changes"
         fi
@@ -166,14 +166,14 @@ create_hf_token_prompt() {
 main() {
     log_info "Starting OpenShift deployment for vLLM Playground..."
     echo ""
-    
+
     check_yaml_file
     check_login
     deploy_resources
     wait_for_deployment
     create_hf_token_prompt
     show_info
-    
+
     log_info "Deployment process completed!"
     echo ""
     log_info "Next steps:"
@@ -185,4 +185,3 @@ main() {
 
 # Run main function
 main
-

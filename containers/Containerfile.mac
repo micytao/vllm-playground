@@ -13,7 +13,7 @@ ENV PYTHONUNBUFFERED=1 \
     VLLM_BUILD_WITH_CUDA=0 \
     VLLM_LOGGING_LEVEL=DEBUG \
     HOME=/home/vllm \
-    PYTHON_VERSION=3.12.7 
+    PYTHON_VERSION=3.12.7
 # Install Python 3.12 and build dependencies for vLLM CPU backend
 RUN microdnf install -y \
     python3.12 \
@@ -109,4 +109,3 @@ CMD ["--model", "TinyLlama/TinyLlama-1.1B-Chat-v1.0", "--host", "0.0.0.0", "--po
 # Health check - verify vLLM API is responding
 HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
     CMD curl -f http://localhost:8000/health || curl -f http://localhost:8000/v1/models || exit 1
-

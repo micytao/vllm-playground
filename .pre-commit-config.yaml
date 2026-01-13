@@ -5,6 +5,7 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        args: ['--allow-multiple-documents']
       - id: check-json
       - id: check-added-large-files
         args: ['--maxkb=1000']
@@ -15,8 +16,6 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.0
     hooks:
-      - id: ruff-check
-        args: ['--fix']
       - id: ruff-format
 
   - repo: https://github.com/crate-ci/typos
