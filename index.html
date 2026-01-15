@@ -372,6 +372,7 @@
                             <div class="panel-header">
                                 <h2 data-i18n="chat.title">💬 Chat Interface</h2>
                                 <div class="chat-header-actions">
+                                    <button id="export-chat-btn" class="btn btn-secondary btn-sm" style="min-width: 80px; padding: 6px 16px;" data-i18n="chat.export">Export</button>
                                     <button id="clear-chat-btn" class="btn btn-secondary btn-sm" style="min-width: 80px; padding: 6px 16px;" data-i18n="chat.clear">Clear</button>
                                 </div>
                             </div>
@@ -1330,6 +1331,42 @@
             <div class="confirm-modal-actions">
                 <button class="btn btn-secondary" id="confirm-modal-cancel">Cancel</button>
                 <button class="btn btn-danger" id="confirm-modal-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Chat Modal -->
+    <div id="export-modal" class="modal confirm-modal" style="display: none;">
+        <div class="modal-overlay" id="export-modal-overlay"></div>
+        <div class="modal-content confirm-modal-content">
+            <div class="confirm-modal-icon">📤</div>
+            <h3 class="confirm-modal-title">Export Chat</h3>
+            <p class="confirm-modal-message">Choose export format:</p>
+            <div class="confirm-modal-actions" style="flex-direction: column; gap: 10px;">
+                <button class="btn btn-primary" id="export-json-btn" style="width: 100%;">
+                    JSON Format
+                </button>
+                <button class="btn btn-secondary" id="export-markdown-btn" style="width: 100%;">
+                    Markdown Format
+                </button>
+                <button class="btn btn-secondary" id="export-cancel-btn" style="width: 100%; margin-top: 5px;">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Clear Chat Confirmation Modal -->
+    <div id="clear-chat-modal" class="modal confirm-modal" style="display: none;">
+        <div class="modal-overlay" id="clear-chat-modal-overlay"></div>
+        <div class="modal-content confirm-modal-content">
+            <div class="confirm-modal-icon">🗑️</div>
+            <h3 class="confirm-modal-title">Clear Chat</h3>
+            <p class="confirm-modal-message">Are you sure you want to clear all messages? This action cannot be undone.
+            </p>
+            <div class="confirm-modal-actions">
+                <button class="btn btn-secondary" id="clear-chat-cancel-btn">Cancel</button>
+                <button class="btn btn-danger" id="clear-chat-confirm-btn">Clear</button>
             </div>
         </div>
     </div>

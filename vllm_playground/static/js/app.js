@@ -131,6 +131,7 @@ class VLLMWebUI {
             stopBtn: document.getElementById('stop-btn'),
             sendBtn: document.getElementById('send-btn'),
             clearChatBtn: document.getElementById('clear-chat-btn'),
+            exportChatBtn: document.getElementById('export-chat-btn'),
             clearLogsBtn: document.getElementById('clear-logs-btn'),
             saveLogsBtn: document.getElementById('save-logs-btn'),
             logsRowToggle: document.getElementById('logs-row-toggle'),
@@ -1007,6 +1008,7 @@ number ::= [0-9]+`
             }
         });
         this.elements.clearChatBtn.addEventListener('click', () => this.clearChat());
+        this.elements.exportChatBtn.addEventListener('click', () => this.exportChat());
         this.elements.clearSystemPromptBtn.addEventListener('click', () => this.clearSystemPrompt());
 
         // Message templates
@@ -1408,18 +1410,18 @@ number ::= [0-9]+`
             const memoryTotal = gpu.memory_total || 0;
             const memoryUsed = gpu.memory_used || 0;
             const memoryFree = gpu.memory_free || (memoryTotal - memoryUsed);
-            
+
             const memoryUsedPercent = memoryTotal > 0 ? (memoryUsed / memoryTotal) * 100 : 0;
             const memoryFreeGB = memoryFree / 1024;
             const memoryTotalGB = memoryTotal / 1024;
             const memoryUsedGB = memoryUsed / 1024;
-            
+
             // Support multiple property names for utilization (nvidia-smi may return different names)
             const utilization = gpu.utilization ?? gpu.utilization_gpu ?? gpu['utilization.gpu'] ?? 0;
-            
+
             // Support multiple property names for temperature
             const temperature = gpu.temperature ?? gpu.temperature_gpu ?? gpu['temperature.gpu'] ?? 0;
-            
+
             // Display N/A for values that couldn't be read (common on Jetson devices)
             const utilizationDisplay = utilization > 0 || gpu.utilization !== undefined ? `${utilization}%` : 'N/A';
             const temperatureDisplay = temperature > 0 || gpu.temperature !== undefined ? `${temperature}°C` : 'N/A';
@@ -2680,6 +2682,52 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     }
 
     clearChat() {
+        if (this.chatHistory.length === 0) {
+            this.showNotification('No messages to clear', 'info');
+            return;
+        }
+
+        const modal = document.getElementById('clear-chat-modal');
+        const overlay = document.getElementById('clear-chat-modal-overlay');
+        const confirmBtn = document.getElementById('clear-chat-confirm-btn');
+        const cancelBtn = document.getElementById('clear-chat-cancel-btn');
+
+        if (!modal) {
+            // Fallback to confirm if modal not found
+            if (!confirm('Clear all chat messages? This cannot be undone.')) {
+                return;
+            }
+            this.performClearChat();
+            return;
+        }
+
+        // Show modal
+        modal.style.display = 'flex';
+
+        // Cleanup function
+        const cleanup = () => {
+            modal.style.display = 'none';
+            confirmBtn.removeEventListener('click', handleConfirm);
+            cancelBtn.removeEventListener('click', handleCancel);
+            overlay.removeEventListener('click', handleCancel);
+        };
+
+        const handleConfirm = () => {
+            cleanup();
+            this.performClearChat();
+        };
+
+        const handleCancel = () => {
+            cleanup();
+        };
+
+        // Add event listeners
+        confirmBtn.addEventListener('click', handleConfirm);
+        cancelBtn.addEventListener('click', handleCancel);
+        overlay.addEventListener('click', handleCancel);
+    }
+
+    performClearChat() {
         this.chatHistory = [];
         this.elements.chatContainer.innerHTML = `
             <div class="chat-message system">
@@ -2688,6 +2736,103 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 </div>
             </div>
         `;
+        this.showNotification('Chat cleared successfully', 'success');
+    }
+
+    exportChat() {
+        if (this.chatHistory.length === 0) {
+            this.showNotification('No messages to export', 'warning');
+            return;
+        }
+
+        const modal = document.getElementById('export-modal');
+        const overlay = document.getElementById('export-modal-overlay');
+        const jsonBtn = document.getElementById('export-json-btn');
+        const markdownBtn = document.getElementById('export-markdown-btn');
+        const cancelBtn = document.getElementById('export-cancel-btn');
+
+        if (!modal) {
+            // Fallback to prompt if modal not found
+            this.exportChatWithFormat(prompt('Export format:\n1. JSON\n2. Markdown\n\nEnter 1 or 2:', '1') === '2' ? 'markdown' : 'json');
+            return;
+        }
+
+        // Show modal
+        modal.style.display = 'flex';
+
+        // Cleanup function
+        const cleanup = () => {
+            modal.style.display = 'none';
+            jsonBtn.removeEventListener('click', handleJson);
+            markdownBtn.removeEventListener('click', handleMarkdown);
+            cancelBtn.removeEventListener('click', handleCancel);
+            overlay.removeEventListener('click', handleCancel);
+        };
+
+        const handleJson = () => {
+            cleanup();
+            this.exportChatWithFormat('json');
+        };
+
+        const handleMarkdown = () => {
+            cleanup();
+            this.exportChatWithFormat('markdown');
+        };
+
+        const handleCancel = () => {
+            cleanup();
+        };
+
+        // Add event listeners
+        jsonBtn.addEventListener('click', handleJson);
+        markdownBtn.addEventListener('click', handleMarkdown);
+        cancelBtn.addEventListener('click', handleCancel);
+        overlay.addEventListener('click', handleCancel);
+    }
+
+    exportChatWithFormat(format) {
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+        let content, filename, mimeType;
+
+        if (format === 'markdown') {
+            // Markdown format
+            const lines = ['# Chat Export', `*Exported: ${new Date().toLocaleString()}*`, ''];
+            this.chatHistory.forEach(msg => {
+                const role = msg.role === 'user' ? '**You**' : '**AI**';
+                lines.push(`${role}:`);
+                lines.push('');
+                lines.push(msg.content || '');
+                lines.push('');
+                lines.push('---');
+                lines.push('');
+            });
+            content = lines.join('\n');
+            filename = `vllm-chat-export-${timestamp}.md`;
+            mimeType = 'text/markdown';
+        } else {
+            // JSON format
+            const exportData = {
+                exported: new Date().toISOString(),
+                messageCount: this.chatHistory.length,
+                messages: this.chatHistory
+            };
+            content = JSON.stringify(exportData, null, 2);
+            filename = `vllm-chat-export-${timestamp}.json`;
+            mimeType = 'application/json';
+        }
+
+        // Download chat file
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        this.showNotification(`Chat exported as ${filename}`, 'success');
     }
 
     clearSystemPrompt() {
