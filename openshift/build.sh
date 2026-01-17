@@ -60,14 +60,14 @@ cd "$(dirname "$0")/.."  # Go to project root
 
 if command -v podman &> /dev/null; then
     echo "Building for multiple architectures (arm64, amd64)..."
-    
+
     # Remove existing manifest if it exists
     podman manifest rm ${IMAGE_NAME}:${VERSION} 2>/dev/null || true
-    
+
     # Create a new manifest
     echo "Creating manifest: ${IMAGE_NAME}:${VERSION}"
     podman manifest create ${IMAGE_NAME}:${VERSION}
-    
+
     # Build for ARM64 (Apple Silicon, ARM servers)
     echo "Building for linux/arm64..."
     podman build \
@@ -75,7 +75,7 @@ if command -v podman &> /dev/null; then
         --manifest ${IMAGE_NAME}:${VERSION} \
         -f openshift/Containerfile \
         .
-    
+
     # Build for AMD64 (x86_64, Intel/AMD)
     echo "Building for linux/amd64..."
     podman build \
@@ -83,12 +83,12 @@ if command -v podman &> /dev/null; then
         --manifest ${IMAGE_NAME}:${VERSION} \
         -f openshift/Containerfile \
         .
-    
+
     # Inspect the manifest
     echo
     echo "Manifest contents:"
     podman manifest inspect ${IMAGE_NAME}:${VERSION} | grep -A 3 "architecture"
-    
+
 else
     # Docker buildx for multi-arch
     echo "Building for multiple architectures using docker buildx..."
@@ -110,10 +110,10 @@ echo "Pushing manifest and all architectures to ${FULL_IMAGE}..."
 if command -v podman &> /dev/null; then
     # Tag the manifest with the full registry path
     podman tag ${IMAGE_NAME}:${VERSION} ${FULL_IMAGE}
-    
+
     # Push the manifest (this pushes all architectures)
     podman manifest push ${IMAGE_NAME}:${VERSION} docker://${FULL_IMAGE} --all
-    
+
     echo
     echo "Pushed architectures:"
     echo "  ✓ linux/arm64 (Apple Silicon, ARM servers)"
@@ -164,4 +164,3 @@ echo
 echo "  2. Or deploy manually:"
 echo "     oc apply -f openshift/manifests/"
 echo
-

@@ -16,4 +16,3 @@ guidellm==0.3.0
 
 # Kubernetes Python client
 kubernetes>=28.0.0
-

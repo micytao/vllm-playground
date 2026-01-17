@@ -558,4 +558,3 @@ pip3 install --user vllm-cpu-only
 ---
 
 **Happy GPU-accelerated model serving!** 🚀🎮
-

@@ -229,4 +229,3 @@ echo "  # Delete deployment"
 echo "  ${K8S_CMD} delete namespace vllm-playground"
 echo
 echo -e "${GREEN}Happy vLLM-ing! 🚀${NC}"
-

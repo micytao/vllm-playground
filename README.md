@@ -197,6 +197,31 @@ Apache 2.0 License - See [LICENSE](LICENSE) file for details.
 
 Contributions welcome! Please feel free to submit issues and pull requests.
 
+### Code Style
+
+This project uses automated formatting to ensure consistent code style:
+
+```bash
+# Install pre-commit hooks (to format the codebase)
+pip install pre-commit
+pre-commit install
+```
+
+| Tool | Purpose | Files |
+|------|---------|-------|
+| **[Ruff](https://docs.astral.sh/ruff/)** | Python formatting | `*.py` |
+| **[Prettier](https://prettier.io/)** | JavaScript/CSS/HTML formatting | `*.js`, `*.css`, `*.html` |
+| **[EditorConfig](https://editorconfig.org/)** | Editor settings (indent, line endings) | All files |
+
+Pre-commit will run automatically on `git commit`. To run manually:
+
+```bash
+# Check all files
+pre-commit run -a # runs on all files (short for --all-files)
+
+# Check only staged files
+pre-commit run
+```
 ---
 
 Made with ❤️ for the vLLM community

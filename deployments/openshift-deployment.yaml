@@ -1,7 +1,7 @@
 ---
 # vLLM Playground OpenShift/Kubernetes Deployment
 # Image: quay.io/rh_ee_micyang/vllm-playground-cuda:0.1
-# 
+#
 # Quick Deploy:
 #   oc apply -f openshift-deployment.yaml
 #
@@ -71,12 +71,12 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      
+
       containers:
       - name: vllm-playground
         image: quay.io/rh_ee_micyang/vllm-playground-cuda:0.1
         imagePullPolicy: Always
-        
+
         # Ports
         ports:
         - name: webui
@@ -85,7 +85,7 @@ spec:
         - name: vllm-api
           containerPort: 8000
           protocol: TCP
-        
+
         # Environment Variables
         env:
         - name: WEBUI_PORT
@@ -109,14 +109,14 @@ spec:
           value: "/home/vllm/.cache/huggingface/transformers"
         - name: HF_HUB_CACHE
           value: "/home/vllm/.cache/huggingface/hub"
-        
+
         # Uncomment to use HuggingFace token from secret
         # - name: HF_TOKEN
         #   valueFrom:
         #     secretKeyRef:
         #       name: hf-token
         #       key: HF_TOKEN
-        
+
         # Resource Limits and Requests
         resources:
           requests:
@@ -127,7 +127,7 @@ spec:
             cpu: "8"
             memory: "16Gi"
             nvidia.com/gpu: "1"
-        
+
         # Health Checks
         livenessProbe:
           httpGet:
@@ -139,7 +139,7 @@ spec:
           timeoutSeconds: 10
           successThreshold: 1
           failureThreshold: 3
-        
+
         readinessProbe:
           httpGet:
             path: /api/status
@@ -150,7 +150,7 @@ spec:
           timeoutSeconds: 5
           successThreshold: 1
           failureThreshold: 3
-        
+
         startupProbe:
           httpGet:
             path: /api/status
@@ -161,7 +161,7 @@ spec:
           timeoutSeconds: 5
           successThreshold: 1
           failureThreshold: 12
-        
+
         # Security Context
         securityContext:
           runAsNonRoot: true
@@ -170,24 +170,24 @@ spec:
           capabilities:
             drop:
             - ALL
-        
+
         # Volume Mounts for persistent model cache
         volumeMounts:
         - name: model-cache
           mountPath: /home/vllm/.cache
-      
+
       # Volumes for persistent model cache
       volumes:
       - name: model-cache
         persistentVolumeClaim:
           claimName: vllm-model-cache
-      
+
       restartPolicy: Always
-      
+
       # Optional: Node selector for GPU nodes
       # nodeSelector:
       #   nvidia.com/gpu.present: "true"
-      
+
       # Optional: Tolerations for GPU nodes
       # tolerations:
       # - key: nvidia.com/gpu
@@ -364,4 +364,3 @@ spec:
 #       port: 443  # For downloading models
 #     - protocol: TCP
 #       port: 80
-

@@ -25,43 +25,45 @@
     --primary-color: #0ea5e9;
     --primary-hover: #0284c7;
     --primary-light: rgba(14, 165, 233, 0.1);
-    
+
     /* Status colors */
     --danger-color: #ef4444;
     --danger-hover: #dc2626;
     --success-color: #10b981;
     --warning-color: #f59e0b;
-    
+
     /* Backgrounds - clean whites and grays from vllm.ai */
     --bg-primary: #f8fafc;
     --bg-secondary: #ffffff;
     --bg-tertiary: #f1f5f9;
-    
+
     /* Text - high contrast dark text */
     --text-primary: #0f172a;
     --text-secondary: #64748b;
     --text-muted: #94a3b8;
-    
+
     /* Borders and shadows */
     --border-color: #e2e8f0;
     --border-light: #f1f5f9;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
-    
+    --shadow-md:
+        0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+    --shadow-lg:
+        0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+
     /* Gradients */
     --bg-gradient-start: #ffffff;
     --bg-gradient-end: #f8fafc;
-    
+
     /* Inputs */
     --input-bg: #ffffff;
     --input-border: #e2e8f0;
     --input-focus-ring: rgba(14, 165, 233, 0.3);
-    
+
     /* Hover states */
     --hover-overlay: rgba(14, 165, 233, 0.04);
     --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-    
+
     /* Accent - vLLM orange/amber */
     --accent-color: #f59e0b;
     --accent-hover: #d97706;
@@ -74,12 +76,20 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+    font-family:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+        Cantarell, sans-serif;
+    background: linear-gradient(
+        135deg,
+        var(--bg-gradient-start) 0%,
+        var(--bg-gradient-end) 100%
+    );
     color: var(--text-primary);
     line-height: 1.6;
     min-height: 100vh;
-    transition: background 0.3s ease, color 0.3s ease;
+    transition:
+        background 0.3s ease,
+        color 0.3s ease;
 }
 
 /* ============================================
@@ -87,7 +97,16 @@ body {
    ============================================ */
 
 /* Global smooth transitions for interactive elements */
-a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-control {
+a,
+button,
+input,
+select,
+textarea,
+.btn,
+.nav-item,
+.panel,
+.card,
+.form-control {
     transition: all 0.2s ease;
 }
 
@@ -105,8 +124,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 
 /* Fade in animation */
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
 /* Scale in animation */
@@ -123,8 +146,13 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 
 /* Subtle pulse animation */
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
 }
 
 /* Animate panels on load */
@@ -132,9 +160,15 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     animation: fadeSlideIn 0.4s ease forwards;
 }
 
-.sidebar .panel { animation-delay: 0.05s; }
-.chat-section .panel { animation-delay: 0.1s; }
-.logs-section .panel { animation-delay: 0.15s; }
+.sidebar .panel {
+    animation-delay: 0.05s;
+}
+.chat-section .panel {
+    animation-delay: 0.1s;
+}
+.logs-section .panel {
+    animation-delay: 0.15s;
+}
 
 /* Animate nav items */
 .nav-item {
@@ -142,26 +176,42 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     opacity: 0;
 }
 
-.nav-item:nth-child(1) { animation-delay: 0.1s; }
-.nav-item:nth-child(2) { animation-delay: 0.15s; }
-.nav-item:nth-child(3) { animation-delay: 0.2s; }
-.nav-item:nth-child(4) { animation-delay: 0.25s; }
+.nav-item:nth-child(1) {
+    animation-delay: 0.1s;
+}
+.nav-item:nth-child(2) {
+    animation-delay: 0.15s;
+}
+.nav-item:nth-child(3) {
+    animation-delay: 0.2s;
+}
+.nav-item:nth-child(4) {
+    animation-delay: 0.25s;
+}
 
 /* Animate modals */
-.modal, .tool-editor-modal {
+.modal,
+.tool-editor-modal {
     animation: fadeIn 0.2s ease;
 }
 
-.modal-content, .tool-editor-content {
+.modal-content,
+.tool-editor-content {
     animation: scaleIn 0.25s ease;
 }
 
 /* Smooth hover lift effect for cards */
-.metric-card, .chat-metric-item, .recipe-item {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+.metric-card,
+.chat-metric-item,
+.recipe-item {
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease;
 }
 
-.metric-card:hover, .chat-metric-item:hover, .recipe-item:hover {
+.metric-card:hover,
+.chat-metric-item:hover,
+.recipe-item:hover {
     transform: translateY(-3px);
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
 }
@@ -271,7 +321,11 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .nav-item.active {
-    background: linear-gradient(135deg, rgba(79, 70, 229, 0.2) 0%, rgba(139, 92, 246, 0.15) 100%);
+    background: linear-gradient(
+        135deg,
+        rgba(79, 70, 229, 0.2) 0%,
+        rgba(139, 92, 246, 0.15) 100%
+    );
     color: var(--text-primary);
     border: 1px solid rgba(79, 70, 229, 0.3);
 }
@@ -401,7 +455,9 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     background: transparent;
     cursor: ew-resize;
     z-index: 1001;
-    transition: left 0.3s ease, background 0.2s ease;
+    transition:
+        left 0.3s ease,
+        background 0.2s ease;
 }
 
 .nav-resize-handle:hover,
@@ -575,7 +631,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     .nav-sidebar:not(.expanded) {
         width: 60px;
     }
-    
+
     .nav-sidebar:not(.expanded) .nav-title,
     .nav-sidebar:not(.expanded) .nav-label,
     .nav-sidebar:not(.expanded) .nav-status-text,
@@ -585,20 +641,20 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         padding: 0;
         margin: 0;
     }
-    
+
     .nav-sidebar:not(.expanded) .nav-item {
         justify-content: center;
         padding: 10px;
     }
-    
+
     .nav-sidebar:not(.expanded) .nav-status {
         justify-content: center;
     }
-    
+
     .nav-sidebar:not(.expanded) ~ .nav-resize-handle {
         left: 60px;
     }
-    
+
     .nav-sidebar:not(.expanded) ~ .app-container {
         margin-left: 60px;
     }
@@ -691,8 +747,13 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
 }
 
 .uptime {
@@ -930,8 +991,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .gpu-status-content {
@@ -1001,7 +1066,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 
 .memory-used {
     height: 100%;
-    background: linear-gradient(90deg, var(--success-color) 0%, var(--warning-color) 70%, var(--danger-color) 100%);
+    background: linear-gradient(
+        90deg,
+        var(--success-color) 0%,
+        var(--warning-color) 70%,
+        var(--danger-color) 100%
+    );
     border-radius: 4px;
     transition: width 0.3s ease;
 }
@@ -1033,7 +1103,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 
 .utilization-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--success-color) 0%, var(--primary-color) 70%, var(--danger-color) 100%);
+    background: linear-gradient(
+        90deg,
+        var(--success-color) 0%,
+        var(--primary-color) 70%,
+        var(--danger-color) 100%
+    );
     border-radius: 3px;
     transition: width 0.3s ease;
 }
@@ -1086,7 +1161,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .resize-handle-vertical::after {
-    content: '';
+    content: "";
     position: absolute;
     left: 50%;
     top: 50%;
@@ -1096,7 +1171,9 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     background: var(--border-color);
     border-radius: 2px;
     opacity: 0;
-    transition: opacity 0.2s ease, height 0.2s ease;
+    transition:
+        opacity 0.2s ease,
+        height 0.2s ease;
 }
 
 .resize-handle-vertical:hover {
@@ -1131,7 +1208,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .resize-handle-horizontal::before {
-    content: '';
+    content: "";
     width: 60px;
     height: 4px;
     background: var(--border-color);
@@ -1212,7 +1289,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         width: 350px;
         min-width: 260px;
     }
-    
+
     .metrics-section {
         width: 250px;
         min-width: 200px;
@@ -1224,7 +1301,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         width: 320px;
         min-width: 240px;
     }
-    
+
     .metrics-section {
         width: 220px;
         min-width: 180px;
@@ -1236,12 +1313,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         width: 280px;
         min-width: 220px;
     }
-    
+
     .metrics-section {
         width: 200px;
         min-width: 160px;
     }
-    
+
     .panel {
         padding: 20px;
     }
@@ -1252,7 +1329,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         flex-direction: column;
         overflow-y: auto;
     }
-    
+
     .sidebar,
     .chat-section,
     .logs-section {
@@ -1260,12 +1337,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         min-width: 100% !important;
         flex: 0 0 auto;
     }
-    
+
     .panel {
         min-height: 400px;
         max-height: none;
     }
-    
+
     .chat-section .panel {
         min-height: 500px;
     }
@@ -1471,7 +1548,11 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .mode-button.active {
-    background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+    background: linear-gradient(
+        135deg,
+        var(--primary-color),
+        var(--primary-hover)
+    );
     border-color: var(--primary-color);
     color: white;
     box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
@@ -1516,7 +1597,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .mode-button.mode-unavailable::after {
-    content: '⚠️';
+    content: "⚠️";
     position: absolute;
     top: -6px;
     right: -6px;
@@ -1526,17 +1607,20 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     padding: 2px;
 }
 
-#cpu-settings, #gpu-settings {
-    transition: opacity 0.3s, max-height 0.3s;
+#cpu-settings,
+#gpu-settings {
+    transition:
+        opacity 0.3s,
+        max-height 0.3s;
 }
 
-#cpu-settings.hidden, #gpu-settings.hidden {
+#cpu-settings.hidden,
+#gpu-settings.hidden {
     display: none;
     opacity: 0;
     max-height: 0;
     overflow: hidden;
 }
-
 
 /* Template Settings Section */
 .template-settings-section {
@@ -1588,7 +1672,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .template-textarea {
-    font-family: 'Monaco', 'Courier New', monospace;
+    font-family: "Monaco", "Courier New", monospace;
     font-size: 0.85rem;
     line-height: 1.6;
     resize: vertical;
@@ -1626,7 +1710,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     padding: 12px;
     margin-bottom: 8px;
     border: 1px solid rgba(79, 70, 229, 0.3);
-    font-family: 'Monaco', 'Courier New', monospace;
+    font-family: "Monaco", "Courier New", monospace;
     font-size: 0.85rem;
     line-height: 1.6;
     color: var(--text-primary);
@@ -1699,7 +1783,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 
 /* Shine overlay effect on hover */
 .btn::before {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: -100%;
@@ -1799,7 +1883,8 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 @keyframes pulse-ready {
-    0%, 100% {
+    0%,
+    100% {
         box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
     }
     50% {
@@ -1829,8 +1914,14 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .chat-message .message-avatar {
@@ -1942,7 +2033,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 0.85rem;
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-family: "JetBrains Mono", "Fira Code", monospace;
 }
 
 .chat-input-area {
@@ -2026,7 +2117,6 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     color: var(--text-secondary);
     opacity: 0.6;
 }
-
 
 .generation-params {
     display: grid;
@@ -2167,7 +2257,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     padding: 15px;
     background: var(--bg-primary);
     border-radius: 8px;
-    font-family: 'Monaco', 'Courier New', monospace;
+    font-family: "Monaco", "Courier New", monospace;
     font-size: 0.7rem;
     line-height: 1.4;
     min-height: 200px;
@@ -2278,7 +2368,9 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 @keyframes loading {
-    0%, 80%, 100% {
+    0%,
+    80%,
+    100% {
         transform: scale(0);
     }
     40% {
@@ -2321,7 +2413,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .chat-metrics-resizer::after {
-    content: '';
+    content: "";
     display: block;
     width: 40px;
     height: 4px;
@@ -2411,7 +2503,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     font-size: 1.3rem;
     font-weight: 700;
     color: var(--success-color);
-    font-family: 'Monaco', 'Courier New', monospace;
+    font-family: "Monaco", "Courier New", monospace;
     line-height: 1.2;
 }
 
@@ -2420,7 +2512,8 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 @keyframes metricPulse {
-    0%, 100% {
+    0%,
+    100% {
         transform: scale(1);
     }
     50% {
@@ -2440,55 +2533,55 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     .container {
         padding: 10px;
     }
-    
+
     .header {
         padding: 15px 20px;
         margin-bottom: 15px;
     }
-    
+
     .header h1 {
         font-size: 1.5rem;
     }
-    
+
     .form-row {
         grid-template-columns: 1fr;
     }
-    
+
     .generation-params {
         grid-template-columns: 1fr;
     }
-    
+
     .chat-message.user .message-content,
     .chat-message.assistant .message-content {
         max-width: 90%;
     }
-    
+
     .chat-message .message-avatar {
         width: 28px;
         height: 28px;
         font-size: 12px;
     }
-    
+
     .panel {
         padding: 15px;
         margin: 0 5px;
     }
-    
+
     .chat-metrics-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 10px;
     }
-    
+
     .chat-metric-item {
         padding: 12px;
         min-height: 75px;
     }
-    
+
     .chat-metric-item .metric-label {
         font-size: 0.65rem;
         margin-bottom: 6px;
     }
-    
+
     .chat-metric-item .metric-value {
         font-size: 1.1rem;
     }
@@ -2519,18 +2612,13 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 
 /* Two-Column Layout */
 
-
 /* Default order when advanced options are collapsed */
-
 
 /* Change order when advanced options are expanded */
 
-
 /* Resize handle for presets section */
 
-
 /* When advanced options are expanded, allow config to grow */
-
 
 .config-grid {
     display: grid;
@@ -2608,7 +2696,6 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     overflow: visible;
 }
 
-
 .command-preview-header {
     display: flex;
     justify-content: space-between;
@@ -2629,7 +2716,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     border-radius: 6px;
     padding: 10px;
     color: var(--text-primary);
-    font-family: 'Monaco', 'Courier New', monospace;
+    font-family: "Monaco", "Courier New", monospace;
     font-size: 0.75rem;
     line-height: 1.4;
     resize: none;
@@ -2643,9 +2730,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     border-color: var(--primary-color);
 }
 
-
 /* When advanced options are collapsed, give more space to progress */
-
 
 .status-header {
     display: flex;
@@ -2713,7 +2798,6 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     overflow: visible;
 }
 
-
 .timer-icon {
     font-size: 2rem;
     filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.5));
@@ -2735,13 +2819,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     font-size: 1.8rem;
     font-weight: 700;
     color: var(--primary);
-    font-family: 'Courier New', monospace;
+    font-family: "Courier New", monospace;
     text-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
     letter-spacing: 2px;
 }
 
 /* Compact timer - smaller and less distracting */
-
 
 .size-comparison {
     display: flex;
@@ -2771,7 +2854,6 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     color: var(--text-primary);
 }
 
-
 .size-value.reduction {
     color: var(--warning-color);
 }
@@ -2800,7 +2882,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .output-dir-path {
-    font-family: 'Courier New', monospace;
+    font-family: "Courier New", monospace;
     font-size: 0.95rem;
     color: #ffffff;
     background: rgba(0, 0, 0, 0.3);
@@ -2814,7 +2896,6 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 .output-dir-path:hover {
     background: rgba(0, 0, 0, 0.5);
 }
-
 
 .info-box {
     background: rgba(79, 70, 229, 0.1);
@@ -3269,7 +3350,6 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     gap: 12px;
 }
 
-
 .category-name {
     font-weight: 600;
     font-size: 1.1rem;
@@ -3339,7 +3419,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .recipe-model-id {
-    font-family: 'Monaco', 'Consolas', monospace;
+    font-family: "Monaco", "Consolas", monospace;
     font-size: 0.8rem;
     color: var(--primary-color);
     margin-top: 4px;
@@ -3554,7 +3634,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 
 .recipe-config .config-item:not(.config-flag) {
     color: var(--success-color);
-    font-family: 'Monaco', 'Consolas', monospace;
+    font-family: "Monaco", "Consolas", monospace;
 }
 
 .recipe-config .config-flag {
@@ -3690,38 +3770,38 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         width: 95%;
         max-height: 90vh;
     }
-    
+
     .recipe-header {
         flex-direction: column;
     }
-    
+
     .recipe-hardware {
         flex-direction: column;
         gap: 8px;
     }
-    
+
     .recipe-actions {
         flex-direction: column;
     }
-    
+
     .recipe-actions .btn {
         width: 100%;
         text-align: center;
     }
-    
+
     .edit-recipe-modal-content {
         max-width: 95%;
     }
-    
+
     .edit-form-section .form-row {
         grid-template-columns: 1fr;
     }
-    
+
     .checkbox-row {
         flex-direction: column;
         gap: 10px;
     }
-    
+
     .sync-controls-section {
         flex-wrap: wrap;
     }
@@ -4027,7 +4107,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     font-weight: 600;
     color: #60a5fa;
     font-size: 0.9rem;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
 }
 
 .tool-item-description {
@@ -4109,7 +4189,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    box-shadow: 
+    box-shadow:
         0 0 0 1px rgba(255, 255, 255, 0.1),
         0 25px 60px rgba(0, 0, 0, 0.5),
         0 10px 30px rgba(0, 0, 0, 0.3);
@@ -4127,13 +4207,18 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .tool-editor-header::after {
-    content: '';
+    content: "";
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.2),
+        transparent
+    );
 }
 
 .tool-editor-header h4 {
@@ -4147,7 +4232,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .tool-editor-header h4::before {
-    content: '🔧';
+    content: "🔧";
     font-size: 1rem;
 }
 
@@ -4226,7 +4311,9 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .code-textarea {
-    font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-family:
+        "JetBrains Mono", "Fira Code", "Monaco", "Menlo", "Ubuntu Mono",
+        monospace;
     font-size: 0.85rem;
     line-height: 1.6;
     resize: vertical;
@@ -4521,7 +4608,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     border-radius: 6px;
     padding: 10px 12px;
     margin-top: 8px;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
     font-size: 0.85rem;
 }
 
@@ -4549,7 +4636,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     border-radius: 6px;
     padding: 10px 12px;
     margin-top: 8px;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
     font-size: 0.85rem;
     color: #10b981;
     white-space: pre-wrap;
@@ -4576,25 +4663,25 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .tool-choice-row .form-group {
         margin-left: 0 !important;
     }
-    
+
     .tool-presets-row {
         flex-direction: column;
         align-items: flex-start;
     }
-    
+
     .preset-buttons {
         width: 100%;
     }
-    
+
     .tool-item {
         flex-direction: column;
         align-items: flex-start;
     }
-    
+
     .tool-item-actions {
         margin-left: 0;
         margin-top: 8px;
@@ -4624,7 +4711,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     background: var(--bg-secondary);
     border-radius: 12px;
     border-left: 4px solid var(--primary-color);
-    box-shadow: 
+    box-shadow:
         0 10px 40px rgba(0, 0, 0, 0.4),
         0 0 0 1px rgba(255, 255, 255, 0.05);
     backdrop-filter: blur(10px);
@@ -4771,8 +4858,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 @keyframes toastProgress {
-    from { width: 100%; }
-    to { width: 0%; }
+    from {
+        width: 100%;
+    }
+    to {
+        width: 0%;
+    }
 }
 
 /* Responsive toast */
@@ -4782,7 +4873,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         right: 16px;
         bottom: 16px;
     }
-    
+
     .toast {
         min-width: 0;
         max-width: none;
@@ -4836,7 +4927,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .toolbar-icon-btn.active::after {
-    content: '';
+    content: "";
     position: absolute;
     bottom: 2px;
     left: 50%;
@@ -4849,7 +4940,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 
 /* Modified indicator dot - shows when settings differ from defaults */
 .toolbar-icon-btn.modified::before {
-    content: '';
+    content: "";
     position: absolute;
     top: 4px;
     right: 4px;
@@ -4938,7 +5029,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 
 /* Arrow for tooltip */
 .toolbar-tooltip::after {
-    content: '';
+    content: "";
     position: absolute;
     top: 100%;
     left: 50%;
@@ -4948,7 +5039,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .toolbar-tooltip::before {
-    content: '';
+    content: "";
     position: absolute;
     top: 100%;
     left: 50%;
@@ -5270,7 +5361,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     background: rgba(255, 193, 7, 0.15);
     padding: 1px 5px;
     border-radius: 4px;
-    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    font-family: "SF Mono", "Monaco", "Consolas", monospace;
     font-size: 0.7rem;
     color: #f0ad4e;
 }
@@ -5331,7 +5422,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .code-textarea {
-    font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
+    font-family: "SF Mono", "Monaco", "Menlo", "Consolas", monospace;
     font-size: 0.8rem;
     line-height: 1.4;
     background: var(--bg-primary);
@@ -5926,5 +6017,3 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     background: rgba(14, 165, 233, 0.2);
     color: #0f172a;
 }
-
-

@@ -88,7 +88,7 @@ webui/
 ### Chat Interface (Center)
 - **Chat History Display**: Scrollable conversation view
 - **Message Input**: Multi-line textarea with Ctrl+Enter
-- **Generation Parameters**: 
+- **Generation Parameters**:
   - Temperature slider (0.0 - 2.0)
   - Max tokens slider (1 - 4096)
 - **Clear Chat Button**: Start fresh conversations
@@ -96,9 +96,9 @@ webui/
 
 ### Log Viewer (Right)
 - **Real-time Updates**: WebSocket streaming
-- **Color-Coded Logs**: 
+- **Color-Coded Logs**:
   - 🔵 Blue: Information
-  - 🟡 Yellow: Warnings  
+  - 🟡 Yellow: Warnings
   - 🔴 Red: Errors
   - 🟢 Green: Success
 - **Auto-scroll Toggle**: Follow or stay in place
@@ -207,4 +207,3 @@ Want to extend the WebUI? Consider adding:
 ---
 
 Built with ❤️ for the vLLM community
-

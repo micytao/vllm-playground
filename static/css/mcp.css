@@ -449,7 +449,7 @@
     background: var(--bg-tertiary);
     padding: 12px 16px;
     border-radius: 8px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
     font-size: 0.85rem;
     color: var(--text-primary);
     border: 1px solid var(--border-color);
@@ -621,7 +621,7 @@
 .mcp-server-card .server-command {
     font-size: 0.8rem;
     color: var(--text-secondary);
-    font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+    font-family: "SF Mono", Monaco, "Consolas", monospace;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -798,7 +798,7 @@
     border: 1px solid var(--border-color);
     border-radius: 4px;
     font-size: 0.75rem;
-    font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+    font-family: "SF Mono", Monaco, "Consolas", monospace;
     color: var(--text-primary);
     cursor: pointer;
     transition: all 0.15s ease;
@@ -893,7 +893,9 @@
     height: 16px;
     background: #fff;
     border-radius: 50%;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
@@ -1593,7 +1595,7 @@
     font-weight: 600;
     font-size: 0.9rem;
     color: var(--text-primary);
-    font-family: 'SF Mono', Monaco, monospace;
+    font-family: "SF Mono", Monaco, monospace;
     margin-bottom: 4px;
 }
 
@@ -1714,7 +1716,7 @@
 }
 
 .mcp-tool-call-header .tool-name {
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
     font-weight: 600;
     color: var(--primary-color);
 }
@@ -1753,8 +1755,13 @@
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
 }
 
 .mcp-tool-args-details {
@@ -1777,7 +1784,7 @@
     padding: 8px;
     background: var(--bg-primary);
     border-radius: 4px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
     font-size: 0.75rem;
     color: var(--text-secondary);
     overflow-x: auto;
@@ -1803,7 +1810,7 @@
     background: var(--bg-primary);
     border-radius: 4px;
     border-left: 3px solid var(--success-color);
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
     font-size: 0.75rem;
     color: var(--text-primary);
     overflow-x: auto;
@@ -1859,4 +1866,3 @@
     padding: 8px 16px;
     font-size: 0.85rem;
 }
-

@@ -20,4 +20,3 @@ fi
 # Start the WebUI
 echo "✅ Starting server..."
 python3 run.py
-

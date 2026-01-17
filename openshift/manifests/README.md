@@ -137,4 +137,3 @@ oc run -it --rm debug --image=registry.access.redhat.com/ubi9/ubi-minimal:latest
 - [OpenShift QUICK_START.md](../QUICK_START.md)
 - [Kubernetes container manager](../kubernetes_container_manager.py)
 - [Deploy script](../deploy.sh)
-

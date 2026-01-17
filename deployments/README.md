@@ -77,10 +77,10 @@ Automated deployment script for OpenShift with interactive setup.
    ```bash
    # Review and customize the YAML first
    vim deployments/kubernetes-deployment.yaml
-   
+
    # Deploy
    kubectl apply -f deployments/kubernetes-deployment.yaml
-   
+
    # Check status
    kubectl get pods -l app=vllm-playground
    kubectl get svc vllm-playground
@@ -90,7 +90,7 @@ Automated deployment script for OpenShift with interactive setup.
    ```bash
    # Port forward to access locally
    kubectl port-forward svc/vllm-playground 7860:7860
-   
+
    # Open http://localhost:7860
    ```
 
@@ -286,4 +286,3 @@ metadata:
 - [Container Definitions](../containers/README.md) - Available container images
 - [Main Documentation](../docs/) - Application documentation
 - [vLLM Documentation](https://docs.vllm.ai/) - vLLM official docs
-

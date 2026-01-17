@@ -6,7 +6,7 @@ and expose their tools to the LLM during chat sessions.
 
 MCP is an optional dependency. Install with:
     pip install vllm-playground[mcp]
-    
+
 Or install mcp directly:
     pip install mcp
 """
@@ -19,6 +19,7 @@ MCP_VERSION = None
 
 try:
     import mcp
+
     MCP_AVAILABLE = True
     MCP_VERSION = getattr(mcp, "__version__", "unknown")
 except ImportError:
@@ -40,9 +41,8 @@ else:
 
 __all__ = [
     "MCP_AVAILABLE",
-    "MCP_VERSION", 
+    "MCP_VERSION",
     "MCPManager",
     "MCPServerConfig",
     "MCPTransport",
 ]
-

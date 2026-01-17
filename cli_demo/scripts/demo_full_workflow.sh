@@ -68,7 +68,7 @@ VLLM_PID_FILE="/tmp/vllm_demo.pid"
 # Cleanup function
 cleanup() {
     log_header "🧹 Cleaning Up"
-    
+
     if [ -f "$VLLM_PID_FILE" ]; then
         local pid=$(cat "$VLLM_PID_FILE")
         if ps -p "$pid" > /dev/null 2>&1; then
@@ -83,7 +83,7 @@ cleanup() {
         fi
         rm -f "$VLLM_PID_FILE"
     fi
-    
+
     log_success "Cleanup complete"
 }
 
@@ -93,14 +93,14 @@ trap cleanup EXIT INT TERM
 # Check dependencies
 check_dependencies() {
     log_header "🔍 Checking Dependencies"
-    
+
     local missing_deps=()
-    
+
     # Check Python
     if ! command -v python3 &> /dev/null; then
         missing_deps+=("python3")
     fi
-    
+
     # Activate venv if available
     if [ -d "$VENV_PATH" ]; then
         log_info "Activating virtual environment: $VENV_PATH"
@@ -108,10 +108,10 @@ check_dependencies() {
     else
         log_warning "Virtual environment not found at $VENV_PATH, using system Python"
     fi
-    
+
     # Check Python packages
     log_info "Checking Python packages..."
-    
+
     if ! python3 -c "import vllm" 2>/dev/null; then
         log_error "vLLM not installed"
         missing_deps+=("vllm")
@@ -119,10 +119,10 @@ check_dependencies() {
         local vllm_version=$(python3 -c "import vllm; print(vllm.__version__)" 2>/dev/null || echo "unknown")
         log_success "vLLM installed (version: $vllm_version)"
     fi
-    
+
     else
     fi
-    
+
     if ! python3 -c "import guidellm" 2>/dev/null; then
         log_error "guidellm not installed"
         missing_deps+=("guidellm")
@@ -130,14 +130,14 @@ check_dependencies() {
         local guide_version=$(python3 -c "import guidellm; print(guidellm.__version__ if hasattr(guidellm, '__version__') else 'unknown')" 2>/dev/null || echo "unknown")
         log_success "guidellm installed (version: $guide_version)"
     fi
-    
+
     # Check curl
     if ! command -v curl &> /dev/null; then
         missing_deps+=("curl")
     else
         log_success "curl installed"
     fi
-    
+
     if [ ${#missing_deps[@]} -gt 0 ]; then
         log_error "Missing dependencies: ${missing_deps[*]}"
         echo ""
@@ -145,7 +145,7 @@ check_dependencies() {
         echo "  pip install vllm guidellm"
         exit 1
     fi
-    
+
     log_success "All dependencies satisfied"
 }
 
@@ -153,20 +153,20 @@ check_dependencies() {
 wait_for_server() {
     local max_attempts=60
     local attempt=0
-    
+
     log_info "Waiting for vLLM server to be ready..."
-    
+
     while [ $attempt -lt $max_attempts ]; do
         if curl -s "${BASE_URL}/health" > /dev/null 2>&1; then
             log_success "Server is ready!"
             return 0
         fi
-        
+
         attempt=$((attempt + 1))
         echo -n "."
         sleep 2
     done
-    
+
     echo ""
     log_error "Server did not become ready in time"
     return 1
@@ -175,17 +175,17 @@ wait_for_server() {
 # Step 1: Start vLLM server with base model
 start_vllm_server() {
     log_header "🚀 Step 1: Starting vLLM Server"
-    
+
     log_info "Model: $BASE_MODEL"
     log_info "Port: $VLLM_PORT"
     log_info "Host: $VLLM_HOST"
-    
+
     # Set CPU environment variables for macOS compatibility
     export VLLM_CPU_KVCACHE_SPACE=40
     export VLLM_CPU_OMP_THREADS_BIND=auto
-    
+
     log_info "Starting vLLM server in background..."
-    
+
     # Start vLLM server
     nohup python3 -m vllm.entrypoints.openai.api_server \
         --model "$BASE_MODEL" \
@@ -193,28 +193,28 @@ start_vllm_server() {
         --port "$VLLM_PORT" \
         --dtype auto \
         > /tmp/vllm_base.log 2>&1 &
-    
+
     local pid=$!
     echo "$pid" > "$VLLM_PID_FILE"
-    
+
     log_info "Server started with PID: $pid"
     log_info "Logs: tail -f /tmp/vllm_base.log"
-    
+
     # Wait for server to be ready
     if ! wait_for_server; then
         log_error "Failed to start server. Check logs: /tmp/vllm_base.log"
         exit 1
     fi
-    
+
     log_success "vLLM server is running!"
 }
 
 # Step 2: Test chat serving with curl
 test_chat_serving() {
     log_header "💬 Step 2: Testing Chat Serving"
-    
+
     log_info "Sending test chat request..."
-    
+
     local response=$(curl -s "${BASE_URL}/v1/chat/completions" \
         -H "Content-Type: application/json" \
         -d '{
@@ -225,14 +225,14 @@ test_chat_serving() {
             "temperature": 0.7,
             "max_tokens": 100
         }')
-    
+
     if [ $? -eq 0 ] && echo "$response" | grep -q "choices"; then
         log_success "Chat serving is working!"
         echo ""
         echo "Response:"
         echo "$response" | python3 -m json.tool | grep -A 5 '"content"'
         echo ""
-        
+
         # Extract and display content
         local content=$(echo "$response" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data['choices'][0]['message']['content'])" 2>/dev/null || echo "")
         if [ -n "$content" ]; then
@@ -246,19 +246,19 @@ test_chat_serving() {
 }
 
 compress_model() {
-    
+
     log_info "Model: $BASE_MODEL"
     log_info "Quantization: $QUANTIZATION_FORMAT"
     log_info "Algorithm: $ALGORITHM"
     log_info "Calibration samples: $CALIBRATION_SAMPLES"
-    
+
     # Create output directory
     local model_name=$(echo "$BASE_MODEL" | sed 's/\//_/g')
     local output_dir="${COMPRESSED_MODEL_DIR}/${model_name}_${QUANTIZATION_FORMAT}"
-    
+
     mkdir -p "$output_dir"
     log_info "Output directory: $output_dir"
-    
+
     # Check if already compressed
     if [ -f "${output_dir}/config.json" ]; then
         log_warning "Compressed model already exists at $output_dir"
@@ -269,9 +269,9 @@ compress_model() {
             return 0
         fi
     fi
-    
+
     log_info "Starting compression (this may take several minutes)..."
-    
+
     # Create Python compression script
     cat > /tmp/compress_model.py << 'PYTHON_SCRIPT'
 import sys
@@ -281,11 +281,11 @@ def main():
     output_dir = sys.argv[2]
     scheme = sys.argv[3]
     calibration_samples = int(sys.argv[4])
-    
+
     print(f"Loading model: {model}")
     print(f"Scheme: {scheme}")
     print(f"Calibration samples: {calibration_samples}")
-    
+
     # Build recipe
     recipe = [
         GPTQModifier(
@@ -294,7 +294,7 @@ def main():
             ignore=["lm_head"]
         )
     ]
-    
+
     print("Starting compression...")
     oneshot(
         model=model,
@@ -304,11 +304,11 @@ def main():
         max_seq_length=2048,
         num_calibration_samples=calibration_samples,
     )
-    
+
 if __name__ == "__main__":
     main()
 PYTHON_SCRIPT
-    
+
     # Map quantization format to scheme
     local scheme="W8A8"
     case "$QUANTIZATION_FORMAT" in
@@ -317,18 +317,18 @@ PYTHON_SCRIPT
         "W8A16") scheme="W8A16" ;;
         *) scheme="W8A8" ;;
     esac
-    
+
     # Run compression
     if python3 /tmp/compress_model.py "$BASE_MODEL" "$output_dir" "$scheme" "$CALIBRATION_SAMPLES"; then
         log_success "Model compression complete!"
         log_info "Compressed model location: $output_dir"
-        
+
         # Show size comparison if possible
         if command -v du &> /dev/null; then
             local size=$(du -sh "$output_dir" 2>/dev/null | cut -f1)
             log_info "Compressed model size: $size"
         fi
-        
+
         echo "$output_dir"
     else
         log_error "Model compression failed"

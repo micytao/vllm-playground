@@ -25,7 +25,7 @@ BENCHMARK_REQUESTS=50 \
 
 ## 🎯 Example 2: Full Quality Demo
 
-Complete workflow with high-quality 
+Complete workflow with high-quality
 ```bash
 # Use TinyLlama with thorough BASE_MODEL="TinyLlama/TinyLlama-1.1B-Chat-v1.0" \
 QUANTIZATION_FORMAT="W4A16" \
@@ -98,12 +98,12 @@ MODELS=(
 
 for model in "${MODELS[@]}"; do
   echo "Processing: $model"
-  
+
   #   ./scripts/    "$model" \
         "W4A16" \
     "GPTQ" \
     512
-  
+
   echo "Completed: $model"
   echo "---"
 done
@@ -191,7 +191,7 @@ export VLLM_PORT="8000"
 
 ## 🎯 Example 10: Quality Validation
 
-Compare model quality after 
+Compare model quality after
 ```bash
 #!/bin/bash
 # quality_test.sh
@@ -209,7 +209,7 @@ QUESTIONS=(
 ask_question() {
   local model=$1
   local question=$2
-  
+
   curl -s http://localhost:8000/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d "{
@@ -307,8 +307,7 @@ echo "System stats saved to system_monitor.log"
 - Adjust `CALIBRATION_SAMPLES` based on time constraints (128=fast, 512=good, 1024=best)
 - Use `W4A16` for maximum - Monitor memory usage, especially with larger models
 - Results vary based on hardware - these are example timings
-- Always test 
+- Always test
 ---
 
 See `docs/CLI_DEMO_GUIDE.md` for more detailed information.
-

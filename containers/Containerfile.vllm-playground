@@ -1,6 +1,6 @@
 # vLLM Playground Web UI Container
 # This container runs the web UI and orchestrates other containers
-# 
+#
 # Build:
 #   podman build -f Containerfile.vllm-playground -t vllm-playground:latest .
 #
@@ -81,4 +81,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 # Start web UI (use absolute path to app.py for reliability)
 CMD ["python3.12", "/home/playground/vllm-playground/app.py"]
-

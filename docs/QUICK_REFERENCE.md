@@ -55,4 +55,3 @@ python3 run.py
 4. ❌ Remove `--gpu-memory-utilization`
 5. ❌ Remove `--load-format`
 6. ✅ Change `--dtype auto` to `--dtype bfloat16`
-
