@@ -13,6 +13,7 @@
     --text-secondary: #94a3b8;
     --border-color: #475569;
     --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
     --bg-gradient-start: #0f172a;
     --bg-gradient-end: #1e293b;
     --input-bg: var(--bg-tertiary);
@@ -301,9 +302,22 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     transition: opacity 0.2s ease;
 }
 
-.nav-sidebar.collapsed .nav-label {
-    opacity: 0;
-    width: 0;
+.nav-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: white;
+    background: var(--primary-color, #4f46e5);
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: auto;
+    min-width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.nav-sidebar.collapsed .nav-label,
+.nav-sidebar.collapsed .nav-badge {
+    display: none;
 }
 
 .nav-sidebar.collapsed .nav-item {
@@ -353,14 +367,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 
 .nav-sidebar.collapsed .nav-status-text,
 .nav-sidebar.collapsed .nav-version {
-    opacity: 0;
-    width: 0;
-    padding: 0;
-    margin: 0;
+    display: none;
 }
 
 .nav-sidebar.collapsed .nav-status {
     justify-content: center;
+    padding: 8px;
 }
 
 .nav-collapse-btn {
@@ -578,12 +590,13 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     
     .nav-sidebar:not(.expanded) .nav-title,
     .nav-sidebar:not(.expanded) .nav-label,
+    .nav-sidebar:not(.expanded) .nav-badge {
+        display: none;
+    }
+    
     .nav-sidebar:not(.expanded) .nav-status-text,
     .nav-sidebar:not(.expanded) .nav-version {
-        opacity: 0;
-        width: 0;
-        padding: 0;
-        margin: 0;
+        display: none;
     }
     
     .nav-sidebar:not(.expanded) .nav-item {
@@ -593,6 +606,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     
     .nav-sidebar:not(.expanded) .nav-status {
         justify-content: center;
+        padding: 8px;
     }
     
     .nav-sidebar:not(.expanded) ~ .nav-resize-handle {
@@ -1398,6 +1412,16 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     margin-top: 5px;
     color: var(--text-secondary);
     font-size: 0.8rem;
+}
+
+.form-help a {
+    color: #60a5fa;
+    text-decoration: none;
+}
+
+.form-help a:hover {
+    text-decoration: underline;
+    color: #93c5fd;
 }
 
 .form-row {
@@ -5927,4 +5951,183 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     color: #0f172a;
 }
 
+/* ============================================================ */
+/* Language Selector */
+/* ============================================================ */
+
+.language-selector {
+    position: relative;
+    display: inline-block;
+    margin-left: 8px;
+}
+
+.language-selector-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.language-selector-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+}
+
+.language-icon {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.language-label {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.language-dropdown-icon {
+    font-size: 10px;
+    margin-left: 2px;
+    transition: transform 0.2s ease;
+}
+
+.language-selector-btn:hover .language-dropdown-icon {
+    transform: translateY(1px);
+}
+
+/* Dropdown Menu */
+.language-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 180px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.2s ease;
+    z-index: 1000;
+    overflow: hidden;
+}
+
+.language-dropdown.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.language-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    color: var(--text-primary);
+    font-size: 14px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.language-dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.language-dropdown-item:hover {
+    background: var(--hover-overlay);
+}
+
+.language-dropdown-item.active {
+    background: var(--primary-color);
+    color: white;
+}
+
+.language-dropdown-item.active:hover {
+    background: var(--primary-hover);
+}
+
+
+.language-dropdown-item .language-name {
+    flex: 1;
+    font-weight: 500;
+}
+
+.language-check {
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    margin-left: auto;
+}
+
+/* Light mode adjustments */
+[data-theme="light"] .language-selector-btn {
+    background: white;
+    border-color: var(--border-color);
+}
+
+[data-theme="light"] .language-selector-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--primary-color);
+    box-shadow: var(--shadow);
+}
+
+[data-theme="light"] .language-dropdown {
+    background: white;
+    border-color: var(--border-color);
+    box-shadow: var(--shadow-lg);
+}
+
+[data-theme="light"] .language-dropdown-item {
+    border-bottom-color: var(--border-color);
+}
+
+[data-theme="light"] .language-dropdown-item:hover {
+    background: var(--bg-tertiary);
+}
+
+[data-theme="light"] .language-dropdown-item.active {
+    background: var(--primary-color);
+    color: white;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .language-label {
+        display: none;
+    }
+    
+    .language-selector-btn {
+        padding: 8px 10px;
+    }
+    
+    .language-dropdown {
+        min-width: 160px;
+    }
+}
+
+/* Animation for smooth transition */
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.language-dropdown.show {
+    animation: fadeInDown 0.2s ease;
+}
 
