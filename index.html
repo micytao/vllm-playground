@@ -96,12 +96,16 @@
                                         <input type="radio" name="model-source" id="model-source-hub" value="hub" checked>
                                         <span class="mode-button-content"><span class="mode-icon">🤗</span><span class="mode-label" data-i18n="serverConfig.modelSource.huggingface">HuggingFace</span></span>
                                     </label>
+                                    <label class="mode-button" id="model-source-modelscope-label">
+                                        <input type="radio" name="model-source" id="model-source-modelscope" value="modelscope">
+                                        <span class="mode-button-content"><span class="mode-icon">🔮</span><span class="mode-label" data-i18n="serverConfig.modelSource.modelscope">ModelScope</span></span>
+                                    </label>
                                     <label class="mode-button" id="model-source-local-label">
                                         <input type="radio" name="model-source" id="model-source-local" value="local">
                                         <span class="mode-button-content"><span class="mode-icon">📂</span><span class="mode-label" data-i18n="serverConfig.modelSource.local">Local</span></span>
                                     </label>
                                 </div>
-                                <small class="form-help" id="model-source-help-text" data-i18n="serverConfig.modelSource.help">Select model from HuggingFace or local directory</small>
+                                <small class="form-help" id="model-source-help-text" data-i18n="serverConfig.modelSource.help">Select model from HuggingFace, ModelScope, or local directory</small>
                             </div>
 
                             <!-- HuggingFace Hub Model Selection (default visible) -->
@@ -125,9 +129,28 @@
                                 <input type="text" id="custom-model" class="form-control" placeholder="Or enter custom model name">
                                 
                                 <!-- Community Recipes Button -->
-                                <button id="browse-recipes-btn" class="btn btn-secondary btn-sm browse-recipes-btn">
+                                <button id="browse-recipes-btn" class="btn btn-secondary btn-sm browse-recipes-btn" data-i18n="serverConfig.model.browseRecipes">
                                     📚 Browse Community Recipes
                                 </button>
+                            </div>
+
+                            <!-- ModelScope Model Selection (hidden by default) -->
+                            <div id="modelscope-model-section" class="form-group" style="display: none;">
+                                <label for="modelscope-model-select" data-i18n="serverConfig.model.label">Model</label>
+                                <select id="modelscope-model-select" class="form-control">
+                                    <!-- Popular Models on ModelScope -->
+                                    <optgroup label="🖥️ CPU-Friendly Models">
+                                        <option value="Qwen/Qwen2.5-0.5B-Instruct" selected>Qwen 2.5 0.5B Instruct (Fast)</option>
+                                        <option value="Qwen/Qwen2.5-1.5B-Instruct">Qwen 2.5 1.5B Instruct</option>
+                                    </optgroup>
+                                    <optgroup label="🎮 GPU-Optimized Models">
+                                        <option value="Qwen/Qwen2.5-3B-Instruct">Qwen 2.5 3B Instruct</option>
+                                        <option value="Qwen/Qwen2.5-Coder-7B-Instruct">Qwen 2.5 Coder 7B Instruct</option>
+                                        <option value="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B">DeepSeek R1 Distill Qwen 7B</option>
+                                    </optgroup>
+                                </select>
+                                <small class="form-help" data-i18n="serverConfig.modelscope.help">Models from ModelScope (魔搭社区) - optimized for China region access.</small>
+                                <input type="text" id="custom-modelscope-model" class="form-control" placeholder="Or enter custom ModelScope model ID">
                             </div>
 
                             <!-- Local Model Path Section (hidden by default) -->
@@ -172,10 +195,18 @@
                             </div>
 
                             <!-- HuggingFace Token for Gated Models -->
-                            <div class="form-group">
-                                <label for="hf-token">HuggingFace Token (Optional)</label>
+                            <div class="form-group" id="hf-token-section">
+                                <label for="hf-token" data-i18n="serverConfig.hfToken.label">HuggingFace Token (Optional)</label>
                                 <input type="password" id="hf-token" class="form-control" placeholder="hf_xxxxxxxxxxxxx">
-                                <small class="form-help">Required for gated models (Llama 3.1, Llama 3.2). Get token from <a href="https://huggingface.co/settings/tokens" target="_blank">HuggingFace Settings</a></small>
+                                <small class="form-help" data-i18n-html="serverConfig.hfToken.help">Required for gated models (Llama 3.1, Llama 3.2). Get token from <a href="https://huggingface.co/settings/tokens" target="_blank">HuggingFace Settings</a></small>
+                            </div>
+
+                            <!-- ModelScope Token (hidden by default) -->
+                            <div class="form-group" id="modelscope-token-section" style="display: none;">
+                                <label for="modelscope-token" data-i18n="serverConfig.modelscopeToken.label">ModelScope Token (Optional)</label>
+                                <input type="password" id="modelscope-token" class="form-control" placeholder="Your ModelScope SDK token">
+                                <small class="form-help" data-i18n-html="serverConfig.modelscopeToken.help">Required for some models. Get token from <a href="https://www.modelscope.cn/my/myaccesstoken" target="_blank">ModelScope Settings</a></small>
+                                <small class="form-help" id="modelscope-install-hint" style="display: none; color: var(--warning-color);" data-i18n-html="serverConfig.modelscopeToken.installHint">⚠️ Requires: <code>pip install modelscope>=1.18.1</code></small>
                             </div>
 
                             <!-- Run Mode Toggle -->
@@ -255,36 +286,36 @@
                             <div id="cpu-settings" style="display: block;">
                                 <div class="form-row">
                                     <div class="form-group">
-                                        <label for="cpu-kvcache">CPU KV Cache Space (GB)</label>
+                                        <label for="cpu-kvcache" data-i18n="serverConfig.cpuSettings.kvcache">CPU KV Cache Space (GB)</label>
                                         <input type="number" id="cpu-kvcache" class="form-control" value="4" min="1" max="200">
-                                        <small class="form-help">Memory allocated for KV cache (start with 4GB)</small>
+                                        <small class="form-help" data-i18n="serverConfig.cpuSettings.kvcacheHelp">Memory allocated for KV cache (start with 4GB)</small>
                                     </div>
                                     <div class="form-group">
-                                        <label for="cpu-threads">CPU Thread Binding</label>
+                                        <label for="cpu-threads" data-i18n="serverConfig.cpuSettings.threads">CPU Thread Binding</label>
                                         <select id="cpu-threads" class="form-control">
-                                            <option value="auto">Auto (Recommended)</option>
-                                            <option value="cores">Cores</option>
-                                            <option value="none">None</option>
+                                            <option value="auto" data-i18n="serverConfig.cpuSettings.threadsAuto">Auto (Recommended)</option>
+                                            <option value="cores" data-i18n="serverConfig.cpuSettings.threadsCores">Cores</option>
+                                            <option value="none" data-i18n="serverConfig.cpuSettings.threadsNone">None</option>
                                         </select>
                                     </div>
                                 </div>
                             </div>
 
                             <div class="form-group">
-                                <label for="dtype">Data Type</label>
+                                <label for="dtype" data-i18n="serverConfig.dtype.label">Data Type</label>
                                 <select id="dtype" class="form-control">
-                                    <option value="auto">Auto</option>
-                                    <option value="float16">Float16</option>
-                                    <option value="bfloat16" selected>BFloat16</option>
-                                    <option value="float32">Float32</option>
+                                    <option value="auto" data-i18n="serverConfig.dtype.auto">Auto</option>
+                                    <option value="float16" data-i18n="serverConfig.dtype.float16">Float16</option>
+                                    <option value="bfloat16" selected data-i18n="serverConfig.dtype.bfloat16">BFloat16</option>
+                                    <option value="float32" data-i18n="serverConfig.dtype.float32">Float32</option>
                                 </select>
-                                <small class="form-help" id="dtype-help-text">BFloat16 recommended for CPU</small>
+                                <small class="form-help" id="dtype-help-text" data-i18n="serverConfig.dtype.help">BFloat16 recommended for CPU</small>
                             </div>
 
                             <div class="form-group">
-                                <label for="max-model-len">Max Model Length (optional)</label>
+                                <label for="max-model-len" data-i18n="serverConfig.maxModelLen.label">Max Model Length (optional)</label>
                                 <input type="number" id="max-model-len" class="form-control" placeholder="2048 (CPU) / 8192 (GPU)">
-                                <small class="form-help">Leave empty to use safe defaults: 2048 (CPU) or 8192 (GPU)</small>
+                                <small class="form-help" data-i18n="serverConfig.maxModelLen.help">Leave empty to use safe defaults: 2048 (CPU) or 8192 (GPU)</small>
                             </div>
 
                             <!-- Advanced: Chat Template Settings -->
@@ -315,14 +346,14 @@
                             <div class="form-group checkbox-group">
                                 <label>
                                     <input type="checkbox" id="trust-remote-code">
-                                    <span>Trust Remote Code</span>
+                                    <span data-i18n="serverConfig.checkboxes.trustRemoteCode">Trust Remote Code</span>
                                 </label>
                             </div>
 
                             <div class="form-group checkbox-group">
                                 <label>
                                     <input type="checkbox" id="enable-prefix-caching">
-                                    <span>Enable Prefix Caching</span>
+                                    <span data-i18n="serverConfig.checkboxes.enablePrefixCaching">Enable Prefix Caching</span>
                                 </label>
                             </div>
 
@@ -330,7 +361,7 @@
                             <div class="form-group checkbox-group">
                                 <label>
                                     <input type="checkbox" id="enable-tool-calling">
-                                    <span>Enable Tool Calling</span>
+                                    <span data-i18n="serverConfig.checkboxes.enableToolCalling">Enable Tool Calling</span>
                                 </label>
                             </div>
 
@@ -351,11 +382,11 @@
                             <!-- Command Preview Section -->
                             <div class="command-preview-section">
                                 <div class="command-preview-header">
-                                    <h3>Command Preview</h3>
-                                    <button id="copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command">Copy</button>
+                                    <h3 data-i18n="serverConfig.commandPreview.title">Command Preview</h3>
+                                    <button id="copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command" data-i18n="serverConfig.commandPreview.copy">Copy</button>
                                 </div>
                                 <textarea id="command-text" class="command-preview-textarea" rows="8" spellcheck="false">python -m vllm.entrypoints.openai.api_server --model facebook/opt-125m</textarea>
-                                <small class="command-help">Edit the command directly or use the form above. Your edits will be used when starting the server.</small>
+                                <small class="command-help" data-i18n="serverConfig.commandPreview.help">Edit the command directly or use the form above. Your edits will be used when starting the server.</small>
                             </div>
 
                             <div class="button-group">
@@ -372,6 +403,7 @@
                             <div class="panel-header">
                                 <h2 data-i18n="chat.title">💬 Chat Interface</h2>
                                 <div class="chat-header-actions">
+                                    <button id="export-chat-btn" class="btn btn-secondary btn-sm" style="min-width: 80px; padding: 6px 16px;" data-i18n="chat.export">Export</button>
                                     <button id="clear-chat-btn" class="btn btn-secondary btn-sm" style="min-width: 80px; padding: 6px 16px;" data-i18n="chat.clear">Clear</button>
                                 </div>
                             </div>
@@ -774,43 +806,43 @@
                     <aside class="metrics-section resizable" id="metrics-panel">
                         <div class="panel">
                             <div class="panel-header">
-                                <h2>📊 Response Metrics</h2>
+                                <h2 data-i18n="metrics.title">📊 Response Metrics</h2>
                             </div>
                             <div id="chat-metrics" class="chat-metrics-grid">
                                 <div class="chat-metric-item">
-                                    <span class="metric-label">Prompt Tokens:</span>
+                                    <span class="metric-label" data-i18n="metrics.promptTokens">Prompt Tokens:</span>
                                     <span class="metric-value" id="metric-prompt-tokens">-</span>
                                 </div>
                                 <div class="chat-metric-item">
-                                    <span class="metric-label">Completion Tokens:</span>
+                                    <span class="metric-label" data-i18n="metrics.completionTokens">Completion Tokens:</span>
                                     <span class="metric-value" id="metric-completion-tokens">-</span>
                                 </div>
                                 <div class="chat-metric-item">
-                                    <span class="metric-label">Total Tokens:</span>
+                                    <span class="metric-label" data-i18n="metrics.totalTokens">Total Tokens:</span>
                                     <span class="metric-value" id="metric-total-tokens">-</span>
                                 </div>
                                 <div class="chat-metric-item">
-                                    <span class="metric-label">Time Taken:</span>
+                                    <span class="metric-label" data-i18n="metrics.timeTaken">Time Taken:</span>
                                     <span class="metric-value" id="metric-time-taken">-</span>
                                 </div>
                                 <div class="chat-metric-item">
-                                    <span class="metric-label">Tokens/sec:</span>
+                                    <span class="metric-label" data-i18n="metrics.tokensPerSec">Tokens/sec:</span>
                                     <span class="metric-value" id="metric-tokens-per-sec">-</span>
                                 </div>
                                 <div class="chat-metric-item">
-                                    <span class="metric-label">Avg Prompt Throughput:</span>
+                                    <span class="metric-label" data-i18n="metrics.avgPromptThroughput">Avg Prompt Throughput:</span>
                                     <span class="metric-value" id="metric-prompt-throughput">-</span>
                                 </div>
                                 <div class="chat-metric-item">
-                                    <span class="metric-label">Avg Generation Throughput:</span>
+                                    <span class="metric-label" data-i18n="metrics.avgGenerationThroughput">Avg Generation Throughput:</span>
                                     <span class="metric-value" id="metric-generation-throughput">-</span>
                                 </div>
                                 <div class="chat-metric-item">
-                                    <span class="metric-label">GPU KV Cache Usage:</span>
+                                    <span class="metric-label" data-i18n="metrics.gpuKvCacheUsage">GPU KV Cache Usage:</span>
                                     <span class="metric-value" id="metric-kv-cache-usage">-</span>
                                 </div>
                                 <div class="chat-metric-item">
-                                    <span class="metric-label">Prefix Cache Hit Rate:</span>
+                                    <span class="metric-label" data-i18n="metrics.prefixCacheHitRate">Prefix Cache Hit Rate:</span>
                                     <span class="metric-value" id="metric-prefix-cache-hit">-</span>
                                 </div>
                             </div>
@@ -823,15 +855,15 @@
                         <div class="logs-row-header" id="logs-row-toggle">
                             <div class="logs-row-title">
                                 <span class="logs-toggle-icon">▼</span>
-                                <h2>📋 Server Logs</h2>
+                                <h2 data-i18n="logs.title">📋 Server Logs</h2>
                             </div>
                             <div class="logs-row-controls">
                                 <label class="auto-scroll-label">
                                     <input type="checkbox" id="auto-scroll" checked>
-                                    <span>Auto-scroll</span>
+                                    <span data-i18n="logs.autoScroll">Auto-scroll</span>
                                 </label>
-                                <button id="save-logs-btn" class="btn btn-secondary btn-sm">Save</button>
-                                <button id="clear-logs-btn" class="btn btn-secondary btn-sm">Clear</button>
+                                <button id="save-logs-btn" class="btn btn-secondary btn-sm" data-i18n="logs.save">Save</button>
+                                <button id="clear-logs-btn" class="btn btn-secondary btn-sm" data-i18n="logs.clear">Clear</button>
                             </div>
                         </div>
                         <div class="logs-row-content" id="logs-row-content">
@@ -848,13 +880,13 @@
                 <div class="guidellm-layout">
                     <div class="panel guidellm-panel">
                         <div class="panel-header">
-                            <h2><img src="/assets/guidellm-logo-light.png" alt="GuideLLM" class="panel-header-logo"> Performance Benchmarking</h2>
+                            <h2><img src="/assets/guidellm-logo-light.png" alt="GuideLLM" class="panel-header-logo"> <span data-i18n="benchmark.title">Performance Benchmarking</span></h2>
                             <div class="guidellm-status-indicator" id="guidellm-status">
                                 <span>Checking...</span>
                             </div>
                             <div class="metrics-controls" id="benchmark-controls">
-                                <button id="run-benchmark-btn" class="btn btn-primary btn-sm" disabled>Run Benchmark</button>
-                                <button id="stop-benchmark-btn" class="btn btn-danger btn-sm" disabled style="display: none;">Stop</button>
+                                <button id="run-benchmark-btn" class="btn btn-primary btn-sm" disabled data-i18n="benchmark.runBenchmark">Run Benchmark</button>
+                                <button id="stop-benchmark-btn" class="btn btn-danger btn-sm" disabled style="display: none;" data-i18n="benchmark.stop">Stop</button>
                             </div>
                         </div>
 
@@ -876,8 +908,8 @@
                             <div class="benchmark-server-status" id="benchmark-server-status">
                                 <div class="server-status-content">
                                     <span class="status-icon">⚠️</span>
-                                    <span class="status-message">Start the vLLM server first to run benchmarks</span>
-                                    <button class="btn btn-primary btn-sm" onclick="window.vllmUI.switchView('vllm-server')">Go to Server →</button>
+                                    <span class="status-message" data-i18n="benchmark.startServerFirst">Start the vLLM server first to run benchmarks</span>
+                                    <button class="btn btn-primary btn-sm" onclick="window.vllmUI.switchView('vllm-server')" data-i18n="benchmark.goToServer">Go to Server →</button>
                                 </div>
                             </div>
 
@@ -886,36 +918,36 @@
                                 <!-- Benchmark Method Selection -->
                                 <div class="config-row" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #2a3142;">
                                     <div class="config-item" style="flex: 1;">
-                                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">Benchmark Method:</label>
+                                        <label style="font-weight: 600; margin-bottom: 8px; display: block;" data-i18n="benchmark.method.label">Benchmark Method:</label>
                                         <div style="display: flex; gap: 20px;">
                                             <label style="display: flex; align-items: center; cursor: pointer;">
                                                 <input type="radio" name="benchmark-method" id="benchmark-method-builtin" value="builtin" checked style="margin-right: 8px;">
-                                                <span>Built-in (Fast)</span>
+                                                <span data-i18n="benchmark.method.builtin">Built-in (Fast)</span>
                                             </label>
                                             <label style="display: flex; align-items: center; cursor: pointer;">
                                                 <input type="radio" name="benchmark-method" id="benchmark-method-guidellm" value="guidellm" style="margin-right: 8px;">
-                                                <span>GuideLLM (Advanced)</span>
+                                                <span data-i18n="benchmark.method.guidellm">GuideLLM (Advanced)</span>
                                             </label>
                                         </div>
-                                        <small class="form-help" style="display: block; margin-top: 5px;">Built-in: Fast & simple. GuideLLM: More detailed metrics & HTML reports</small>
+                                        <small class="form-help" style="display: block; margin-top: 5px;" data-i18n="benchmark.method.help">Built-in: Fast & simple. GuideLLM: More detailed metrics & HTML reports</small>
                                     </div>
                                 </div>
                                 
                                 <div class="config-row">
                                     <div class="config-item">
-                                        <label for="benchmark-requests">Total Requests:</label>
+                                        <label for="benchmark-requests" data-i18n="benchmark.config.totalRequests">Total Requests:</label>
                                         <input type="number" id="benchmark-requests" class="form-control-sm" value="100" min="10" max="1000">
                                     </div>
                                     <div class="config-item">
-                                        <label for="benchmark-rate">Request Rate (req/s):</label>
+                                        <label for="benchmark-rate" data-i18n="benchmark.config.requestRate">Request Rate (req/s):</label>
                                         <input type="number" id="benchmark-rate" class="form-control-sm" value="5" min="1" max="50">
                                     </div>
                                     <div class="config-item">
-                                        <label for="benchmark-prompt-tokens">Prompt Tokens:</label>
+                                        <label for="benchmark-prompt-tokens" data-i18n="benchmark.config.promptTokens">Prompt Tokens:</label>
                                         <input type="number" id="benchmark-prompt-tokens" class="form-control-sm" value="100" min="10" max="2048">
                                     </div>
                                     <div class="config-item">
-                                        <label for="benchmark-output-tokens">Output Tokens:</label>
+                                        <label for="benchmark-output-tokens" data-i18n="benchmark.config.outputTokens">Output Tokens:</label>
                                         <input type="number" id="benchmark-output-tokens" class="form-control-sm" value="100" min="10" max="2048">
                                     </div>
                                 </div>
@@ -924,11 +956,11 @@
                             <!-- Command Preview Section -->
                             <div class="command-preview-section" style="margin-top: 15px;">
                                 <div class="command-preview-header">
-                                    <h3>Command Preview</h3>
-                                    <button id="copy-benchmark-command-btn" class="btn btn-secondary btn-sm" title="Copy command">Copy</button>
+                                    <h3 data-i18n="benchmark.commandPreview.title">Command Preview</h3>
+                                    <button id="copy-benchmark-command-btn" class="btn btn-secondary btn-sm" title="Copy command" data-i18n="benchmark.commandPreview.copy">Copy</button>
                                 </div>
                                 <textarea id="benchmark-command-text" class="command-preview-textarea" rows="6" spellcheck="false" readonly>guidellm --target http://localhost:8000/v1 --rate 5 --max-requests 100</textarea>
-                                <small class="command-help">Equivalent GuideLLM command for this benchmark configuration</small>
+                                <small class="command-help" data-i18n="benchmark.commandPreview.help">Equivalent GuideLLM command for this benchmark configuration</small>
                             </div>
 
                             <!-- Raw GuideLLM Output Section -->
@@ -974,8 +1006,8 @@
                             <!-- Metrics Display -->
                             <div id="metrics-display" class="metrics-display">
                                 <div class="metrics-placeholder">
-                                    <p>No benchmark data available</p>
-                                    <p class="metrics-help">Start the vLLM server and click "Run Benchmark" to test performance</p>
+                                    <p data-i18n="benchmark.noData">No benchmark data available</p>
+                                    <p class="metrics-help" data-i18n="benchmark.noDataHelp">Start the vLLM server and click "Run Benchmark" to test performance</p>
                                 </div>
                             </div>
 
@@ -1330,6 +1362,42 @@
             <div class="confirm-modal-actions">
                 <button class="btn btn-secondary" id="confirm-modal-cancel">Cancel</button>
                 <button class="btn btn-danger" id="confirm-modal-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Chat Modal -->
+    <div id="export-modal" class="modal confirm-modal" style="display: none;">
+        <div class="modal-overlay" id="export-modal-overlay"></div>
+        <div class="modal-content confirm-modal-content">
+            <div class="confirm-modal-icon">📤</div>
+            <h3 class="confirm-modal-title">Export Chat</h3>
+            <p class="confirm-modal-message">Choose export format:</p>
+            <div class="confirm-modal-actions" style="flex-direction: column; gap: 10px;">
+                <button class="btn btn-primary" id="export-json-btn" style="width: 100%;">
+                    JSON Format
+                </button>
+                <button class="btn btn-secondary" id="export-markdown-btn" style="width: 100%;">
+                    Markdown Format
+                </button>
+                <button class="btn btn-secondary" id="export-cancel-btn" style="width: 100%; margin-top: 5px;">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Clear Chat Confirmation Modal -->
+    <div id="clear-chat-modal" class="modal confirm-modal" style="display: none;">
+        <div class="modal-overlay" id="clear-chat-modal-overlay"></div>
+        <div class="modal-content confirm-modal-content">
+            <div class="confirm-modal-icon">🗑️</div>
+            <h3 class="confirm-modal-title">Clear Chat</h3>
+            <p class="confirm-modal-message">Are you sure you want to clear all messages? This action cannot be undone.
+            </p>
+            <div class="confirm-modal-actions">
+                <button class="btn btn-secondary" id="clear-chat-cancel-btn">Cancel</button>
+                <button class="btn btn-danger" id="clear-chat-confirm-btn">Clear</button>
             </div>
         </div>
     </div>
