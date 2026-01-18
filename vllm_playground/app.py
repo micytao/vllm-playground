@@ -121,6 +121,12 @@ class VLLMConfig(BaseModel):
     # Options: llama3_json (Llama 3.x), mistral (Mistral), hermes (NousResearch Hermes),
     #          internlm (InternLM), granite-20b-fc (IBM Granite), pythonic (experimental)
     tool_call_parser: Optional[str] = None  # None = auto-detect based on model name
+    # ModelScope support - for users in China who can't access HuggingFace
+    # When enabled, vLLM will download models from modelscope.cn instead of huggingface.co
+    use_modelscope: bool = False
+    # ModelScope SDK token for accessing gated models
+    # Get token from https://www.modelscope.cn/my/myaccesstoken
+    modelscope_token: Optional[str] = None
 
 
 def detect_tool_call_parser(model_name: str) -> Optional[str]:
@@ -838,6 +844,8 @@ async def get_features():
         "vllm_version": None,
         "guidellm": False,
         "mcp": False,
+        "modelscope_installed": False,  # Whether modelscope SDK is installed
+        "modelscope_version": None,
         "container_runtime": None,  # Will be 'podman', 'docker', or None
         "container_mode": CONTAINER_MODE_AVAILABLE
     }
@@ -862,6 +870,21 @@ async def get_features():
     try:
         import guidellm
         features["guidellm"] = True
+    except ImportError:
+        pass
+    
+    # Check modelscope SDK (required for ModelScope model source)
+    try:
+        import modelscope
+        features["modelscope_installed"] = True
+        modelscope_ver = getattr(modelscope, '__version__', None)
+        if not modelscope_ver:
+            try:
+                from importlib.metadata import version
+                modelscope_ver = version('modelscope')
+            except Exception:
+                pass
+        features["modelscope_version"] = modelscope_ver
     except ImportError:
         pass
     
@@ -1201,11 +1224,7 @@ async def get_hardware_capabilities():
 
 
 def safe_int(value, default=0):
-    """Safely convert value to int, handling N/A, [N/A], empty strings, etc.
-    
-    This is needed for Jetson devices where nvidia-smi may return [N/A] 
-    for certain fields like utilization or temperature.
-    """
+    """Safely convert value to int, handling N/A, [N/A], empty strings, etc."""
     if value is None:
         return default
     # Remove brackets and whitespace
@@ -1522,6 +1541,16 @@ async def start_server(config: VLLMConfig):
             logger.info(f"GPU Device Selection - CUDA_VISIBLE_DEVICES={config.gpu_device}")
             await broadcast_log(f"[WEBUI] GPU Device Selection - CUDA_VISIBLE_DEVICES={config.gpu_device}")
         
+        # Set ModelScope environment variables if using ModelScope as model source
+        if config.use_modelscope:
+            env['VLLM_USE_MODELSCOPE'] = 'True'
+            await broadcast_log("[WEBUI] Using ModelScope as model source (modelscope.cn)")
+            if config.modelscope_token:
+                env['MODELSCOPE_SDK_TOKEN'] = config.modelscope_token
+                await broadcast_log("[WEBUI] ModelScope token configured")
+            elif os.environ.get('MODELSCOPE_SDK_TOKEN'):
+                await broadcast_log("[WEBUI] Using MODELSCOPE_SDK_TOKEN from environment")
+        
         if config.use_cpu:
             env['VLLM_CPU_KVCACHE_SPACE'] = str(config.cpu_kvcache_space)
             env['VLLM_CPU_OMP_THREADS_BIND'] = config.cpu_omp_threads_bind
@@ -1697,6 +1726,8 @@ async def start_server(config: VLLMConfig):
             await broadcast_log(f"[WEBUI] Model: {model_display_name}")
             if config.local_model_path:
                 await broadcast_log(f"[WEBUI] Model Source: Local ({model_source})")
+            elif config.use_modelscope:
+                await broadcast_log(f"[WEBUI] Model Source: ModelScope (modelscope.cn)")
             else:
                 await broadcast_log(f"[WEBUI] Model Source: HuggingFace Hub")
             if config.use_cpu:
@@ -1770,6 +1801,8 @@ async def start_server(config: VLLMConfig):
             await broadcast_log(f"[WEBUI] Model: {model_display_name}")
             if config.local_model_path:
                 await broadcast_log(f"[WEBUI] Model Source: Local ({model_source})")
+            elif config.use_modelscope:
+                await broadcast_log(f"[WEBUI] Model Source: ModelScope (modelscope.cn)")
             else:
                 await broadcast_log(f"[WEBUI] Model Source: HuggingFace Hub")
             if config.use_cpu:

@@ -302,9 +302,22 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     transition: opacity 0.2s ease;
 }
 
-.nav-sidebar.collapsed .nav-label {
-    opacity: 0;
-    width: 0;
+.nav-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: white;
+    background: var(--primary-color, #4f46e5);
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: auto;
+    min-width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.nav-sidebar.collapsed .nav-label,
+.nav-sidebar.collapsed .nav-badge {
+    display: none;
 }
 
 .nav-sidebar.collapsed .nav-item {
@@ -354,14 +367,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 
 .nav-sidebar.collapsed .nav-status-text,
 .nav-sidebar.collapsed .nav-version {
-    opacity: 0;
-    width: 0;
-    padding: 0;
-    margin: 0;
+    display: none;
 }
 
 .nav-sidebar.collapsed .nav-status {
     justify-content: center;
+    padding: 8px;
 }
 
 .nav-collapse-btn {
@@ -579,12 +590,13 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     
     .nav-sidebar:not(.expanded) .nav-title,
     .nav-sidebar:not(.expanded) .nav-label,
+    .nav-sidebar:not(.expanded) .nav-badge {
+        display: none;
+    }
+    
     .nav-sidebar:not(.expanded) .nav-status-text,
     .nav-sidebar:not(.expanded) .nav-version {
-        opacity: 0;
-        width: 0;
-        padding: 0;
-        margin: 0;
+        display: none;
     }
     
     .nav-sidebar:not(.expanded) .nav-item {
@@ -594,6 +606,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     
     .nav-sidebar:not(.expanded) .nav-status {
         justify-content: center;
+        padding: 8px;
     }
     
     .nav-sidebar:not(.expanded) ~ .nav-resize-handle {
@@ -1399,6 +1412,16 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     margin-top: 5px;
     color: var(--text-secondary);
     font-size: 0.8rem;
+}
+
+.form-help a {
+    color: #60a5fa;
+    text-decoration: none;
+}
+
+.form-help a:hover {
+    text-decoration: underline;
+    color: #93c5fd;
 }
 
 .form-row {

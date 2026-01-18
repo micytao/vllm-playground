@@ -35,6 +35,10 @@ class VLLMWebUI {
         // GuideLLM state
         this.guidellmAvailable = false;
 
+        // ModelScope state
+        this.modelscopeInstalled = false;
+        this.modelscopeVersion = null;
+
         // MCP (Model Context Protocol) state
         this.mcpAvailable = false;
         this.mcpConfigs = [];           // All configured MCP servers
@@ -59,11 +63,20 @@ class VLLMWebUI {
 
             // Model Source Toggle
             modelSourceHub: document.getElementById('model-source-hub'),
+            modelSourceModelscope: document.getElementById('model-source-modelscope'),
             modelSourceLocal: document.getElementById('model-source-local'),
             modelSourceHubLabel: document.getElementById('model-source-hub-label'),
+            modelSourceModelscopeLabel: document.getElementById('model-source-modelscope-label'),
             modelSourceLocalLabel: document.getElementById('model-source-local-label'),
             hubModelSection: document.getElementById('hub-model-section'),
+            modelscopeModelSection: document.getElementById('modelscope-model-section'),
             localModelSection: document.getElementById('local-model-section'),
+            modelscopeModelSelect: document.getElementById('modelscope-model-select'),
+            customModelscopeModel: document.getElementById('custom-modelscope-model'),
+            modelscopeToken: document.getElementById('modelscope-token'),
+            modelscopeInstallHint: document.getElementById('modelscope-install-hint'),
+            hfTokenSection: document.getElementById('hf-token-section'),
+            modelscopeTokenSection: document.getElementById('modelscope-token-section'),
             localModelPath: document.getElementById('local-model-path'),
             browseFolderBtn: document.getElementById('browse-folder-btn'),
             validatePathBtn: document.getElementById('validate-path-btn'),
@@ -1021,6 +1034,7 @@ number ::= [0-9]+`
 
         // Model Source toggle
         this.elements.modelSourceHub.addEventListener('change', () => this.toggleModelSource());
+        this.elements.modelSourceModelscope.addEventListener('change', () => this.toggleModelSource());
         this.elements.modelSourceLocal.addEventListener('change', () => this.toggleModelSource());
 
         // Local model path validation and browse
@@ -1267,6 +1281,11 @@ number ::= [0-9]+`
             // Handle GuideLLM availability
             this.guidellmAvailable = features.guidellm || false;
             initGuideLLMModule(this);
+
+            // Handle ModelScope availability
+            this.modelscopeInstalled = features.modelscope_installed || false;
+            this.modelscopeVersion = features.modelscope_version || null;
+            this.updateModelscopeAvailability();
 
             // Update container runtime status
             this.updateContainerRuntimeStatus(features.container_runtime, features.container_mode);
@@ -1609,25 +1628,63 @@ number ::= [0-9]+`
         this.toggleRunMode();
     }
 
+    updateModelscopeAvailability() {
+        // Update ModelScope UI based on whether modelscope SDK is installed
+        const modelscopeLabel = this.elements.modelSourceModelscopeLabel;
+        const modelscopeRadio = this.elements.modelSourceModelscope;
+
+        if (!this.modelscopeInstalled) {
+            modelscopeLabel.classList.add('mode-unavailable');
+            modelscopeLabel.title = 'ModelScope SDK not installed. Run: pip install modelscope>=1.18.1';
+            // If ModelScope was selected, switch to HuggingFace
+            if (modelscopeRadio.checked) {
+                this.elements.modelSourceHub.checked = true;
+                this.toggleModelSource();
+            }
+        } else {
+            modelscopeLabel.classList.remove('mode-unavailable');
+            const versionText = this.modelscopeVersion ? `v${this.modelscopeVersion}` : '';
+            modelscopeLabel.title = `ModelScope SDK ${versionText} installed`;
+        }
+    }
+
     toggleModelSource() {
         const isLocalModel = this.elements.modelSourceLocal.checked;
+        const isModelscope = this.elements.modelSourceModelscope.checked;
+        const isHuggingface = this.elements.modelSourceHub.checked;
 
-        // Update button active states
+        // Reset all button active states
+        this.elements.modelSourceHubLabel.classList.remove('active');
+        this.elements.modelSourceModelscopeLabel.classList.remove('active');
+        this.elements.modelSourceLocalLabel.classList.remove('active');
+
+        // Hide all model sections
+        this.elements.hubModelSection.style.display = 'none';
+        this.elements.modelscopeModelSection.style.display = 'none';
+        this.elements.localModelSection.style.display = 'none';
+
+        // Hide all token sections
+        this.elements.hfTokenSection.style.display = 'none';
+        this.elements.modelscopeTokenSection.style.display = 'none';
+
         if (isLocalModel) {
-            this.elements.modelSourceHubLabel.classList.remove('active');
             this.elements.modelSourceLocalLabel.classList.add('active');
-
-            // Show local model section, hide HF hub section
             this.elements.localModelSection.style.display = 'block';
-            this.elements.hubModelSection.style.display = 'none';
+        } else if (isModelscope) {
+            this.elements.modelSourceModelscopeLabel.classList.add('active');
+            this.elements.modelscopeModelSection.style.display = 'block';
+            this.elements.modelscopeTokenSection.style.display = 'block';
+            // Show install hint if ModelScope SDK is not installed
+            if (this.elements.modelscopeInstallHint) {
+                this.elements.modelscopeInstallHint.style.display = this.modelscopeInstalled ? 'none' : 'block';
+            }
+            // Clear local model validation
+            this.clearLocalModelValidation();
         } else {
+            // HuggingFace (default)
             this.elements.modelSourceHubLabel.classList.add('active');
-            this.elements.modelSourceLocalLabel.classList.remove('active');
-
-            // Show HF hub section, hide local model section
-            this.elements.localModelSection.style.display = 'none';
             this.elements.hubModelSection.style.display = 'block';
-
+            this.elements.hfTokenSection.style.display = 'block';
             // Clear local model validation
             this.clearLocalModelValidation();
         }
@@ -1883,14 +1940,23 @@ number ::= [0-9]+`
     }
 
     getConfig() {
-        // Check if using local model or HF hub
+        // Check model source: HuggingFace, ModelScope, or Local
         const isLocalModel = this.elements.modelSourceLocal.checked;
+        const isModelscope = this.elements.modelSourceModelscope.checked;
 
-        const model = this.elements.customModel.value.trim() || this.elements.modelSelect.value;
+        // Get model based on source
+        let model;
+        if (isModelscope) {
+            model = this.elements.customModelscopeModel.value.trim() || this.elements.modelscopeModelSelect.value;
+        } else {
+            model = this.elements.customModel.value.trim() || this.elements.modelSelect.value;
+        }
+
         const localModelPath = this.elements.localModelPath.value.trim();
         const maxModelLen = this.elements.maxModelLen.value;
         const isCpuMode = this.elements.modeCpu.checked;
         const hfToken = this.elements.hfToken.value.trim();
+        const modelscopeToken = this.elements.modelscopeToken.value.trim();
 
         // Get run mode (subprocess or container)
         const runMode = document.getElementById('run-mode-subprocess').checked ? 'subprocess' : 'container';
@@ -1907,6 +1973,8 @@ number ::= [0-9]+`
             use_cpu: isCpuMode,
             hf_token: hfToken || null,  // Include HF token for gated models
             local_model_path: isLocalModel && localModelPath ? localModelPath : null,  // Add local model path
+            use_modelscope: isModelscope,  // Flag to indicate ModelScope source
+            modelscope_token: isModelscope && modelscopeToken ? modelscopeToken : null,  // ModelScope token
             enable_tool_calling: this.elements.enableToolCalling.checked,
             tool_call_parser: this.elements.toolCallParser.value || null  // null = auto-detect
         };
@@ -1941,6 +2009,13 @@ number ::= [0-9]+`
         if (config.run_mode === 'subprocess' && !this.vllmInstalled) {
             this.showNotification('⚠️ Cannot use Subprocess mode: vLLM is not installed. Please install vLLM (pip install vllm) or switch to Container mode.', 'error');
             this.addLog('❌ Subprocess mode requires vLLM to be installed. Run: pip install vllm', 'error');
+            return;
+        }
+
+        // Check ModelScope SDK requirement
+        if (config.use_modelscope && !this.modelscopeInstalled) {
+            this.showNotification('⚠️ Cannot use ModelScope: modelscope SDK is not installed. Please install it with: pip install modelscope>=1.18.1', 'error');
+            this.addLog('❌ ModelScope requires the modelscope SDK. Run: pip install modelscope>=1.18.1', 'error');
             return;
         }
 
@@ -3381,14 +3456,17 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     }
 
     updateCommandPreview() {
-        // Check if using local model or HuggingFace model
+        // Check model source: HuggingFace, ModelScope, or Local
         const isLocalModel = this.elements.modelSourceLocal.checked;
+        const isModelscope = this.elements.modelSourceModelscope.checked;
         const localModelPath = this.elements.localModelPath.value.trim();
 
-        // Use local model path if in local mode, otherwise use HF model
+        // Use local model path if in local mode, ModelScope model, or HF model
         let model;
         if (isLocalModel && localModelPath) {
             model = localModelPath;
+        } else if (isModelscope) {
+            model = this.elements.customModelscopeModel.value.trim() || this.elements.modelscopeModelSelect.value;
         } else {
             model = this.elements.customModel.value.trim() || this.elements.modelSelect.value;
         }
@@ -3401,6 +3479,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         const enablePrefixCaching = this.elements.enablePrefixCaching.checked;
         const isCpuMode = this.elements.modeCpu.checked;
         const hfToken = this.elements.hfToken.value.trim();
+        const modelscopeToken = this.elements.modelscopeToken.value.trim();
 
         // Build command string
         let cmd;
@@ -3415,7 +3494,12 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             cmd += `export VLLM_CPU_OMP_THREADS_BIND=${cpuThreads}\n`;
             cmd += `export VLLM_TARGET_DEVICE=cpu\n`;
             cmd += `export VLLM_USE_V1=1  # Required to be explicitly set\n`;
-            if (hfToken) {
+            if (isModelscope) {
+                cmd += `export VLLM_USE_MODELSCOPE=True  # Download from ModelScope\n`;
+                if (modelscopeToken) {
+                    cmd += `export MODELSCOPE_SDK_TOKEN=[YOUR_TOKEN]\n`;
+                }
+            } else if (hfToken) {
                 cmd += `export HF_TOKEN=[YOUR_TOKEN]\n`;
             }
             cmd += `\npython -m vllm.entrypoints.openai.api_server`;
@@ -3439,7 +3523,14 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 cmd += `export CUDA_VISIBLE_DEVICES=${gpuDevice}\n\n`;
             }
 
-            if (hfToken) {
+            if (isModelscope) {
+                cmd += `# ModelScope - Download from modelscope.cn:\n`;
+                cmd += `export VLLM_USE_MODELSCOPE=True\n`;
+                if (modelscopeToken) {
+                    cmd += `export MODELSCOPE_SDK_TOKEN=[YOUR_TOKEN]\n`;
+                }
+                cmd += `\n`;
+            } else if (hfToken) {
                 cmd += `# Set HF token for gated models:\n`;
                 cmd += `export HF_TOKEN=[YOUR_TOKEN]\n\n`;
             }
