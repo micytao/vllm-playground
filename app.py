@@ -654,8 +654,14 @@ def extract_model_name_from_path(model_path: str, info: Dict[str, Any]) -> str:
 async def read_root():
     """Serve the main HTML page"""
     html_path = Path(__file__).parent / "index.html"
-    with open(html_path, "r") as f:
-        return HTMLResponse(content=f.read())
+    # Fix Windows Unicode decoding issue by specifying utf-8 encoding
+    try:
+        with open(html_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except UnicodeDecodeError:
+        # Fallback to latin-1 encoding if utf-8 fails
+        with open(html_path, "r", encoding="latin-1") as f:
+            return HTMLResponse(content=f.read())
 
 
 @app.get("/api/status")
