@@ -3651,9 +3651,19 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         const maxModelLen = this.elements.maxModelLen.value;
         const trustRemoteCode = this.elements.trustRemoteCode.checked;
         const enablePrefixCaching = this.elements.enablePrefixCaching.checked;
+
+        // Determine compute mode: cpu, gpu, or metal
         const isCpuMode = this.elements.modeCpu.checked;
+        const isMetalMode = this.elements.modeMetal?.checked || false;
+        // Metal mode uses GPU settings (not CPU)
+        const useGpuSettings = !isCpuMode;  // Both GPU and Metal use GPU settings
+
         const hfToken = this.elements.hfToken.value.trim();
         const modelscopeToken = this.elements.modelscopeToken.value.trim();
+
+        // Get venv path if specified (for subprocess mode)
+        const venvPath = this.elements.venvPathInput?.value.trim() || '';
+        const pythonExec = venvPath ? `${venvPath}/bin/python` : 'python';
 
         // Build command string
         let cmd;
@@ -3676,7 +3686,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             } else if (hfToken) {
                 cmd += `export HF_TOKEN=[YOUR_TOKEN]\n`;
             }
-            cmd += `\npython -m vllm.entrypoints.openai.api_server`;
+            cmd += `\n${pythonExec} -m vllm.entrypoints.openai.api_server`;
             cmd += ` \\\n  --model ${model}`;
             cmd += ` \\\n  --host ${host}`;
             cmd += ` \\\n  --port ${port}`;
@@ -3709,7 +3719,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 cmd += `export HF_TOKEN=[YOUR_TOKEN]\n\n`;
             }
 
-            cmd += `python -m vllm.entrypoints.openai.api_server`;
+            cmd += `${pythonExec} -m vllm.entrypoints.openai.api_server`;
             cmd += ` \\\n  --model ${model}`;
             cmd += ` \\\n  --host ${host}`;
             cmd += ` \\\n  --port ${port}`;
@@ -3723,8 +3733,10 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             cmd += ` \\\n  --gpu-memory-utilization ${gpuMemory}`;
             cmd += ` \\\n  --load-format auto`;
             if (!maxModelLen) {
-                cmd += ` \\\n  --max-model-len 8192`;
-                cmd += ` \\\n  --max-num-batched-tokens 8192`;
+                // Metal uses 2048 like CPU (less memory than desktop GPUs)
+                const defaultMaxLen = isMetalMode ? 2048 : 8192;
+                cmd += ` \\\n  --max-model-len ${defaultMaxLen}`;
+                cmd += ` \\\n  --max-num-batched-tokens ${defaultMaxLen}`;
             }
         }
 

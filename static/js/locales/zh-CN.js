@@ -146,8 +146,8 @@ const zhCN = {
         },
         maxModelLen: {
             label: '最大模型长度（可选）',
-            placeholder: '2048（CPU）/ 8192（GPU）',
-            help: '留空则使用安全默认值：2048（CPU）或 8192（GPU）'
+            placeholder: '2048（CPU/Metal）/ 8192（GPU）',
+            help: '留空则使用安全默认值：2048（CPU/Metal）或 8192（GPU）'
         },
         chatTemplate: {
             title: '聊天模板参考（高级）',

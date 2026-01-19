@@ -71,7 +71,7 @@ const en = {
         },
         maxModelLen: {
             label: 'Max Model Length (optional)',
-            help: 'Leave empty to use safe defaults: 2048 (CPU) or 8192 (GPU)'
+            help: 'Leave empty to use safe defaults: 2048 (CPU/Metal) or 8192 (GPU)'
         },
         checkboxes: {
             trustRemoteCode: 'Trust Remote Code',

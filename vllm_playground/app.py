@@ -1861,12 +1861,15 @@ async def start_server(config: VLLMConfig):
         # Metal mode uses GPU settings (not CPU)
         if config.compute_mode == "cpu":
             config.use_cpu = True
+            logger.info("CPU mode selected via compute_mode")
             await broadcast_log("[WEBUI] Compute Mode: CPU")
         elif config.compute_mode == "metal":
             config.use_cpu = False  # Metal uses GPU settings
+            logger.info("Metal mode selected via compute_mode")
             await broadcast_log("[WEBUI] Compute Mode: Metal (Apple Silicon GPU)")
         else:  # gpu
             config.use_cpu = False
+            logger.info("GPU mode selected via compute_mode")
             await broadcast_log("[WEBUI] Compute Mode: GPU")
         
         # Set environment variables for CPU mode
