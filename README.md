@@ -13,11 +13,12 @@ A modern web interface for managing and interacting with vLLM servers (www.githu
 ### ✨ Structured Outputs Support
 ![vLLM Playground with Structured Outputs](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-structured-outputs.png)
 
-### 🆕 What's New in v0.1.1
+### 🆕 What's New in v0.1.2
 
-- 🔗 **MCP Integration** - Connect to MCP servers for agentic capabilities
-- 🔍 **Runtime Detection** - Auto-detect Podman, Docker, and vLLM
-- ✅ **Human-in-the-Loop** - Safe tool execution with manual approval
+- 🌏 **ModelScope Support** - Alternative model source for China region users
+- 🌐 **i18n Chinese** - Comprehensive Chinese language translations
+- 💬 **Chat Export** - Save conversations with export functionality
+- 🐛 **Bug Fixes** - Windows Unicode fix, sidebar UI improvements
 
 See **[Changelog](CHANGELOG.md)** for full details.
 
@@ -138,6 +139,7 @@ export VLLM_CPU_OMP_THREADS_BIND=auto
 
 ### Releases
 - **[Changelog](CHANGELOG.md)** - Version history and changes
+- **[v0.1.2](releases/v0.1.2.md)** - ModelScope integration, i18n improvements
 - **[v0.1.1](releases/v0.1.1.md)** - MCP integration, runtime detection
 - **[v0.1.0](releases/v0.1.0.md)** - First release, modern UI, tool calling
 

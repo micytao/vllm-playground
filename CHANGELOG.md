@@ -6,6 +6,33 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 ---
 
+## [v0.1.2](releases/v0.1.2.md) - 2026-01-19
+
+**ModelScope Integration & i18n Improvements**
+
+### Added
+- 🌏 **ModelScope Support** - Alternative model source for China region users
+  - ModelScope (魔搭社区) as model source option
+  - Curated model list (Qwen, DeepSeek)
+  - SDK detection and installation hints
+  - Token configuration for private models
+- 🌐 **i18n Chinese Translations** - Comprehensive Chinese language support
+  - Response Metrics panel
+  - GuideLLM Benchmark section
+  - Server Configuration labels
+  - Logs panel controls
+- 💬 **Chat Improvements**
+  - Export chat functionality
+  - Clear chat confirmation modal
+
+### Fixed
+- 🐛 Windows Unicode decoding issue when reading HTML files
+- 🐛 MCP nav icon display in collapsed sidebar
+- 🐛 Nav badge visibility in collapsed state
+- 🐛 Status dot layout affected by version text
+
+---
+
 ## [v0.1.1](releases/v0.1.1.md) - 2026-01-08
 
 **Agentic-Ready with MCP Support**
@@ -60,5 +87,6 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| v0.1.2 | 2026-01-19 | ModelScope integration, i18n improvements |
 | v0.1.1 | 2026-01-08 | MCP integration, runtime detection |
 | v0.1.0 | 2026-01-02 | First release, modern UI, tool calling |
