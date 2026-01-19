@@ -6,6 +6,31 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 ---
 
+## [Unreleased]
+
+### Added
+- Custom virtual environment support for subprocess mode
+- `venv_path` configuration option to specify Python venv path
+- Automatic venv validation (checks for vLLM installation)
+- Support for any custom vLLM installation (dev builds, specific versions, patches)
+- Metal GPU mode for Apple Silicon (via vllm-metal)
+
+### Changed
+- **BREAKING:** Metal support now requires user to install vllm-metal themselves
+- Metal mode simplified to just set `VLLM_TARGET_DEVICE=metal`
+- Subprocess mode uses custom venv's Python if `venv_path` specified
+- `compute_mode` field replaces boolean `use_cpu` (cpu/gpu/metal options)
+
+### Removed
+- N/A (No Metal installation infrastructure existed to remove)
+
+### Documentation
+- New guide: Using custom vLLM installations
+- New guide: macOS Metal GPU support
+- Updated: README with custom venv and Metal instructions
+
+---
+
 ## [v0.1.2](releases/v0.1.2.md) - 2026-01-19
 
 **ModelScope Integration & i18n Improvements**

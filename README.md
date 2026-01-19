@@ -114,6 +114,29 @@ export VLLM_CPU_KVCACHE_SPACE=40
 export VLLM_CPU_OMP_THREADS_BIND=auto
 ```
 
+### Metal GPU Support (macOS Apple Silicon)
+
+vLLM Playground supports Apple Silicon GPU acceleration:
+
+1. Install vllm-metal following [official instructions](https://github.com/vllm-project/vllm-metal)
+2. Configure playground to use Metal:
+   - Run Mode: Subprocess
+   - Compute Mode: Metal
+   - Venv Path: `~/.venv-vllm-metal` (or your installation path)
+
+See [macOS Metal Guide](docs/MACOS_METAL_GUIDE.md) for details.
+
+### Custom vLLM Installations
+
+Use specific vLLM versions or custom builds:
+
+1. Install vLLM in a virtual environment
+2. Configure playground:
+   - Run Mode: Subprocess
+   - Venv Path: `/path/to/your/venv`
+
+See [Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md) for details.
+
 ---
 
 ## 📖 Documentation
@@ -121,7 +144,9 @@ export VLLM_CPU_OMP_THREADS_BIND=auto
 ### Getting Started
 - **[Installation Guide](docs/INSTALLATION.md)** - All installation methods
 - **[Quick Start](docs/QUICKSTART.md)** - Get running in minutes
-- **[macOS CPU Guide](docs/MACOS_CPU_GUIDE.md)** - Apple Silicon setup
+- **[macOS CPU Guide](docs/MACOS_CPU_GUIDE.md)** - Apple Silicon CPU setup
+- **[macOS Metal Guide](docs/MACOS_METAL_GUIDE.md)** - Apple Silicon GPU acceleration
+- **[Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md)** - Using custom vLLM installations
 
 ### Features
 - **[Features Overview](docs/FEATURES.md)** - Complete feature list
