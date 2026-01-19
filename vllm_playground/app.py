@@ -1704,20 +1704,170 @@ async def start_server(config: VLLMConfig):
             )
         
         await broadcast_log(f"[WEBUI] Run mode: {config.run_mode.upper()}")
-        
-        # Check if user manually selected CPU mode (takes precedence)
-        if config.use_cpu:
-            logger.info("CPU mode manually selected by user")
-            await broadcast_log("[WEBUI] Using CPU mode (manual selection)")
-        else:
-            # Auto-detect macOS and enable CPU mode
-            import platform
-            is_macos = platform.system() == "Darwin"
-            
-            if is_macos:
-                config.use_cpu = True
-                logger.info("Detected macOS - enabling CPU mode")
-                await broadcast_log("[WEBUI] Detected macOS - using CPU mode")
+
+        # Validate and configure custom virtual environment if provided
+        python_executable = sys.executable  # Default to current Python
+        if config.venv_path and config.run_mode == "subprocess":
+            await broadcast_log("[WEBUI] Validating custom virtual environment...")
+
+            try:
+                # Expand and resolve path (security: prevent path traversal)
+                venv_path = Path(config.venv_path).expanduser().resolve(strict=False)
+
+                # Verify path exists
+                if not venv_path.exists():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Virtual environment path does not exist: {config.venv_path}"
+                    )
+
+                # Verify it's a directory
+                if not venv_path.is_dir():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Virtual environment path is not a directory: {config.venv_path}"
+                    )
+
+                # Find Python executable (platform-specific)
+                import platform
+                if platform.system() == "Windows":
+                    python_path = venv_path / "Scripts" / "python.exe"
+                else:
+                    python_path = venv_path / "bin" / "python"
+
+                # Verify Python executable exists
+                if not python_path.exists():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Python executable not found in virtual environment: {python_path}"
+                    )
+
+                # Verify it's actually a valid Python executable
+                try:
+                    result = subprocess.run(
+                        [str(python_path), "--version"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode != 0:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Invalid Python executable: {python_path}"
+                        )
+                    python_version = result.stdout.strip()
+                    await broadcast_log(f"[WEBUI] Found Python: {python_version}")
+                except subprocess.TimeoutExpired:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Python executable timed out: {python_path}"
+                    )
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Failed to verify Python executable: {e}"
+                    )
+
+                # Check for vLLM installation using multiple methods
+                vllm_found = False
+                vllm_version = None
+                detection_method = None
+
+                # Method 1: Try direct Python import
+                try:
+                    result = subprocess.run(
+                        [str(python_path), "-c", "import vllm; print(vllm.__version__)"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        vllm_found = True
+                        vllm_version = result.stdout.strip()
+                        detection_method = "Python import"
+                except Exception:
+                    pass
+
+                # Method 2: Try pip list
+                if not vllm_found:
+                    try:
+                        pip_path = python_path.parent / ("pip.exe" if platform.system() == "Windows" else "pip")
+                        result = subprocess.run(
+                            [str(pip_path), "list", "--format=freeze"],
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        if result.returncode == 0:
+                            for line in result.stdout.split('\n'):
+                                if line.startswith('vllm=='):
+                                    vllm_found = True
+                                    vllm_version = line.split('==')[1]
+                                    detection_method = "pip list"
+                                    break
+                    except Exception:
+                        pass
+
+                # Method 3: Try uv pip list (fallback for vllm-metal installations)
+                if not vllm_found:
+                    try:
+                        result = subprocess.run(
+                            ["uv", "pip", "list", "--python", str(python_path)],
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        if result.returncode == 0:
+                            for line in result.stdout.split('\n'):
+                                if 'vllm' in line.lower():
+                                    vllm_found = True
+                                    # Extract version from "vllm 0.13.0" format
+                                    parts = line.split()
+                                    if len(parts) >= 2:
+                                        vllm_version = parts[1]
+                                    detection_method = "uv pip list"
+                                    break
+                    except FileNotFoundError:
+                        # uv not installed, skip this method
+                        pass
+                    except Exception:
+                        pass
+
+                # Error if vLLM not found by any method
+                if not vllm_found:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"vLLM not found in virtual environment: {venv_path}\n"
+                                f"Tried: Python import, pip list, uv pip list\n"
+                                f"Please ensure vLLM is installed in this environment."
+                    )
+
+                # Success - use this Python executable
+                python_executable = str(python_path)
+                await broadcast_log(f"[WEBUI] ✓ vLLM detected via {detection_method}: v{vllm_version}")
+                await broadcast_log(f"[WEBUI] Using Python from: {python_executable}")
+
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error validating virtual environment: {e}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Error validating virtual environment: {str(e)}"
+                )
+
+        # Convert compute_mode to use_cpu for backend compatibility
+        # compute_mode: "cpu" | "gpu" | "metal"
+        # Metal mode uses GPU settings (not CPU)
+        if config.compute_mode == "cpu":
+            config.use_cpu = True
+            await broadcast_log("[WEBUI] Compute Mode: CPU")
+        elif config.compute_mode == "metal":
+            config.use_cpu = False  # Metal uses GPU settings
+            await broadcast_log("[WEBUI] Compute Mode: Metal (Apple Silicon GPU)")
+        else:  # gpu
+            config.use_cpu = False
+            await broadcast_log("[WEBUI] Compute Mode: GPU")
         
         # Set environment variables for CPU mode
         env = os.environ.copy()
@@ -1760,12 +1910,19 @@ async def start_server(config: VLLMConfig):
             await broadcast_log(f"[WEBUI] CPU Settings - KV Cache: {config.cpu_kvcache_space}GB, Thread Binding: {config.cpu_omp_threads_bind}")
             await broadcast_log(f"[WEBUI] CPU Optimizations disabled for Apple Silicon compatibility")
             await broadcast_log(f"[WEBUI] Using V1 engine for CPU mode")
+        elif config.compute_mode == "metal":
+            # Metal GPU mode (Apple Silicon)
+            env['VLLM_TARGET_DEVICE'] = 'metal'
+            env['VLLM_USE_V1'] = '1'
+            logger.info("Metal Mode - VLLM_TARGET_DEVICE=metal, VLLM_USE_V1=1")
+            await broadcast_log(f"[WEBUI] Metal Settings - Target Device: metal, V1 Engine: enabled")
+            await broadcast_log(f"[WEBUI] Using Apple Silicon GPU acceleration")
         else:
             await broadcast_log("[WEBUI] Using GPU mode")
         
         # Build command
         cmd = [
-            sys.executable,
+            python_executable,
             "-m", "vllm.entrypoints.openai.api_server",
             "--model", model_source,  # Use model_source (local path or HF model name)
             "--host", config.host,
@@ -1807,12 +1964,13 @@ async def start_server(config: VLLMConfig):
             cmd.extend(["--max-model-len", str(max_len)])
             cmd.extend(["--max-num-batched-tokens", str(max_len)])
             await broadcast_log(f"[WEBUI] Using user-specified max-model-len: {max_len}")
-        elif config.use_cpu:
-            # CPU mode: Use conservative defaults (2048)
+        elif config.compute_mode in ["cpu", "metal"]:
+            # CPU/Metal mode: Use conservative defaults (2048)
+            # Metal has less memory than desktop GPUs, so use same as CPU
             max_len = 2048
             cmd.extend(["--max-model-len", str(max_len)])
             cmd.extend(["--max-num-batched-tokens", str(max_len)])
-            await broadcast_log(f"[WEBUI] Using default max-model-len for CPU: {max_len}")
+            await broadcast_log(f"[WEBUI] Using default max-model-len for {config.compute_mode.upper()}: {max_len}")
         else:
             # GPU mode: Use reasonable default (8192) instead of letting vLLM auto-detect
             max_len = 8192
