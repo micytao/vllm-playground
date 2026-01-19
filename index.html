@@ -259,6 +259,10 @@
                                         <input type="radio" name="compute-mode" id="mode-gpu" value="gpu">
                                         <span data-i18n="serverConfig.computeMode.gpu">🎮 GPU</span>
                                     </label>
+                                    <label class="mode-button" id="mode-metal-label">
+                                        <input type="radio" name="compute-mode" id="mode-metal" value="metal">
+                                        <span data-i18n="serverConfig.computeMode.metal">⚡ Metal</span>
+                                    </label>
                                 </div>
                                 <!-- Accelerator Selection (separate line, shown when GPU mode selected) -->
                                 <div class="accelerator-row" id="accelerator-row" style="display: none;">
@@ -270,6 +274,19 @@
                                     </select>
                                 </div>
                                 <small class="form-help" id="mode-help-text" data-i18n="serverConfig.computeMode.help">CPU mode is recommended for macOS</small>
+                            </div>
+
+                            <!-- Virtual Environment Path (optional) -->
+                            <div class="form-group" id="venv-path-group" style="display: none;">
+                                <label for="venv-path" data-i18n="serverConfig.venvPath.label">Custom Virtual Environment Path (Optional)</label>
+                                <input
+                                    type="text"
+                                    id="venv-path"
+                                    class="form-control"
+                                    placeholder="~/.venv-vllm-metal"
+                                    data-i18n-placeholder="serverConfig.venvPath.placeholder"
+                                >
+                                <small class="form-help" data-i18n="serverConfig.venvPath.help">Specify path to a virtual environment containing vLLM or vLLM-Metal. Leave empty to use system Python.</small>
                             </div>
 
                             <div class="form-row">

@@ -163,6 +163,11 @@ class VLLMConfig(BaseModel):
     # Required for Claude Code integration (model names with '/' don't work)
     # When set, all API calls will use this name instead of the model path
     served_model_name: Optional[str] = None
+    # Compute mode: cpu, gpu, or metal (Apple Silicon GPU)
+    compute_mode: Literal["cpu", "gpu", "metal"] = "cpu"
+    # Custom virtual environment path for subprocess mode
+    # Allows using specific vLLM installations (e.g., vllm-metal)
+    venv_path: Optional[str] = None
 
 
 def detect_tool_call_parser(model_name: str) -> Optional[str]:

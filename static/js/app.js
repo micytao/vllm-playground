@@ -95,11 +95,13 @@ class VLLMWebUI {
             validationMessage: document.getElementById('validation-message'),
             localModelInfo: document.getElementById('local-model-info'),
 
-            // CPU/GPU Mode
+            // CPU/GPU/Metal Mode
             modeCpu: document.getElementById('mode-cpu'),
             modeGpu: document.getElementById('mode-gpu'),
+            modeMetal: document.getElementById('mode-metal'),
             modeCpuLabel: document.getElementById('mode-cpu-label'),
             modeGpuLabel: document.getElementById('mode-gpu-label'),
+            modeMetalLabel: document.getElementById('mode-metal-label'),
             modeHelpText: document.getElementById('mode-help-text'),
             cpuSettings: document.getElementById('cpu-settings'),
 
@@ -110,6 +112,10 @@ class VLLMWebUI {
             runModeContainerLabel: document.getElementById('run-mode-container-label'),
             runModeHelpText: document.getElementById('run-mode-help-text'),
             gpuSettings: document.getElementById('gpu-settings'),
+
+            // Venv path (for custom vLLM installations)
+            venvPathGroup: document.getElementById('venv-path-group'),
+            venvPathInput: document.getElementById('venv-path'),
 
             // GPU settings
             tensorParallel: document.getElementById('tensor-parallel'),
@@ -1046,6 +1052,7 @@ number ::= [0-9]+`
         // CPU/GPU mode toggle
         this.elements.modeCpu.addEventListener('change', () => this.toggleComputeMode());
         this.elements.modeGpu.addEventListener('change', () => this.toggleComputeMode());
+        this.elements.modeMetal.addEventListener('change', () => this.toggleComputeMode());
 
         // Accelerator selection change (NVIDIA/AMD)
         if (this.elements.acceleratorSelect) {
@@ -1200,6 +1207,8 @@ number ::= [0-9]+`
             this.elements.port,
             this.elements.modeCpu,
             this.elements.modeGpu,
+            this.elements.modeMetal,
+            this.elements.venvPathInput,
             this.elements.tensorParallel,
             this.elements.gpuMemory,
             this.elements.cpuKvcache,
@@ -1597,11 +1606,16 @@ number ::= [0-9]+`
 
     toggleComputeMode() {
         const isCpuMode = this.elements.modeCpu.checked;
+        const isGpuMode = this.elements.modeGpu.checked;
+        const isMetalMode = this.elements.modeMetal.checked;
 
         // Update button active states
+        this.elements.modeCpuLabel.classList.remove('active');
+        this.elements.modeGpuLabel.classList.remove('active');
+        this.elements.modeMetalLabel.classList.remove('active');
+
         if (isCpuMode) {
             this.elements.modeCpuLabel.classList.add('active');
-            this.elements.modeGpuLabel.classList.remove('active');
             this.elements.modeHelpText.textContent = 'CPU mode is recommended for macOS';
             this.elements.dtypeHelpText.textContent = 'BFloat16 recommended for CPU';
 
@@ -1616,8 +1630,7 @@ number ::= [0-9]+`
 
             // Set dtype to bfloat16 for CPU
             this.elements.dtype.value = 'bfloat16';
-        } else {
-            this.elements.modeCpuLabel.classList.remove('active');
+        } else if (isGpuMode) {
             this.elements.modeGpuLabel.classList.add('active');
             this.elements.dtypeHelpText.textContent = 'Auto recommended for GPU';
 
@@ -1630,6 +1643,23 @@ number ::= [0-9]+`
 
             // Set dtype to auto for GPU
             this.elements.dtype.value = 'auto';
+        } else if (isMetalMode) {
+            this.elements.modeMetalLabel.classList.add('active');
+            this.elements.modeHelpText.textContent = 'Metal GPU mode for Apple Silicon (requires venv path)';
+            this.elements.dtypeHelpText.textContent = 'BFloat16 recommended for Metal';
+
+            // Hide both CPU and GPU settings for Metal (uses defaults)
+            this.elements.cpuSettings.style.display = 'none';
+            this.elements.gpuSettings.style.display = 'none';
+
+            // Set dtype to bfloat16 for Metal
+            this.elements.dtype.value = 'bfloat16';
+
+            // Metal requires subprocess mode
+            if (this.elements.runModeSubprocess) {
+                this.elements.runModeSubprocess.checked = true;
+                this.toggleRunMode();
+            }
         }
 
         // Update accelerator row visibility (only shown in container mode + GPU mode)
@@ -1689,6 +1719,11 @@ number ::= [0-9]+`
             this.elements.runModeSubprocessLabel.classList.add('active');
             this.elements.runModeContainerLabel.classList.remove('active');
 
+            // Show venv path option only in subprocess mode
+            if (this.elements.venvPathGroup) {
+                this.elements.venvPathGroup.style.display = 'block';
+            }
+
             // Check if vLLM is installed
             if (!this.vllmInstalled) {
                 this.elements.runModeHelpText.innerHTML = '<span style="color: var(--error-color);">⚠️ vLLM not installed. Run: pip install vllm</span>';
@@ -1699,6 +1734,11 @@ number ::= [0-9]+`
         } else {
             this.elements.runModeSubprocessLabel.classList.remove('active');
             this.elements.runModeContainerLabel.classList.add('active');
+
+            // Hide venv path option in container mode
+            if (this.elements.venvPathGroup) {
+                this.elements.venvPathGroup.style.display = 'none';
+            }
 
             if (!this.containerModeAvailable) {
                 this.elements.runModeHelpText.innerHTML = '<span style="color: var(--error-color);">⚠️ No container runtime (podman/docker) found</span>';
@@ -2067,9 +2107,16 @@ number ::= [0-9]+`
 
         const localModelPath = this.elements.localModelPath.value.trim();
         const maxModelLen = this.elements.maxModelLen.value;
-        const isCpuMode = this.elements.modeCpu.checked;
         const hfToken = this.elements.hfToken.value.trim();
         const modelscopeToken = this.elements.modelscopeToken.value.trim();
+
+        // Get compute mode (cpu, gpu, or metal)
+        let computeMode = 'cpu';
+        if (this.elements.modeGpu.checked) {
+            computeMode = 'gpu';
+        } else if (this.elements.modeMetal.checked) {
+            computeMode = 'metal';
+        }
 
         // Get run mode (subprocess or container)
         const runMode = document.getElementById('run-mode-subprocess').checked ? 'subprocess' : 'container';
@@ -2080,10 +2127,11 @@ number ::= [0-9]+`
             port: parseInt(this.elements.port.value),
             dtype: this.elements.dtype.value,
             max_model_len: maxModelLen ? parseInt(maxModelLen) : null,
-            run_mode: runMode,  // Add run_mode to config
+            run_mode: runMode,
             trust_remote_code: this.elements.trustRemoteCode.checked,
             enable_prefix_caching: this.elements.enablePrefixCaching.checked,
-            use_cpu: isCpuMode,
+            compute_mode: computeMode,  // New: send compute_mode instead of use_cpu
+            venv_path: this.elements.venvPathInput?.value.trim() || null,  // New: custom venv path
             hf_token: hfToken || null,  // Include HF token for gated models
             local_model_path: isLocalModel && localModelPath ? localModelPath : null,  // Add local model path
             use_modelscope: isModelscope,  // Flag to indicate ModelScope source
@@ -2097,10 +2145,11 @@ number ::= [0-9]+`
         // The fields in the UI are for reference/display only
         // Users who need custom templates can set them via server config JSON or API
 
-        if (isCpuMode) {
-            // CPU-specific settings
+        if (computeMode === 'cpu' || computeMode === 'metal') {
+            // CPU and Metal-specific settings
             config.cpu_kvcache_space = parseInt(this.elements.cpuKvcache.value);
             config.cpu_omp_threads_bind = this.elements.cpuThreads.value;
+            config.use_cpu = (computeMode === 'cpu');  // Set use_cpu for backward compatibility
         } else {
             // GPU-specific settings
             config.tensor_parallel_size = parseInt(this.elements.tensorParallel.value);
@@ -2108,6 +2157,7 @@ number ::= [0-9]+`
             config.load_format = "auto";
             // GPU accelerator type (nvidia/amd) for container mode
             config.accelerator = this.elements.acceleratorSelect.value;
+            config.use_cpu = false;  // Backward compatibility
             // GPU device selection
             const gpuDevice = this.elements.gpuDevice.value.trim();
             if (gpuDevice) {
@@ -2209,7 +2259,15 @@ number ::= [0-9]+`
         }
 
         this.addLog(`Run Mode: ${config.run_mode === 'subprocess' ? 'Subprocess (Direct)' : 'Container (Isolated)'}`, 'info');
-        this.addLog(`Compute Mode: ${config.use_cpu ? 'CPU' : `GPU (${config.accelerator?.toUpperCase() || 'NVIDIA'})`}`, 'info');
+        // Show compute mode with accelerator info if GPU mode
+        let computeModeLabel = config.compute_mode.toUpperCase();
+        if (config.compute_mode === 'gpu' && config.accelerator) {
+            computeModeLabel += ` (${config.accelerator.toUpperCase()})`;
+        }
+        this.addLog(`Compute Mode: ${computeModeLabel}`, 'info');
+        if (config.venv_path) {
+            this.addLog(`Using custom venv: ${config.venv_path}`, 'info');
+        }
 
         try {
             const response = await fetch('/api/start', {

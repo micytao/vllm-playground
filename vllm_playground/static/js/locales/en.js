@@ -94,6 +94,7 @@ const en = {
             label: 'Compute Mode',
             cpu: '🖥️ CPU',
             gpu: '🎮 GPU',
+            metal: '⚡ Metal',
             help: 'CPU mode is recommended for macOS'
         },
         accelerator: {
@@ -102,6 +103,11 @@ const en = {
             amd: 'AMD (ROCm)',
             tpu: 'Google TPU',
             help: 'Select your GPU accelerator type for container mode'
+        },
+        venvPath: {
+            label: 'Custom Virtual Environment Path (Optional)',
+            placeholder: '~/.venv-vllm-metal',
+            help: 'Specify path to a virtual environment containing vLLM or vLLM-Metal. Leave empty to use system Python.'
         },
         host: {
             label: 'Host'

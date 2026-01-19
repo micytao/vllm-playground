@@ -98,6 +98,7 @@ const zhCN = {
             label: '计算模式',
             cpu: '🖥️ CPU',
             gpu: '🎮 GPU',
+            metal: '⚡ Metal',
             help: 'macOS 推荐使用 CPU 模式'
         },
         accelerator: {
@@ -106,6 +107,11 @@ const zhCN = {
             amd: 'AMD (ROCm)',
             tpu: '谷歌 TPU',
             help: '选择容器模式的 GPU 加速器类型'
+        },
+        venvPath: {
+            label: '自定义虚拟环境路径（可选）',
+            placeholder: '~/.venv-vllm-metal',
+            help: '指定包含 vLLM 或 vLLM-Metal 的虚拟环境路径。留空则使用系统 Python。'
         },
         host: {
             label: '主机'
