@@ -19,6 +19,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Fil
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
+import struct
+import signal
 
 # Setup logging (must be before imports that use logger)
 logging.basicConfig(
@@ -79,6 +81,25 @@ websocket_connections: List[WebSocket] = []
 latest_vllm_metrics: Dict[str, Any] = {}  # Store latest metrics from logs
 metrics_timestamp: Optional[datetime] = None  # Track when metrics were last updated
 current_model_identifier: Optional[str] = None  # Track the actual model identifier passed to vLLM
+current_served_model_name: Optional[str] = None  # Track the served model name alias (for API calls)
+
+
+def get_model_name_for_api() -> Optional[str]:
+    """
+    Get the model name to use in API calls.
+    
+    Uses served_model_name if set (required when --served-model-name is used),
+    otherwise falls back to current_model_identifier or current_config.model.
+    
+    Returns None if no model name is available.
+    """
+    if current_served_model_name:
+        return current_served_model_name
+    if current_model_identifier:
+        return current_model_identifier
+    if current_config:
+        return current_config.model
+    return None
 
 
 class VLLMConfig(BaseModel):
@@ -130,6 +151,10 @@ class VLLMConfig(BaseModel):
     # ModelScope SDK token for accessing gated models
     # Get token from https://www.modelscope.cn/my/myaccesstoken
     modelscope_token: Optional[str] = None
+    # Served model name - alias for the model used in API calls
+    # Required for Claude Code integration (model names with '/' don't work)
+    # When set, all API calls will use this name instead of the model path
+    served_model_name: Optional[str] = None
 
 
 def detect_tool_call_parser(model_name: str) -> Optional[str]:
@@ -1602,7 +1627,7 @@ async def get_gpu_status():
 @app.post("/api/start")
 async def start_server(config: VLLMConfig):
     """Start the vLLM server in subprocess or container mode"""
-    global container_id, vllm_process, vllm_running, current_config, server_start_time, current_model_identifier, current_run_mode
+    global container_id, vllm_process, vllm_running, current_config, server_start_time, current_model_identifier, current_served_model_name, current_run_mode
     
     # Check if server is already running
     if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
@@ -1742,6 +1767,12 @@ async def start_server(config: VLLMConfig):
             "--port", str(config.port),
         ]
         
+        # Add served-model-name if specified (required for Claude Code integration)
+        # This sets an alias for the model that doesn't contain '/'
+        if config.served_model_name:
+            cmd.extend(["--served-model-name", config.served_model_name])
+            await broadcast_log(f"[WEBUI] Served model name: {config.served_model_name}")
+        
         # Add GPU-specific parameters only if not using CPU
         # Note: vLLM auto-detects CPU platform, no --device flag needed
         if not config.use_cpu:
@@ -1877,6 +1908,7 @@ async def start_server(config: VLLMConfig):
             
             # Store the actual model identifier for use in API calls
             current_model_identifier = model_source
+            current_served_model_name = config.served_model_name  # May be None
             
             # Start log reader task
             asyncio.create_task(read_logs_container())
@@ -1959,6 +1991,7 @@ async def start_server(config: VLLMConfig):
             
             # Store the actual model identifier for use in API calls
             current_model_identifier = model_source
+            current_served_model_name = config.served_model_name  # May be None
             
             # Start log reader task
             asyncio.create_task(read_logs_subprocess())
@@ -1986,7 +2019,7 @@ async def start_server(config: VLLMConfig):
 @app.post("/api/stop")
 async def stop_server():
     """Stop the vLLM server (container or subprocess)"""
-    global container_id, vllm_process, vllm_running, server_start_time, current_model_identifier, current_run_mode
+    global container_id, vllm_process, vllm_running, server_start_time, current_model_identifier, current_served_model_name, current_run_mode
     
     # Check if server is running based on mode
     if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
@@ -2031,6 +2064,7 @@ async def stop_server():
         vllm_running = False
         server_start_time = None
         current_model_identifier = None
+        current_served_model_name = None
         current_run_mode = None
         
         return {"status": "stopped"}
@@ -2349,9 +2383,10 @@ async def chat(request: ChatRequestWithStopTokens):
             messages_dict.append(msg)
         
         # Build payload for OpenAI-compatible endpoint
-        # Use current_model_identifier (actual path or HF model) instead of config.model
+        # Use get_model_name_for_api() to get the correct model name
+        # (served_model_name if set, otherwise model identifier)
         payload = {
-            "model": current_model_identifier if current_model_identifier else current_config.model,
+            "model": get_model_name_for_api(),
             "messages": messages_dict,
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
@@ -2988,7 +3023,7 @@ async def completion(request: CompletionRequest):
             logger.info(f"Using URL: {url}")
         
         payload = {
-            "model": current_model_identifier if current_model_identifier else current_config.model,
+            "model": get_model_name_for_api(),
             "prompt": request.prompt,
             "temperature": request.temperature,
             "max_tokens": request.max_tokens
@@ -3962,7 +3997,7 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
                 
                 try:
                     payload = {
-                        "model": current_model_identifier if current_model_identifier else server_config.model,
+                        "model": get_model_name_for_api(),
                         "messages": [{"role": "user", "content": prompt_text}],
                         "max_tokens": config.output_tokens,
                         "temperature": 0.7,
@@ -4335,6 +4370,406 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
         benchmark_results = None
 
 
+
+
+# ============================================
+# Claude Code Integration
+# ============================================
+
+# Import ptyprocess (optional - only needed for Claude Code terminal)
+CLAUDE_CODE_AVAILABLE = False
+ptyprocess = None
+try:
+    import ptyprocess as pty_module
+    ptyprocess = pty_module
+    CLAUDE_CODE_AVAILABLE = True
+    logger.info("ptyprocess available - Claude Code terminal support enabled")
+except ImportError:
+    logger.info("ptyprocess not installed - Claude Code terminal will be disabled. Install with: pip install vllm-playground[claudecode]")
+
+# Global state for Claude Code terminal sessions
+claude_terminal_sessions: Dict[str, Any] = {}  # session_id -> {"process": PtyProcess, "websocket": WebSocket}
+
+
+def find_claude_command() -> Optional[str]:
+    """Find the claude command on the system"""
+    # Check common locations for claude CLI
+    possible_commands = ["claude", "claude-code"]
+    
+    for cmd in possible_commands:
+        result = shutil.which(cmd)
+        if result:
+            return result
+    
+    # Check npm global bin
+    try:
+        npm_bin = subprocess.run(["npm", "bin", "-g"], capture_output=True, text=True)
+        if npm_bin.returncode == 0:
+            npm_path = Path(npm_bin.stdout.strip()) / "claude"
+            if npm_path.exists():
+                return str(npm_path)
+    except Exception:
+        pass
+    
+    return None
+
+
+def is_claude_installed() -> Dict[str, Any]:
+    """Check if Claude Code CLI is installed"""
+    claude_path = find_claude_command()
+    
+    if claude_path:
+        # Try to get version
+        try:
+            result = subprocess.run([claude_path, "--version"], capture_output=True, text=True, timeout=5)
+            version = result.stdout.strip() if result.returncode == 0 else "unknown"
+            return {
+                "installed": True,
+                "path": claude_path,
+                "version": version
+            }
+        except Exception as e:
+            return {
+                "installed": True,
+                "path": claude_path,
+                "version": "unknown",
+                "error": str(e)
+            }
+    
+    return {
+        "installed": False,
+        "path": None,
+        "version": None
+    }
+
+
+@app.get("/api/claude-code/status")
+async def claude_code_status():
+    """Get Claude Code availability and installation status"""
+    claude_info = is_claude_installed()
+    
+    return {
+        "terminal_available": CLAUDE_CODE_AVAILABLE,
+        "claude_installed": claude_info["installed"],
+        "claude_path": claude_info.get("path"),
+        "claude_version": claude_info.get("version"),
+        "vllm_running": vllm_running,
+        "message": "Ready" if (CLAUDE_CODE_AVAILABLE and claude_info["installed"] and vllm_running) else "Not ready"
+    }
+
+
+@app.get("/api/claude-code/config")
+async def claude_code_config():
+    """Get the environment configuration for Claude Code to connect to vLLM"""
+    global current_config, current_model_identifier, current_served_model_name, vllm_running
+    
+    if not vllm_running or not current_config:
+        return {
+            "available": False,
+            "message": "vLLM server is not running. Start the server first.",
+            "env": {},
+            "needs_served_model_name": False
+        }
+    
+    # Get the model name to use
+    # Use served_model_name if set (required for Claude Code as model names with '/' don't work)
+    if current_served_model_name:
+        model_name = current_served_model_name
+    else:
+        model_name = current_model_identifier or current_config.model
+        # Check if model name contains '/' which won't work with Claude Code
+        if '/' in model_name:
+            return {
+                "available": False,
+                "message": "Model name contains '/'. Set a 'Served Model Name' in vLLM server configuration for Claude Code to work.",
+                "env": {},
+                "needs_served_model_name": True,
+                "current_model": model_name
+            }
+    
+    # Check if tool calling is enabled (required for Claude Code)
+    tool_calling_enabled = current_config.enable_tool_calling
+    
+    # Build the base URL for vLLM's Anthropic-compatible endpoint
+    # Use localhost since Claude Code runs on the same machine
+    port = current_config.port
+    base_url = f"http://localhost:{port}"
+    
+    env_config = {
+        "ANTHROPIC_BASE_URL": base_url,
+        "ANTHROPIC_API_KEY": "vllm-playground",  # vLLM doesn't require auth by default
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": model_name,
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": model_name,
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": model_name,
+    }
+    
+    return {
+        "available": True,
+        "message": "vLLM server is running and ready for Claude Code",
+        "tool_calling_enabled": tool_calling_enabled,
+        "tool_calling_warning": None if tool_calling_enabled else "Tool calling is not enabled. Claude Code may not work properly.",
+        "env": env_config,
+        "model": model_name,
+        "port": port
+    }
+
+
+@app.post("/api/claude-code/install")
+async def claude_code_install(method: str = "npm"):
+    """Install Claude Code CLI"""
+    try:
+        if method == "npm":
+            # Install via npm globally
+            process = await asyncio.create_subprocess_exec(
+                "npm", "install", "-g", "@anthropic-ai/claude-code",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode == 0:
+                return {
+                    "success": True,
+                    "message": "Claude Code installed successfully via npm",
+                    "output": stdout.decode()
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "Failed to install Claude Code",
+                    "error": stderr.decode()
+                }
+        else:
+            return {
+                "success": False,
+                "message": f"Unknown installation method: {method}",
+                "supported_methods": ["npm"]
+            }
+    except FileNotFoundError:
+        return {
+            "success": False,
+            "message": "npm not found. Please install Node.js first.",
+            "error": "npm command not available"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Installation failed: {str(e)}",
+            "error": str(e)
+        }
+
+
+@app.websocket("/ws/terminal")
+async def websocket_terminal(websocket: WebSocket):
+    """WebSocket endpoint for Claude Code terminal PTY communication"""
+    await websocket.accept()
+    
+    if not CLAUDE_CODE_AVAILABLE:
+        await websocket.send_json({
+            "type": "error",
+            "message": "Terminal support not available. Install ptyprocess: pip install vllm-playground[claudecode]"
+        })
+        await websocket.close()
+        return
+    
+    claude_info = is_claude_installed()
+    if not claude_info["installed"]:
+        await websocket.send_json({
+            "type": "error", 
+            "message": "Claude Code not installed. Install with: npm install -g @anthropic-ai/claude-code"
+        })
+        await websocket.close()
+        return
+    
+    # Get vLLM config for Claude Code environment
+    config_response = await claude_code_config()
+    if not config_response["available"]:
+        await websocket.send_json({
+            "type": "error",
+            "message": config_response["message"]
+        })
+        await websocket.close()
+        return
+    
+    # Build environment for Claude Code
+    env = os.environ.copy()
+    env.update(config_response["env"])
+    
+    # Verify vLLM server is actually responding before starting Claude Code
+    vllm_url = config_response["env"]["ANTHROPIC_BASE_URL"]
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{vllm_url}/health", timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    logger.warning(f"vLLM health check returned status {resp.status}")
+    except Exception as e:
+        logger.warning(f"vLLM health check failed: {e}")
+        await websocket.send_json({
+            "type": "error",
+            "message": f"Cannot connect to vLLM server at {vllm_url}. Make sure the server is running."
+        })
+        await websocket.close()
+        return
+    
+    # Create PTY process running claude
+    session_id = f"claude_{id(websocket)}"
+    proc = None
+    
+    try:
+        # Start claude in PTY
+        from ptyprocess import PtyProcess
+        
+        claude_path = claude_info["path"]
+        model_name = config_response["model"]
+        
+        # Log environment for debugging
+        logger.info(f"Starting Claude Code with env: ANTHROPIC_BASE_URL={env.get('ANTHROPIC_BASE_URL')}, MODEL={model_name}")
+        
+        # Build command with explicit model argument
+        claude_cmd = [
+            claude_path,
+            "--model", model_name,  # Explicitly pass model name
+        ]
+        
+        proc = PtyProcess.spawn(
+            claude_cmd,
+            env=env,
+            dimensions=(24, 80)  # Default terminal size
+        )
+        
+        claude_terminal_sessions[session_id] = {
+            "process": proc,
+            "websocket": websocket
+        }
+        
+        # Give Claude Code a moment to start
+        await asyncio.sleep(0.2)
+        
+        # Check if process is still alive
+        if not proc.isalive():
+            # Process exited immediately - try to get exit status
+            exit_status = proc.exitstatus
+            signal_status = proc.signalstatus
+            logger.error(f"Claude Code exited immediately. Exit status: {exit_status}, Signal: {signal_status}")
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Claude Code exited immediately (exit code: {exit_status}). Check server logs for details."
+            })
+            await websocket.close()
+            return
+        
+        await websocket.send_json({
+            "type": "connected",
+            "message": f"Claude Code terminal started (using vLLM at localhost:{config_response['port']})",
+            "model": config_response["model"]
+        })
+        
+        # Read from PTY and send to WebSocket
+        async def read_pty():
+            loop = asyncio.get_event_loop()
+            try:
+                while proc.isalive():
+                    try:
+                        # Read with timeout
+                        data = await asyncio.wait_for(
+                            loop.run_in_executor(None, lambda: proc.read(4096)),
+                            timeout=0.1
+                        )
+                        if data:
+                            # Decode bytes to string for JSON serialization
+                            if isinstance(data, bytes):
+                                data = data.decode('utf-8', errors='replace')
+                            await websocket.send_json({
+                                "type": "output",
+                                "data": data
+                            })
+                    except asyncio.TimeoutError:
+                        continue
+                    except EOFError:
+                        break
+                    except OSError as e:
+                        # Process likely exited - this is expected
+                        if e.errno == 5:  # Input/output error
+                            break
+                        raise
+                
+                # Process ended - get exit status
+                if not proc.isalive():
+                    exit_status = proc.exitstatus
+                    signal_status = proc.signalstatus
+                    logger.info(f"Claude Code process ended. Exit status: {exit_status}, Signal: {signal_status}")
+                    await websocket.send_json({
+                        "type": "exit",
+                        "exit_status": exit_status,
+                        "signal_status": signal_status
+                    })
+                    
+            except Exception as e:
+                logger.error(f"PTY read error: {e}")
+        
+        # Start reading task
+        read_task = asyncio.create_task(read_pty())
+        
+        # Handle incoming messages from WebSocket
+        try:
+            while True:
+                message = await websocket.receive_json()
+                
+                if message.get("type") == "input":
+                    # Check if process is still alive before writing
+                    if not proc.isalive():
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "Claude Code process has exited"
+                        })
+                        break
+                    # Write input to PTY (encode to bytes if needed)
+                    data = message.get("data", "")
+                    if isinstance(data, str):
+                        data = data.encode('utf-8')
+                    try:
+                        proc.write(data)
+                    except OSError as e:
+                        if e.errno == 5:  # Input/output error - process died
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "Claude Code process exited unexpectedly"
+                            })
+                            break
+                        raise
+                
+                elif message.get("type") == "resize":
+                    # Handle terminal resize
+                    if proc.isalive():
+                        rows = message.get("rows", 24)
+                        cols = message.get("cols", 80)
+                        proc.setwinsize(rows, cols)
+                
+                elif message.get("type") == "ping":
+                    await websocket.send_json({"type": "pong"})
+                    
+        except WebSocketDisconnect:
+            logger.info(f"Claude Code terminal disconnected: {session_id}")
+        finally:
+            read_task.cancel()
+            
+    except Exception as e:
+        logger.error(f"Claude Code terminal error: {e}")
+        await websocket.send_json({
+            "type": "error",
+            "message": f"Terminal error: {str(e)}"
+        })
+    finally:
+        # Clean up
+        if proc and proc.isalive():
+            proc.terminate(force=True)
+        if session_id in claude_terminal_sessions:
+            del claude_terminal_sessions[session_id]
+        try:
+            await websocket.close()
+        except:
+            pass
 
 
 def main(host: str = None, port: int = None, reload: bool = False):

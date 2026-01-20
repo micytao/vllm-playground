@@ -1,6 +1,7 @@
 // vLLM Playground - Main JavaScript
 import { initMCPModule } from './modules/mcp.js';
 import { initGuideLLMModule } from './modules/guidellm.js';
+import { initClaudeCodeModule } from './modules/claudecode.js';
 
 class VLLMWebUI {
     constructor() {
@@ -129,6 +130,7 @@ class VLLMWebUI {
             enableToolCalling: document.getElementById('enable-tool-calling'),
             toolCallParser: document.getElementById('tool-call-parser'),
             toolParserGroup: document.getElementById('tool-parser-group'),
+            servedModelName: document.getElementById('served-model-name'),
 
             // Template Settings
             templateSettingsToggle: document.getElementById('template-settings-toggle'),
@@ -333,6 +335,7 @@ class VLLMWebUI {
             document.addEventListener('mousemove', (e) => this.navResize(e));
             document.addEventListener('mouseup', () => this.stopNavResize());
         }
+        
     }
 
     toggleNavSidebar() {
@@ -444,8 +447,22 @@ class VLLMWebUI {
                     // Refresh MCP config view
                     this.refreshMCPConfigView();
                     break;
+                case 'claude-code':
+                    viewTitle.innerHTML = '<img src="/assets/Claude.png" alt="Claude" class="view-title-logo"> Claude Code';
+                    // Activate Claude Code view
+                    if (this.onClaudeCodeViewActivated) {
+                        this.onClaudeCodeViewActivated();
+                    }
+                    break;
                 default:
                     viewTitle.textContent = viewId;
+            }
+        }
+
+        // Handle view deactivation for Claude Code
+        if (this.currentView === 'claude-code' && viewId !== 'claude-code') {
+            if (this.onClaudeCodeViewDeactivated) {
+                this.onClaudeCodeViewDeactivated();
             }
         }
 
@@ -1193,12 +1210,15 @@ number ::= [0-9]+`
             this.elements.trustRemoteCode,
             this.elements.enablePrefixCaching,
             this.elements.enableToolCalling,
-            this.elements.toolCallParser
+            this.elements.toolCallParser,
+            this.elements.servedModelName
         ];
 
         configElements.forEach(element => {
-            element.addEventListener('input', () => this.updateCommandPreview());
-            element.addEventListener('change', () => this.updateCommandPreview());
+            if (element) {
+                element.addEventListener('input', () => this.updateCommandPreview());
+                element.addEventListener('change', () => this.updateCommandPreview());
+            }
         });
 
         // Toggle tool parser visibility based on enable tool calling checkbox
@@ -1291,6 +1311,9 @@ number ::= [0-9]+`
             // Handle GuideLLM availability
             this.guidellmAvailable = features.guidellm || false;
             initGuideLLMModule(this);
+
+            // Initialize Claude Code module
+            initClaudeCodeModule(this);
 
             // Handle ModelScope availability
             this.modelscopeInstalled = features.modelscope_installed || false;
@@ -1586,11 +1609,6 @@ number ::= [0-9]+`
             this.elements.cpuSettings.style.display = 'block';
             this.elements.gpuSettings.style.display = 'none';
 
-            // Hide accelerator row in CPU mode
-            if (this.elements.acceleratorRow) {
-                this.elements.acceleratorRow.style.display = 'none';
-            }
-
             // Set dtype to bfloat16 for CPU
             this.elements.dtype.value = 'bfloat16';
         } else {
@@ -1602,10 +1620,6 @@ number ::= [0-9]+`
             this.elements.cpuSettings.style.display = 'none';
             this.elements.gpuSettings.style.display = 'block';
 
-            // Show accelerator row in GPU mode
-            if (this.elements.acceleratorRow) {
-                this.elements.acceleratorRow.style.display = 'flex';
-            }
             // Update help text based on selected accelerator
             this.updateAcceleratorHelpText();
 
@@ -1613,11 +1627,43 @@ number ::= [0-9]+`
             this.elements.dtype.value = 'auto';
         }
 
+        // Update accelerator row visibility (only shown in container mode + GPU mode)
+        this.updateAcceleratorVisibility();
+
+        // Update help text if in GPU mode (reflects run mode change)
+        if (this.elements.modeGpu.checked) {
+            this.updateAcceleratorHelpText();
+        }
+
         // Update command preview
         this.updateCommandPreview();
     }
 
+    updateAcceleratorVisibility() {
+        // Accelerator dropdown only applies to container mode with GPU
+        // In subprocess mode, vLLM auto-detects the hardware
+        if (!this.elements.acceleratorRow) return;
+
+        const isGpuMode = this.elements.modeGpu.checked;
+        const isContainerMode = this.elements.runModeContainer.checked;
+
+        if (isGpuMode && isContainerMode) {
+            this.elements.acceleratorRow.style.display = 'flex';
+        } else {
+            this.elements.acceleratorRow.style.display = 'none';
+        }
+    }
+
     updateAcceleratorHelpText() {
+        const isSubprocess = this.elements.runModeSubprocess.checked;
+        
+        // In subprocess mode, vLLM auto-detects hardware
+        if (isSubprocess) {
+            this.elements.modeHelpText.textContent = 'GPU mode - vLLM will auto-detect available hardware (NVIDIA/AMD/TPU)';
+            return;
+        }
+        
+        // In container mode, show accelerator-specific help
         if (!this.elements.acceleratorSelect) return;
         
         const accelerator = this.elements.acceleratorSelect.value;
@@ -1655,6 +1701,9 @@ number ::= [0-9]+`
                 this.elements.runModeHelpText.textContent = 'Container: Isolated environment (recommended)';
             }
         }
+
+        // Update accelerator row visibility (only shown in container mode + GPU mode)
+        this.updateAcceleratorVisibility();
 
         // Update command preview
         this.updateCommandPreview();
@@ -2035,7 +2084,8 @@ number ::= [0-9]+`
             use_modelscope: isModelscope,  // Flag to indicate ModelScope source
             modelscope_token: isModelscope && modelscopeToken ? modelscopeToken : null,  // ModelScope token
             enable_tool_calling: this.elements.enableToolCalling.checked,
-            tool_call_parser: this.elements.toolCallParser.value || null  // null = auto-detect
+            tool_call_parser: this.elements.toolCallParser.value || null,  // null = auto-detect
+            served_model_name: this.elements.servedModelName?.value.trim() || null  // null = use model path
         };
 
         // Don't send chat template or stop tokens - let vLLM auto-detect them
@@ -3655,6 +3705,12 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 cmd += ` \\\n  --enable-auto-tool-choice`;
                 cmd += ` \\\n  --tool-call-parser ${parser}`;
             }
+        }
+
+        // Served model name (required for Claude Code)
+        const servedModelName = this.elements.servedModelName?.value.trim();
+        if (servedModelName) {
+            cmd += ` \\\n  --served-model-name ${servedModelName}`;
         }
 
         // Note: vLLM automatically loads chat templates from model's tokenizer_config.json
@@ -5881,6 +5937,12 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     // ============================================
     // MCP methods are dynamically added via initMCPModule()
     // See: static/js/modules/mcp.js
+
+    // ============================================
+    // Claude Code Module - Methods injected from modules/claudecode.js
+    // ============================================
+    // Claude Code methods are dynamically added via initClaudeCodeModule()
+    // See: static/js/modules/claudecode.js
 }
 // Add CSS animations for notifications
 const style = document.createElement('style');

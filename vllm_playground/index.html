@@ -8,6 +8,12 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="/static/css/mcp.css">
     <link rel="stylesheet" href="/static/css/guidellm.css">
+    <link rel="stylesheet" href="/static/css/claudecode.css">
+    <!-- xterm.js for Claude Code terminal -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
 </head>
 <body>
     <div class="app-layout">
@@ -19,6 +25,8 @@
             </div>
             
             <div class="nav-items">
+                <!-- vLLM Projects Section -->
+                <div class="nav-section-label">vLLM Projects</div>
                 <button class="nav-item active" data-view="vllm-server" title="vLLM Server">
                     <img src="/assets/vllm-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label" data-i18n="nav.vllmServer">vLLM Server</span>
@@ -27,10 +35,21 @@
                     <img src="/assets/guidellm-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label" data-i18n="nav.guidellm">GuideLLM</span>
                 </button>
+                
+                <!-- Divider -->
+                <div class="nav-divider">
+                    <span class="nav-divider-label">Integrations</span>
+                </div>
+                
+                <!-- Integrations Section -->
                 <button class="nav-item" data-view="mcp-config" title="MCP Servers" id="nav-mcp">
                     <span class="nav-item-icon icon-mcp-nav"></span>
                     <span class="nav-label">MCP Servers</span>
                     <span class="nav-badge" id="mcp-servers-badge" style="display: none;">0</span>
+                </button>
+                <button class="nav-item" data-view="claude-code" title="Claude Code" id="nav-claude-code">
+                    <img src="/assets/Claude.png" alt="" class="nav-item-logo" onerror="this.style.display='none'">
+                    <span class="nav-label">Claude Code</span>
                 </button>
             </div>
             
@@ -389,6 +408,13 @@
                                     <option value="pythonic">Pythonic (experimental)</option>
                                 </select>
                                 <small class="form-hint">Parser for model tool call output. Auto-detect uses model name.</small>
+                            </div>
+
+                            <!-- Served Model Name (for Claude Code) -->
+                            <div class="form-group" id="served-model-name-group">
+                                <label for="served-model-name">Served Model Name (Optional)</label>
+                                <input type="text" id="served-model-name" class="form-control" placeholder="e.g., my-model">
+                                <small class="form-help">Alias for the model in API calls. <strong>Required for Claude Code</strong> (cannot contain '/').</small>
                             </div>
 
                             <!-- Command Preview Section -->
@@ -1266,6 +1292,122 @@
                             </div>
 
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Claude Code View -->
+            <div class="view-content" id="claude-code-view" style="display: none;">
+                <div class="claude-code-layout">
+                    <div class="claude-code-container">
+                        <!-- Header -->
+                        <div class="claude-code-header">
+                            <div class="claude-header-title">
+                                <img src="/assets/Claude.png" alt="Claude Code" class="claude-header-icon">
+                                <div>
+                                    <h2>Claude Code</h2>
+                                    <p class="claude-header-subtitle">AI-powered coding assistant connected to your vLLM server</p>
+                                </div>
+                            </div>
+                            <div class="claude-header-status" id="claude-status">
+                                <span class="status-checking">Checking status...</span>
+                            </div>
+                        </div>
+
+                        <!-- Not Available Warning (shown when ptyprocess not installed) -->
+                        <div class="claude-install-warning" id="claude-pty-warning" style="display: none;">
+                            <div class="warning-icon">⚠️</div>
+                            <h3>Terminal Support Not Available</h3>
+                            <p>Install the terminal support package to enable Claude Code:</p>
+                            <div class="install-commands">
+                                <code class="primary-cmd">pip install vllm-playground[claudecode]</code>
+                                <span class="cmd-divider">or</span>
+                                <code class="alt-cmd">pip install ptyprocess</code>
+                            </div>
+                        </div>
+
+                        <!-- Claude Not Installed Warning -->
+                        <div class="claude-install-warning" id="claude-not-installed" style="display: none;">
+                            <div class="warning-icon">📦</div>
+                            <h3>Claude Code Not Installed</h3>
+                            <p>Install Claude Code CLI to use this feature:</p>
+                            <div class="install-commands">
+                                <code class="primary-cmd">npm install -g @anthropic-ai/claude-code</code>
+                            </div>
+                            <button class="btn btn-primary" id="claude-install-btn">Install Claude Code</button>
+                        </div>
+
+                        <!-- vLLM Not Running Warning -->
+                        <div class="claude-install-warning" id="claude-vllm-warning" style="display: none;">
+                            <div class="warning-icon"><img src="/assets/vllm-logo.svg" alt="vLLM" class="warning-logo"></div>
+                            <h3>vLLM Server Not Running</h3>
+                            <p>Start a vLLM server first to use Claude Code.</p>
+                            <p class="warning-hint">Go to the vLLM Server tab and start a server with a model that supports tool calling.</p>
+                            <a href="#" id="claude-goto-vllm" class="btn btn-primary">Go to vLLM Server</a>
+                        </div>
+
+                        <!-- Served Model Name Required Warning -->
+                        <div class="claude-install-warning" id="claude-served-name-warning" style="display: none;">
+                            <div class="warning-icon">⚠️</div>
+                            <h3>Served Model Name Required</h3>
+                            <p>Claude Code cannot use model names containing "/".</p>
+                            <p class="warning-hint">Set a <strong>Served Model Name</strong> (e.g., "my-model") in the vLLM Server configuration panel, then restart the server.</p>
+                            <a href="#" id="claude-goto-vllm-config" class="btn btn-primary">Configure vLLM Server</a>
+                        </div>
+
+                        <!-- Tool Calling Warning -->
+                        <div class="claude-install-warning" id="claude-tool-warning" style="display: none;">
+                            <div class="warning-icon">🔧</div>
+                            <h3>Tool Calling Not Enabled</h3>
+                            <p>Claude Code requires tool calling to be enabled.</p>
+                            <p class="warning-hint">Enable <strong>Tool Calling</strong> in the vLLM Server configuration panel, then restart the server.</p>
+                            <a href="#" id="claude-goto-vllm-tools" class="btn btn-primary">Configure vLLM Server</a>
+                        </div>
+
+                        <!-- Terminal Container (shown when ready) -->
+                        <div class="claude-terminal-wrapper" id="claude-terminal-wrapper" style="display: none;">
+                            <!-- Requirements Note -->
+                            <div class="claude-requirements-note">
+                                <div class="note-icon">💡</div>
+                                <div class="note-content">
+                                    <strong>Requirements for Claude Code:</strong>
+                                    <ul>
+                                        <li><strong>Served Model Name</strong> must be set (e.g., "my-model") - model names with "/" don't work</li>
+                                        <li><strong>Tool Calling</strong> must be enabled in vLLM server configuration</li>
+                                        <li>Use a <strong>larger model</strong> (7B+ parameters) with strong tool calling capabilities</li>
+                                        <li>Set <strong>Max Model Length</strong> to 8192+ for longer context</li>
+                                        <li>Recommended models: Qwen 2.5 7B+, Llama 3.1 8B+, Mistral 7B+</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <!-- Connection Info Bar -->
+                            <div class="claude-connection-bar">
+                                <div class="connection-info">
+                                    <span class="connection-label">Connected to:</span>
+                                    <code id="claude-endpoint">http://localhost:8000</code>
+                                    <span class="connection-model" id="claude-model-name">Model: -</span>
+                                </div>
+                                <div class="terminal-controls">
+                                    <button class="btn btn-sm btn-secondary" id="claude-reconnect-btn" title="Reconnect terminal">
+                                        🔄 Reconnect
+                                    </button>
+                                    <button class="btn btn-sm btn-secondary" id="claude-clear-btn" title="Clear terminal">
+                                        🗑️ Clear
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Terminal -->
+                            <div class="claude-terminal" id="claude-terminal"></div>
+                            
+                            <!-- Help Text -->
+                            <div class="claude-help-text">
+                                <p>💡 Claude Code is running with your vLLM server as the backend. Type your coding questions or requests above.</p>
+                                <p>Press <kbd>Ctrl+C</kbd> to interrupt, <kbd>Ctrl+D</kbd> to exit.</p>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>

@@ -325,6 +325,44 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     padding: 10px;
 }
 
+/* Navigation Section Label */
+.nav-section-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 16px 8px;
+    display: block;
+}
+
+.nav-sidebar.collapsed .nav-section-label {
+    display: none;
+}
+
+/* Navigation Divider */
+.nav-divider {
+    margin: 16px 8px 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+}
+
+.nav-divider-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0 8px;
+    display: block;
+}
+
+.nav-sidebar.collapsed .nav-divider-label {
+    display: none;
+}
+
+.nav-sidebar.collapsed .nav-divider {
+    margin: 12px 4px 8px;
+}
+
 .nav-footer {
     padding: 12px 8px;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
