@@ -235,6 +235,7 @@ const ClaudeCodeMethods = {
         // Create terminal instance
         this.claudeTerminal = new Terminal({
             cursorBlink: true,
+            cursorStyle: 'block',
             fontSize: 14,
             fontFamily: "'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace",
             theme: {
@@ -261,7 +262,9 @@ const ClaudeCodeMethods = {
                 brightWhite: '#fafafa'
             },
             allowTransparency: true,
-            scrollback: 10000
+            scrollback: 10000,
+            disableStdin: false,  // Explicitly enable stdin
+            convertEol: true      // Convert \n to \r\n for proper line handling
         });
         
         // Load addons
@@ -284,15 +287,23 @@ const ClaudeCodeMethods = {
         // Focus terminal to enable keyboard input
         this.claudeTerminal.focus();
         
+        // Helper to ensure terminal is focused
+        const focusTerminal = () => {
+            if (this.claudeTerminal) {
+                this.claudeTerminal.focus();
+                // Also try to focus the internal textarea that xterm uses for input
+                const textarea = terminalContainer.querySelector('textarea.xterm-helper-textarea');
+                if (textarea) {
+                    textarea.focus();
+                }
+            }
+        };
+        
         // Focus terminal when clicking anywhere in terminal area
-        terminalContainer.addEventListener('click', () => {
-            this.claudeTerminal.focus();
-        });
+        terminalContainer.addEventListener('click', focusTerminal);
         
         // Also handle mousedown to capture focus before other handlers
-        terminalContainer.addEventListener('mousedown', () => {
-            this.claudeTerminal.focus();
-        });
+        terminalContainer.addEventListener('mousedown', focusTerminal);
         
         // Ensure terminal wrapper also handles clicks
         const terminalWrapper = document.getElementById('claude-terminal-wrapper');
@@ -300,22 +311,36 @@ const ClaudeCodeMethods = {
             terminalWrapper.addEventListener('click', (e) => {
                 // Focus terminal if click was inside wrapper but outside buttons
                 if (!e.target.closest('button')) {
-                    this.claudeTerminal.focus();
+                    focusTerminal();
                 }
             });
         }
+        
+        // Store focus helper for later use
+        this.focusClaudeTerminal = focusTerminal;
         
         // Connect to WebSocket
         this.connectClaudeWebSocket();
         
         // Handle terminal input
         this.claudeTerminal.onData(data => {
+            console.log('Terminal input received:', data, 'length:', data.length);
             if (this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
+                console.log('Sending to WebSocket');
                 this.claudeWebSocket.send(JSON.stringify({
                     type: 'input',
                     data: data
                 }));
+            } else {
+                console.log('WebSocket not ready, state:', this.claudeWebSocket?.readyState);
             }
+        });
+        
+        // Also add a custom key event handler for debugging
+        this.claudeTerminal.attachCustomKeyEventHandler((event) => {
+            console.log('Key event:', event.type, event.key, event.keyCode);
+            // Return true to allow xterm to process the key
+            return true;
         });
         
         // Handle terminal resize
@@ -357,7 +382,7 @@ const ClaudeCodeMethods = {
             this.claudeTerminal.writeln('\x1b[32m● Connected to Claude Code terminal\x1b[0m');
             this.claudeTerminal.writeln('');
             // Focus terminal to enable keyboard input
-            this.claudeTerminal.focus();
+            if (this.focusClaudeTerminal) this.focusClaudeTerminal();
             
             // Fit terminal and send current dimensions to PTY
             // This ensures the PTY knows the correct terminal size
@@ -373,6 +398,8 @@ const ClaudeCodeMethods = {
                         rows: dims.rows
                     }));
                 }
+                // Focus again after resize
+                if (this.focusClaudeTerminal) this.focusClaudeTerminal();
             }, 100);
         };
         
@@ -387,8 +414,8 @@ const ClaudeCodeMethods = {
                     case 'output':
                         this.claudeTerminal.write(message.data);
                         // Re-focus terminal after output if view is active (helps maintain input)
-                        if (isClaudeViewActive) {
-                            this.claudeTerminal.focus();
+                        if (isClaudeViewActive && this.focusClaudeTerminal) {
+                            this.focusClaudeTerminal();
                         }
                         break;
                     
@@ -561,7 +588,11 @@ const ClaudeCodeMethods = {
                     this.fitClaudeTerminal();
                 }
                 // Focus terminal to enable keyboard input
-                this.claudeTerminal.focus();
+                if (this.focusClaudeTerminal) {
+                    this.focusClaudeTerminal();
+                } else {
+                    this.claudeTerminal.focus();
+                }
             }, 100);
         }
     },
