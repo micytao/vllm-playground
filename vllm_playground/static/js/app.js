@@ -40,6 +40,11 @@ class VLLMWebUI {
         this.modelscopeInstalled = false;
         this.modelscopeVersion = null;
 
+        // vLLM state (for subprocess mode)
+        this.vllmInstalled = false;
+        this.vllmVersion = null;
+        this.containerModeAvailable = false;
+
         // MCP (Model Context Protocol) state
         this.mcpAvailable = false;
         this.mcpConfigs = [];           // All configured MCP servers
@@ -1066,6 +1071,11 @@ number ::= [0-9]+`
         this.elements.runModeSubprocess.addEventListener('change', () => this.toggleRunMode());
         this.elements.runModeContainer.addEventListener('change', () => this.toggleRunMode());
 
+        // Virtual environment path validation (check vLLM version when path changes)
+        if (this.elements.venvPathInput) {
+            this.elements.venvPathInput.addEventListener('blur', () => this.checkVenvVersion());
+        }
+
         // Model Source toggle
         this.elements.modelSourceHub.addEventListener('change', () => this.toggleModelSource());
         this.elements.modelSourceModelscope.addEventListener('change', () => this.toggleModelSource());
@@ -1339,6 +1349,43 @@ number ::= [0-9]+`
             await this.checkHardwareCapabilities();
         } catch (error) {
             console.error('Error checking feature availability:', error);
+        }
+    }
+
+    async checkVenvVersion() {
+        const venvPath = this.elements.venvPathInput?.value?.trim();
+
+        if (!venvPath) {
+            // Reset to system vLLM version when venv path is cleared
+            await this.checkFeatureAvailability();
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/check-venv', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ venv_path: venvPath })
+            });
+
+            const result = await response.json();
+
+            if (result.vllm_installed) {
+                this.vllmInstalled = true;
+                this.vllmVersion = result.vllm_version;
+            } else {
+                this.vllmInstalled = false;
+                this.vllmVersion = null;
+            }
+
+            // Update UI with new version info
+            this.updateRunModeAvailability();
+
+        } catch (error) {
+            console.error('Error checking venv vLLM version:', error);
+            // Don't change vllm status on error - keep previous state
         }
     }
 
@@ -1727,9 +1774,12 @@ number ::= [0-9]+`
             // Check if vLLM is installed
             if (!this.vllmInstalled) {
                 this.elements.runModeHelpText.innerHTML = '<span style="color: var(--error-color);">⚠️ vLLM not installed. Run: pip install vllm</span>';
+            } else if (!this.vllmVersion) {
+                // vLLM is installed but version couldn't be detected
+                this.elements.runModeHelpText.innerHTML = '<span style="color: var(--warning-color);">⚠️ vLLM installed but version unknown (dev install or missing metadata). Specify venv path below for better detection.</span>';
             } else {
-                const versionText = this.vllmVersion ? `v${this.vllmVersion}` : 'version unknown';
-                this.elements.runModeHelpText.textContent = `Subprocess: Direct execution using vLLM (${versionText})`;
+                // vLLM is installed with known version
+                this.elements.runModeHelpText.textContent = `Subprocess: Direct execution using vLLM v${this.vllmVersion}`;
             }
         } else {
             this.elements.runModeSubprocessLabel.classList.remove('active');
@@ -1763,10 +1813,12 @@ number ::= [0-9]+`
         if (!this.vllmInstalled) {
             subprocessLabel.classList.add('mode-unavailable');
             subprocessLabel.title = 'vLLM not installed. Run: pip install vllm';
+        } else if (!this.vllmVersion) {
+            subprocessLabel.classList.remove('mode-unavailable');
+            subprocessLabel.title = 'vLLM installed but version unknown (dev install or missing metadata)';
         } else {
             subprocessLabel.classList.remove('mode-unavailable');
-            const versionText = this.vllmVersion ? `v${this.vllmVersion}` : 'version unknown';
-            subprocessLabel.title = `vLLM (${versionText}) installed`;
+            subprocessLabel.title = `vLLM v${this.vllmVersion} installed`;
         }
 
         if (!this.containerModeAvailable) {

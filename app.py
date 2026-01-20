@@ -887,17 +887,25 @@ async def get_features():
     try:
         import vllm
         features["vllm_installed"] = True
-        # Try multiple ways to get vLLM version
+
+        # Try to get vLLM version
         vllm_ver = getattr(vllm, '__version__', None)
-        if not vllm_ver:
+        if vllm_ver is None:
             try:
                 from importlib.metadata import version
                 vllm_ver = version('vllm')
             except Exception:
                 pass
-        features["vllm_version"] = vllm_ver  # None if not found
+
+        features["vllm_version"] = vllm_ver
+
+        if vllm_ver:
+            logger.info(f"vLLM v{vllm_ver} detected")
+        else:
+            logger.info("vLLM installed (version unknown)")
     except ImportError:
-        pass
+        features["vllm_installed"] = False
+        logger.info("vLLM not installed")
     
     # Check guidellm
     try:
@@ -929,6 +937,102 @@ async def get_features():
         features["container_runtime"] = container_manager.runtime
     
     return features
+
+
+@app.post("/api/check-venv")
+async def check_venv(request: dict):
+    """Check vLLM version in a specific virtual environment"""
+    venv_path_str = request.get("venv_path")
+
+    if not venv_path_str:
+        return {"vllm_installed": False, "vllm_version": None, "error": "No venv path provided"}
+
+    try:
+        import platform
+
+        # Expand and resolve path
+        venv_path = Path(venv_path_str).expanduser().resolve(strict=False)
+
+        # Check if venv exists
+        if not venv_path.exists() or not venv_path.is_dir():
+            return {"vllm_installed": False, "vllm_version": None, "error": "Virtual environment not found"}
+
+        # Find Python executable (platform-specific)
+        if platform.system() == "Windows":
+            python_path = venv_path / "Scripts" / "python.exe"
+        else:
+            python_path = venv_path / "bin" / "python"
+
+        if not python_path.exists():
+            return {"vllm_installed": False, "vllm_version": None, "error": "Python executable not found in venv"}
+
+        # Try to detect vLLM version using multiple methods
+        vllm_version = None
+        vllm_found = False
+
+        # Method 1: Try direct Python import
+        try:
+            result = subprocess.run(
+                [str(python_path), "-c", "import vllm; print(vllm.__version__)"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                vllm_found = True
+                vllm_version = result.stdout.strip()
+        except Exception:
+            pass
+
+        # Method 2: Try pip list
+        if not vllm_found:
+            try:
+                pip_path = python_path.parent / ("pip.exe" if platform.system() == "Windows" else "pip")
+                result = subprocess.run(
+                    [str(pip_path), "list", "--format=freeze"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if line.startswith('vllm=='):
+                            vllm_found = True
+                            vllm_version = line.split('==')[1]
+                            break
+            except Exception:
+                pass
+
+        # Method 3: Try uv pip list (for vllm-metal installations)
+        if not vllm_found:
+            try:
+                result = subprocess.run(
+                    ["uv", "pip", "list", "--python", str(python_path)],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if 'vllm' in line.lower():
+                            vllm_found = True
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                vllm_version = parts[1]
+                            break
+            except FileNotFoundError:
+                pass  # uv not installed
+            except Exception:
+                pass
+
+        if vllm_found:
+            return {"vllm_installed": True, "vllm_version": vllm_version, "error": None}
+        else:
+            return {"vllm_installed": False, "vllm_version": None, "error": "vLLM not found in virtual environment"}
+
+    except Exception as e:
+        logger.error(f"Error checking venv: {e}")
+        return {"vllm_installed": False, "vllm_version": None, "error": str(e)}
 
 
 # =============================================================================

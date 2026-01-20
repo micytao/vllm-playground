@@ -887,17 +887,25 @@ async def get_features():
     try:
         import vllm
         features["vllm_installed"] = True
-        # Try multiple ways to get vLLM version
+
+        # Try to get vLLM version
         vllm_ver = getattr(vllm, '__version__', None)
-        if not vllm_ver:
+        if vllm_ver is None:
             try:
                 from importlib.metadata import version
                 vllm_ver = version('vllm')
             except Exception:
                 pass
-        features["vllm_version"] = vllm_ver  # None if not found
+
+        features["vllm_version"] = vllm_ver
+
+        if vllm_ver:
+            logger.info(f"vLLM v{vllm_ver} detected")
+        else:
+            logger.info("vLLM installed (version unknown)")
     except ImportError:
-        pass
+        features["vllm_installed"] = False
+        logger.info("vLLM not installed")
     
     # Check guidellm
     try:
