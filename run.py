@@ -10,9 +10,11 @@ import psutil
 from pathlib import Path
 from typing import Optional
 
-# Add the parent directory to path to import vllm
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir))
+# Ensure current directory is in path for importing app.py
+# (This is usually automatic, but being explicit doesn't hurt)
+current_dir = Path(__file__).parent
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
 
 # PID file location - must match kill_playground.py
 # Use workspace root consistently
