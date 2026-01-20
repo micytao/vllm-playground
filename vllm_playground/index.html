@@ -247,6 +247,19 @@
                                 </div>
                             </div>
 
+                            <!-- Virtual Environment Path (optional) - Only for Subprocess mode -->
+                            <div class="form-group" id="venv-path-group" style="display: none;">
+                                <label for="venv-path" data-i18n="serverConfig.venvPath.label">Custom Virtual Environment Path (Optional)</label>
+                                <input
+                                    type="text"
+                                    id="venv-path"
+                                    class="form-control"
+                                    placeholder="~/.venv-vllm-metal"
+                                    data-i18n-placeholder="serverConfig.venvPath.placeholder"
+                                >
+                                <small class="form-help" data-i18n="serverConfig.venvPath.help">Specify path to a virtual environment containing vLLM or vLLM-Metal. Leave empty to use system Python.</small>
+                            </div>
+
                             <!-- CPU/GPU Mode Toggle -->
                             <div class="form-group mode-toggle-group">
                                 <label data-i18n="serverConfig.computeMode.label">Compute Mode</label>
@@ -274,19 +287,6 @@
                                     </select>
                                 </div>
                                 <small class="form-help" id="mode-help-text" data-i18n="serverConfig.computeMode.help">CPU mode is recommended for macOS</small>
-                            </div>
-
-                            <!-- Virtual Environment Path (optional) -->
-                            <div class="form-group" id="venv-path-group" style="display: none;">
-                                <label for="venv-path" data-i18n="serverConfig.venvPath.label">Custom Virtual Environment Path (Optional)</label>
-                                <input
-                                    type="text"
-                                    id="venv-path"
-                                    class="form-control"
-                                    placeholder="~/.venv-vllm-metal"
-                                    data-i18n-placeholder="serverConfig.venvPath.placeholder"
-                                >
-                                <small class="form-help" data-i18n="serverConfig.venvPath.help">Specify path to a virtual environment containing vLLM or vLLM-Metal. Leave empty to use system Python.</small>
                             </div>
 
                             <div class="form-row">
