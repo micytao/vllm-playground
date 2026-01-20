@@ -644,11 +644,10 @@ class VLLMContainerManager:
                 if accelerator == "amd":
                     # AMD ROCm GPU support
                     # Based on official ROCm docs: https://rocm.docs.amd.com/en/latest/how-to/rocm-for-ai/inference/benchmark-docker/vllm.html
+                    # Note: --ipc=host is already set in base config, --shm-size is incompatible with --ipc=host
                     podman_cmd.extend([
                         "--network=host",
                         "--group-add=video",
-                        "--ipc=host",
-                        "--shm-size", "16G",
                         "--cap-add=SYS_PTRACE",
                         "--security-opt", "seccomp=unconfined",
                         "--device", "/dev/kfd",
@@ -659,10 +658,10 @@ class VLLMContainerManager:
                     # Google Cloud TPU support
                     # Based on official vLLM docs: https://docs.vllm.ai/en/stable/getting_started/installation/google_tpu.html
                     # TPU requires privileged mode for full device access
+                    # Note: --ipc=host is already set in base config, --shm-size is incompatible with --ipc=host
                     podman_cmd.extend([
                         "--privileged",
                         "--network=host",
-                        "--shm-size", "16G",
                     ])
                     logger.info("Google Cloud TPU passthrough enabled for container (privileged mode)")
                 else:
