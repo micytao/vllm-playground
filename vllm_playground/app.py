@@ -4687,6 +4687,7 @@ async def websocket_terminal(websocket: WebSocket):
                             # Decode bytes to string for JSON serialization
                             if isinstance(data, bytes):
                                 data = data.decode('utf-8', errors='replace')
+                            logger.info(f"PTY output: {len(data)} chars")
                             await websocket.send_json({
                                 "type": "output",
                                 "data": data
@@ -4733,12 +4734,12 @@ async def websocket_terminal(websocket: WebSocket):
                         break
                     # Write input to PTY (encode to bytes if needed)
                     data = message.get("data", "")
-                    logger.debug(f"PTY input: {repr(data)}")
+                    logger.info(f"PTY input received: {repr(data)}")
                     if isinstance(data, str):
                         data = data.encode('utf-8')
                     try:
-                        proc.write(data)
-                        logger.debug(f"PTY write successful: {len(data)} bytes")
+                        written = proc.write(data)
+                        logger.info(f"PTY write: {len(data)} bytes written, proc alive: {proc.isalive()}")
                     except OSError as e:
                         if e.errno == 5:  # Input/output error - process died
                             await websocket.send_json({

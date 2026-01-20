@@ -127,6 +127,17 @@
     color: var(--text-tertiary);
 }
 
+.claude-install-warning .warning-hint a,
+.claude-install-warning a {
+    color: #60a5fa;  /* Bright blue for visibility on dark background */
+    text-decoration: underline;
+}
+
+.claude-install-warning .warning-hint a:hover,
+.claude-install-warning a:hover {
+    color: #93c5fd;  /* Lighter blue on hover */
+}
+
 .claude-install-warning .install-commands {
     display: flex;
     flex-direction: column;
