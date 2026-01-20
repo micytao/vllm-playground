@@ -122,6 +122,9 @@ class VLLMConfig(BaseModel):
     run_mode: Literal["subprocess", "container"] = "subprocess"
     # GPU device selection for subprocess mode (e.g., "0", "1", "0,1" for multi-GPU)
     gpu_device: Optional[str] = None
+    # GPU accelerator type for container mode - determines which image and device flags to use
+    # Options: nvidia (CUDA), amd (ROCm), tpu (Google Cloud TPU)
+    accelerator: Literal["nvidia", "amd", "tpu"] = "nvidia"
     # Tool calling support - enables function calling with compatible models
     # Requires vLLM server to be started with --enable-auto-tool-choice and --tool-call-parser
     enable_tool_calling: bool = False  # Disabled by default (can cause issues with some models)
@@ -1153,14 +1156,20 @@ async def mcp_get_presets():
 @app.get("/api/hardware-capabilities")
 async def get_hardware_capabilities():
     """
-    Check GPU availability
+    Check GPU availability and detect accelerator type
     
     This endpoint checks if GPU hardware is available in the cluster.
-    For Kubernetes/OpenShift: Checks node resources for nvidia.com/gpu
-    For local/container: Falls back to nvidia-smi check
+    For Kubernetes/OpenShift: Checks node resources for nvidia.com/gpu or amd.com/gpu
+    For local/container: Falls back to nvidia-smi or amd-smi check
+    
+    Returns:
+        gpu_available: bool - Whether any GPU is detected
+        detection_method: str - How GPU was detected (nvidia-smi, amd-smi, kubernetes, none)
+        accelerator: str - Detected accelerator type (nvidia, amd, or null if none)
     """
     gpu_available = False
     detection_method = "none"
+    accelerator = None  # Will be "nvidia" or "amd" if detected
     
     # First, try Kubernetes API if we're in a K8s environment
     if os.getenv('KUBERNETES_NAMESPACE'):
@@ -1174,26 +1183,63 @@ async def get_hardware_capabilities():
             # List all nodes and check for GPU resources
             nodes = v1.list_node()
             for node in nodes.items:
-                # Check node capacity for nvidia.com/gpu
                 if node.status and node.status.capacity:
-                    gpu_capacity = node.status.capacity.get('nvidia.com/gpu', '0')
-                    if gpu_capacity and int(gpu_capacity) > 0:
+                    # Check for NVIDIA GPUs
+                    nvidia_capacity = node.status.capacity.get('nvidia.com/gpu', '0')
+                    if nvidia_capacity and int(nvidia_capacity) > 0:
                         gpu_available = True
                         detection_method = "kubernetes"
-                        logger.info(f"GPU detected via Kubernetes API: {node.metadata.name} has {gpu_capacity} GPUs")
+                        accelerator = "nvidia"
+                        logger.info(f"NVIDIA GPU detected via Kubernetes API: {node.metadata.name} has {nvidia_capacity} GPUs")
+                        break
+                    
+                    # Check for AMD GPUs
+                    amd_capacity = node.status.capacity.get('amd.com/gpu', '0')
+                    if amd_capacity and int(amd_capacity) > 0:
+                        gpu_available = True
+                        detection_method = "kubernetes"
+                        accelerator = "amd"
+                        logger.info(f"AMD GPU detected via Kubernetes API: {node.metadata.name} has {amd_capacity} GPUs")
+                        break
+                    
+                    # Check for Google Cloud TPUs
+                    tpu_capacity = node.status.capacity.get('google.com/tpu', '0')
+                    if tpu_capacity and int(tpu_capacity) > 0:
+                        gpu_available = True
+                        detection_method = "kubernetes"
+                        accelerator = "tpu"
+                        logger.info(f"TPU detected via Kubernetes API: {node.metadata.name} has {tpu_capacity} TPUs")
                         break
                 
                 # Also check node labels for GPU indicators
                 if node.metadata and node.metadata.labels:
                     labels = node.metadata.labels
-                    if any('gpu' in k.lower() or 'nvidia' in k.lower() for k in labels.keys()):
-                        # Double-check with capacity to avoid false positives
+                    if any('nvidia' in k.lower() for k in labels.keys()):
                         if node.status and node.status.capacity:
                             gpu_capacity = node.status.capacity.get('nvidia.com/gpu', '0')
                             if gpu_capacity and int(gpu_capacity) > 0:
                                 gpu_available = True
                                 detection_method = "kubernetes"
-                                logger.info(f"GPU detected via node labels: {node.metadata.name}")
+                                accelerator = "nvidia"
+                                logger.info(f"NVIDIA GPU detected via node labels: {node.metadata.name}")
+                                break
+                    if any('amd' in k.lower() for k in labels.keys()):
+                        if node.status and node.status.capacity:
+                            gpu_capacity = node.status.capacity.get('amd.com/gpu', '0')
+                            if gpu_capacity and int(gpu_capacity) > 0:
+                                gpu_available = True
+                                detection_method = "kubernetes"
+                                accelerator = "amd"
+                                logger.info(f"AMD GPU detected via node labels: {node.metadata.name}")
+                                break
+                    if any('tpu' in k.lower() or 'cloud.google.com/gke-tpu' in k for k in labels.keys()):
+                        if node.status and node.status.capacity:
+                            tpu_capacity = node.status.capacity.get('google.com/tpu', '0')
+                            if tpu_capacity and int(tpu_capacity) > 0:
+                                gpu_available = True
+                                detection_method = "kubernetes"
+                                accelerator = "tpu"
+                                logger.info(f"TPU detected via node labels: {node.metadata.name}")
                                 break
             
             if not gpu_available:
@@ -1204,7 +1250,7 @@ async def get_hardware_capabilities():
         except Exception as e:
             logger.warning(f"Error checking GPU via Kubernetes API: {e}")
     
-    # Fallback: Try nvidia-smi for local/container environments
+    # Fallback: Try nvidia-smi for NVIDIA GPUs (local/container environments)
     if not gpu_available and not os.getenv('KUBERNETES_NAMESPACE'):
         try:
             result = subprocess.run(
@@ -1216,18 +1262,76 @@ async def get_hardware_capabilities():
             if result.returncode == 0 and bool(result.stdout.strip()):
                 gpu_available = True
                 detection_method = "nvidia-smi"
-                logger.info(f"GPU detected via nvidia-smi: {result.stdout.strip()}")
+                accelerator = "nvidia"
+                logger.info(f"NVIDIA GPU detected via nvidia-smi: {result.stdout.strip()}")
         except FileNotFoundError:
-            logger.info("nvidia-smi not found - no local GPU detected")
+            logger.debug("nvidia-smi not found - checking for AMD GPU")
         except subprocess.TimeoutExpired:
             logger.warning("nvidia-smi timeout")
         except Exception as e:
             logger.warning(f"Error checking GPU via nvidia-smi: {e}")
     
-    logger.info(f"Final GPU availability: {gpu_available} (method: {detection_method})")
+    # Fallback: Try amd-smi for AMD GPUs (local/container environments)
+    if not gpu_available and not os.getenv('KUBERNETES_NAMESPACE'):
+        try:
+            result = subprocess.run(
+                ['amd-smi', 'list'],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            # amd-smi list returns 0 and shows GPU info if AMD GPUs are present
+            if result.returncode == 0 and 'GPU' in result.stdout:
+                gpu_available = True
+                detection_method = "amd-smi"
+                accelerator = "amd"
+                # Extract GPU name from output (first line after GPU:)
+                lines = result.stdout.strip().split('\n')
+                gpu_info = next((l for l in lines if 'BDF' in l or 'GPU' in l), 'AMD GPU')
+                logger.info(f"AMD GPU detected via amd-smi: {gpu_info}")
+        except FileNotFoundError:
+            logger.debug("amd-smi not found - no AMD GPU detected")
+        except subprocess.TimeoutExpired:
+            logger.warning("amd-smi timeout")
+        except Exception as e:
+            logger.warning(f"Error checking GPU via amd-smi: {e}")
+    
+    # Fallback: Try tpu-info for Google Cloud TPUs (local/container environments)
+    if not gpu_available and not os.getenv('KUBERNETES_NAMESPACE'):
+        try:
+            result = subprocess.run(
+                ['tpu-info'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            # tpu-info returns 0 and shows TPU info if TPUs are present
+            if result.returncode == 0 and ('TPU' in result.stdout or 'chip' in result.stdout.lower()):
+                gpu_available = True
+                detection_method = "tpu-info"
+                accelerator = "tpu"
+                logger.info(f"TPU detected via tpu-info")
+        except FileNotFoundError:
+            # Fallback: Check for /dev/accel* devices (TPU device nodes)
+            import glob
+            accel_devices = glob.glob('/dev/accel*')
+            if accel_devices:
+                gpu_available = True
+                detection_method = "dev-accel"
+                accelerator = "tpu"
+                logger.info(f"TPU detected via /dev/accel* devices: {accel_devices}")
+            else:
+                logger.debug("tpu-info not found and no /dev/accel* devices - no TPU detected")
+        except subprocess.TimeoutExpired:
+            logger.warning("tpu-info timeout")
+        except Exception as e:
+            logger.warning(f"Error checking TPU via tpu-info: {e}")
+    
+    logger.info(f"Final GPU availability: {gpu_available} (method: {detection_method}, accelerator: {accelerator})")
     return {
         "gpu_available": gpu_available,
-        "detection_method": detection_method
+        "detection_method": detection_method,
+        "accelerator": accelerator  # "nvidia", "amd", "tpu", or None
     }
 
 
@@ -1355,15 +1459,20 @@ def get_jetson_temperature():
 async def get_gpu_status():
     """
     Get detailed GPU status information including memory usage and utilization.
-    Supports both desktop GPUs (4090, etc.) and NVIDIA Jetson devices (Thor, Orin, etc.)
+    Supports:
+    - NVIDIA desktop GPUs (4090, etc.) via nvidia-smi
+    - NVIDIA Jetson devices (Thor, Orin, etc.) with unified memory
+    - AMD GPUs via amd-smi
     
     For Jetson devices with unified memory, memory info is read from /proc/meminfo
     since nvidia-smi returns [N/A] for memory fields.
     """
     gpu_info = []
+    accelerator_type = None
     
+    # First, try nvidia-smi for NVIDIA GPUs
+    nvidia_found = False
     try:
-        # Use nvidia-smi to get detailed GPU information
         result = subprocess.run([
             'nvidia-smi', 
             '--query-gpu=index,name,memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu',
@@ -1371,6 +1480,8 @@ async def get_gpu_status():
         ], capture_output=True, text=True, timeout=5)
         
         if result.returncode == 0 and result.stdout.strip():
+            nvidia_found = True
+            accelerator_type = "nvidia"
             lines = result.stdout.strip().split('\n')
             for line in lines:
                 parts = [p.strip() for p in line.split(',')]
@@ -1408,38 +1519,92 @@ async def get_gpu_status():
                         "utilization": safe_int(parts[5], 0),
                         "temperature": temperature,
                         "is_jetson": is_jetson,
-                        "unified_memory": is_jetson  # Jetson uses unified CPU/GPU memory
+                        "unified_memory": is_jetson,
+                        "accelerator": "nvidia"
                     })
-        
-        return {
-            "gpu_available": len(gpu_info) > 0,
-            "gpu_count": len(gpu_info),
-            "gpus": gpu_info
-        }
-        
     except FileNotFoundError:
-        logger.info("nvidia-smi not found - no GPU status available")
-        return {
-            "gpu_available": False,
-            "gpu_count": 0,
-            "gpus": []
-        }
+        logger.debug("nvidia-smi not found - checking for AMD GPU")
     except subprocess.TimeoutExpired:
         logger.warning("nvidia-smi timeout")
-        return {
-            "gpu_available": False,
-            "gpu_count": 0,
-            "gpus": [],
-            "error": "GPU query timeout"
-        }
     except Exception as e:
-        logger.warning(f"Error getting GPU status: {e}")
-        return {
-            "gpu_available": False,
-            "gpu_count": 0,
-            "gpus": [],
-            "error": str(e)
-        }
+        logger.warning(f"Error getting NVIDIA GPU status: {e}")
+    
+    # If no NVIDIA GPUs found, try amd-smi for AMD GPUs
+    if not nvidia_found:
+        try:
+            # Use amd-smi metric to get GPU metrics in JSON format
+            result = subprocess.run(
+                ['amd-smi', 'metric', '--json'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                import json as json_module
+                try:
+                    amd_data = json_module.loads(result.stdout)
+                    accelerator_type = "amd"
+                    
+                    # amd-smi returns a list of GPU metrics
+                    if isinstance(amd_data, list):
+                        for idx, gpu_data in enumerate(amd_data):
+                            # Extract metrics from AMD SMI output
+                            # Structure may vary by version, handle gracefully
+                            gpu_name = gpu_data.get('asic', {}).get('name', f'AMD GPU {idx}')
+                            if not gpu_name or gpu_name == f'AMD GPU {idx}':
+                                gpu_name = gpu_data.get('gpu', f'AMD GPU {idx}')
+                            
+                            # Memory info (in MB)
+                            memory = gpu_data.get('vram', {})
+                            if not memory:
+                                memory = gpu_data.get('memory', {})
+                            memory_total = safe_int(memory.get('total', {}).get('value', 0), 0)
+                            memory_used = safe_int(memory.get('used', {}).get('value', 0), 0)
+                            memory_free = memory_total - memory_used if memory_total > 0 else 0
+                            
+                            # Utilization
+                            usage = gpu_data.get('usage', {})
+                            utilization = safe_int(usage.get('gfx_activity', {}).get('value', 0), 0)
+                            if utilization == 0:
+                                utilization = safe_int(gpu_data.get('gfx_activity', {}).get('value', 0), 0)
+                            
+                            # Temperature
+                            temp_data = gpu_data.get('temperature', {})
+                            temperature = safe_int(temp_data.get('hotspot', {}).get('value', 0), 0)
+                            if temperature == 0:
+                                temperature = safe_int(temp_data.get('edge', {}).get('value', 0), 0)
+                            
+                            gpu_info.append({
+                                "index": idx,
+                                "name": str(gpu_name),
+                                "memory_used": memory_used,
+                                "memory_total": memory_total,
+                                "memory_free": memory_free,
+                                "utilization": utilization,
+                                "temperature": temperature,
+                                "is_jetson": False,
+                                "unified_memory": False,
+                                "accelerator": "amd"
+                            })
+                            
+                    logger.info(f"AMD GPU status retrieved: {len(gpu_info)} GPUs found")
+                except json_module.JSONDecodeError:
+                    logger.warning("Failed to parse amd-smi JSON output")
+                    
+        except FileNotFoundError:
+            logger.debug("amd-smi not found - no AMD GPU status available")
+        except subprocess.TimeoutExpired:
+            logger.warning("amd-smi timeout")
+        except Exception as e:
+            logger.warning(f"Error getting AMD GPU status: {e}")
+    
+    return {
+        "gpu_available": len(gpu_info) > 0,
+        "gpu_count": len(gpu_info),
+        "gpus": gpu_info,
+        "accelerator": accelerator_type
+    }
 
 
 @app.post("/api/start")
@@ -1704,7 +1869,8 @@ async def start_server(config: VLLMConfig):
                 'custom_chat_template': config.custom_chat_template,
                 'local_model_path': config.local_model_path,
                 'enable_tool_calling': config.enable_tool_calling,
-                'tool_call_parser': config.tool_call_parser
+                'tool_call_parser': config.tool_call_parser,
+                'accelerator': config.accelerator  # GPU accelerator type (nvidia/amd)
             }
             
             logger.info(f"Container config: enable_tool_calling={config.enable_tool_calling}, tool_call_parser={config.tool_call_parser}")

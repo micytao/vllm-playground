@@ -149,9 +149,13 @@ Examples:
     
     # Pull command - pre-download container images
     pull_parser = subparsers.add_parser('pull', help='Pre-download vLLM container images (recommended for first run)')
-    pull_parser.add_argument('--gpu', action='store_true', help='Pull GPU image (default)')
+    pull_parser.add_argument('--nvidia', action='store_true', help='Pull NVIDIA CUDA GPU image (default)')
+    pull_parser.add_argument('--amd', action='store_true', help='Pull AMD ROCm GPU image')
+    pull_parser.add_argument('--tpu', action='store_true', help='Pull Google Cloud TPU image')
     pull_parser.add_argument('--cpu', action='store_true', help='Pull CPU image')
-    pull_parser.add_argument('--all', action='store_true', help='Pull both GPU and CPU images')
+    pull_parser.add_argument('--all', action='store_true', help='Pull all images (CPU + NVIDIA + AMD + TPU)')
+    # Keep --gpu as alias for --nvidia for backward compatibility
+    pull_parser.add_argument('--gpu', action='store_true', help=argparse.SUPPRESS)
     
     # Also add these options to the main parser for convenience
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')
@@ -271,11 +275,16 @@ def cmd_pull(args):
     import subprocess
     
     # Determine which images to pull
-    pull_gpu = args.gpu or args.all or (not args.cpu and not args.all)  # Default to GPU
+    # --gpu is alias for --nvidia for backward compatibility
+    pull_nvidia = args.nvidia or args.gpu or args.all or (not args.cpu and not args.amd and not args.tpu and not args.all)  # Default to NVIDIA
+    pull_amd = args.amd or args.all
+    pull_tpu = args.tpu or args.all
     pull_cpu = args.cpu or args.all
     
     # Image definitions (must match container_manager.py)
-    GPU_IMAGE = "docker.io/vllm/vllm-openai:v0.11.0"
+    NVIDIA_IMAGE = "docker.io/vllm/vllm-openai:v0.11.0"
+    AMD_IMAGE = "docker.io/rocm/vllm:latest"
+    TPU_IMAGE = "docker.io/vllm/vllm-tpu:latest"
     CPU_IMAGE_MACOS = "quay.io/rh_ee_micyang/vllm-mac:v0.11.0"
     CPU_IMAGE_X86 = "quay.io/rh_ee_micyang/vllm-cpu:v0.11.0"
     
@@ -305,27 +314,76 @@ def cmd_pull(args):
     
     success = True
     
-    if pull_gpu:
+    if pull_nvidia:
         print("=" * 60)
-        print(f"📥 Pulling GPU image: {GPU_IMAGE}")
+        print(f"📥 Pulling NVIDIA CUDA GPU image: {NVIDIA_IMAGE}")
         print("⏳ This may take 10-20 minutes for the first download (~10GB)...")
         print("=" * 60)
         try:
             # Use sudo for GPU image pull (needed for GPU access later)
-            cmd = ["sudo", "-n", runtime, "pull", GPU_IMAGE] if runtime == "podman" else [runtime, "pull", GPU_IMAGE]
+            cmd = ["sudo", "-n", runtime, "pull", NVIDIA_IMAGE] if runtime == "podman" else [runtime, "pull", NVIDIA_IMAGE]
             result = subprocess.run(cmd, check=False)
             if result.returncode == 0:
-                print(f"✅ GPU image pulled successfully!")
+                print(f"✅ NVIDIA GPU image pulled successfully!")
             else:
                 # Try without sudo
-                result = subprocess.run([runtime, "pull", GPU_IMAGE], check=False)
+                result = subprocess.run([runtime, "pull", NVIDIA_IMAGE], check=False)
                 if result.returncode == 0:
-                    print(f"✅ GPU image pulled successfully!")
+                    print(f"✅ NVIDIA GPU image pulled successfully!")
                 else:
-                    print(f"❌ Failed to pull GPU image")
+                    print(f"❌ Failed to pull NVIDIA GPU image")
                     success = False
         except Exception as e:
-            print(f"❌ Error pulling GPU image: {e}")
+            print(f"❌ Error pulling NVIDIA GPU image: {e}")
+            success = False
+        print()
+    
+    if pull_amd:
+        print("=" * 60)
+        print(f"📥 Pulling AMD ROCm GPU image: {AMD_IMAGE}")
+        print("⏳ This may take 10-20 minutes for the first download...")
+        print("=" * 60)
+        try:
+            # Use sudo for GPU image pull (needed for GPU access later)
+            cmd = ["sudo", "-n", runtime, "pull", AMD_IMAGE] if runtime == "podman" else [runtime, "pull", AMD_IMAGE]
+            result = subprocess.run(cmd, check=False)
+            if result.returncode == 0:
+                print(f"✅ AMD ROCm GPU image pulled successfully!")
+            else:
+                # Try without sudo
+                result = subprocess.run([runtime, "pull", AMD_IMAGE], check=False)
+                if result.returncode == 0:
+                    print(f"✅ AMD ROCm GPU image pulled successfully!")
+                else:
+                    print(f"❌ Failed to pull AMD ROCm GPU image")
+                    success = False
+        except Exception as e:
+            print(f"❌ Error pulling AMD ROCm GPU image: {e}")
+            success = False
+        print()
+    
+    if pull_tpu:
+        print("=" * 60)
+        print(f"📥 Pulling Google Cloud TPU image: {TPU_IMAGE}")
+        print("⏳ This may take 10-20 minutes for the first download...")
+        print("   Note: TPU image only works on Google Cloud TPU VMs")
+        print("=" * 60)
+        try:
+            # Use sudo for image pull
+            cmd = ["sudo", "-n", runtime, "pull", TPU_IMAGE] if runtime == "podman" else [runtime, "pull", TPU_IMAGE]
+            result = subprocess.run(cmd, check=False)
+            if result.returncode == 0:
+                print(f"✅ Google Cloud TPU image pulled successfully!")
+            else:
+                # Try without sudo
+                result = subprocess.run([runtime, "pull", TPU_IMAGE], check=False)
+                if result.returncode == 0:
+                    print(f"✅ Google Cloud TPU image pulled successfully!")
+                else:
+                    print(f"❌ Failed to pull Google Cloud TPU image")
+                    success = False
+        except Exception as e:
+            print(f"❌ Error pulling Google Cloud TPU image: {e}")
             success = False
         print()
     

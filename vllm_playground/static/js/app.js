@@ -114,6 +114,8 @@ class VLLMWebUI {
             tensorParallel: document.getElementById('tensor-parallel'),
             gpuMemory: document.getElementById('gpu-memory'),
             gpuDevice: document.getElementById('gpu-device'),
+            acceleratorSelect: document.getElementById('accelerator-select'),
+            acceleratorRow: document.getElementById('accelerator-row'),
 
             // CPU settings
             cpuKvcache: document.getElementById('cpu-kvcache'),
@@ -1028,6 +1030,14 @@ number ::= [0-9]+`
         this.elements.modeCpu.addEventListener('change', () => this.toggleComputeMode());
         this.elements.modeGpu.addEventListener('change', () => this.toggleComputeMode());
 
+        // Accelerator selection change (NVIDIA/AMD)
+        if (this.elements.acceleratorSelect) {
+            this.elements.acceleratorSelect.addEventListener('change', () => {
+                this.updateAcceleratorHelpText();
+                this.updateCommandPreview();
+            });
+        }
+
         // Run mode toggle
         this.elements.runModeSubprocess.addEventListener('change', () => this.toggleRunMode());
         this.elements.runModeContainer.addEventListener('change', () => this.toggleRunMode());
@@ -1350,16 +1360,41 @@ number ::= [0-9]+`
                 console.warn('GPU not auto-detected (detection method: ' + capabilities.detection_method + ')');
                 this.addLog('[SYSTEM] GPU not auto-detected - Manual selection available', 'warning');
             } else {
-                // GPU is available
-                console.log('GPU is available on this system');
-                this.elements.modeHelpText.innerHTML = 'CPU and GPU modes available. GPU recommended for larger models.';
-                this.addLog('[SYSTEM] GPU detected - Both CPU and GPU modes available', 'info');
+                // GPU is available - determine accelerator type
+                const accelerator = capabilities.accelerator || 'nvidia';  // Default to nvidia if not specified
+                let acceleratorName;
+                if (accelerator === 'amd') {
+                    acceleratorName = 'AMD (ROCm)';
+                } else if (accelerator === 'tpu') {
+                    acceleratorName = 'Google TPU';
+                } else {
+                    acceleratorName = 'NVIDIA (CUDA)';
+                }
+                
+                console.log(`GPU is available on this system: ${acceleratorName}`);
+                this.elements.modeHelpText.innerHTML = `CPU and GPU modes available. ${acceleratorName} detected.`;
+                this.addLog(`[SYSTEM] ${acceleratorName} detected - Both CPU and GPU modes available`, 'info');
 
-                // Show GPU status display
-                document.getElementById('gpu-status-display').style.display = 'block';
+                // Auto-select the detected accelerator in the dropdown
+                if (this.elements.acceleratorSelect) {
+                    this.elements.acceleratorSelect.value = accelerator;
+                    console.log(`Auto-selected accelerator: ${accelerator}`);
+                }
 
-                // Start GPU status polling
-                this.startGpuStatusPolling();
+                // Show GPU status display (only for NVIDIA currently, AMD/TPU use different monitoring)
+                if (accelerator === 'nvidia') {
+                    document.getElementById('gpu-status-display').style.display = 'block';
+                    // Start GPU status polling
+                    this.startGpuStatusPolling();
+                } else {
+                    // AMD/TPU detected - status polling not yet supported
+                    document.getElementById('gpu-status-display').style.display = 'none';
+                    if (accelerator === 'tpu') {
+                        this.addLog('[SYSTEM] Google TPU status monitoring not yet supported', 'info');
+                    } else {
+                        this.addLog('[SYSTEM] AMD GPU status monitoring not yet supported', 'info');
+                    }
+                }
             }
         } catch (error) {
             console.error('Failed to check feature availability:', error);
@@ -1551,17 +1586,28 @@ number ::= [0-9]+`
             this.elements.cpuSettings.style.display = 'block';
             this.elements.gpuSettings.style.display = 'none';
 
+            // Hide accelerator row in CPU mode
+            if (this.elements.acceleratorRow) {
+                this.elements.acceleratorRow.style.display = 'none';
+            }
+
             // Set dtype to bfloat16 for CPU
             this.elements.dtype.value = 'bfloat16';
         } else {
             this.elements.modeCpuLabel.classList.remove('active');
             this.elements.modeGpuLabel.classList.add('active');
-            this.elements.modeHelpText.textContent = 'GPU mode for CUDA-enabled systems';
             this.elements.dtypeHelpText.textContent = 'Auto recommended for GPU';
 
             // Show GPU settings, hide CPU settings
             this.elements.cpuSettings.style.display = 'none';
             this.elements.gpuSettings.style.display = 'block';
+
+            // Show accelerator row in GPU mode
+            if (this.elements.acceleratorRow) {
+                this.elements.acceleratorRow.style.display = 'flex';
+            }
+            // Update help text based on selected accelerator
+            this.updateAcceleratorHelpText();
 
             // Set dtype to auto for GPU
             this.elements.dtype.value = 'auto';
@@ -1569,6 +1615,19 @@ number ::= [0-9]+`
 
         // Update command preview
         this.updateCommandPreview();
+    }
+
+    updateAcceleratorHelpText() {
+        if (!this.elements.acceleratorSelect) return;
+        
+        const accelerator = this.elements.acceleratorSelect.value;
+        if (accelerator === 'amd') {
+            this.elements.modeHelpText.textContent = 'GPU mode for AMD ROCm-enabled systems';
+        } else if (accelerator === 'tpu') {
+            this.elements.modeHelpText.textContent = 'TPU mode for Google Cloud TPU VMs (requires privileged container)';
+        } else {
+            this.elements.modeHelpText.textContent = 'GPU mode for NVIDIA CUDA-enabled systems';
+        }
     }
 
     toggleRunMode() {
@@ -1992,6 +2051,8 @@ number ::= [0-9]+`
             config.tensor_parallel_size = parseInt(this.elements.tensorParallel.value);
             config.gpu_memory_utilization = parseFloat(this.elements.gpuMemory.value) / 100;
             config.load_format = "auto";
+            // GPU accelerator type (nvidia/amd) for container mode
+            config.accelerator = this.elements.acceleratorSelect.value;
             // GPU device selection
             const gpuDevice = this.elements.gpuDevice.value.trim();
             if (gpuDevice) {
@@ -2093,7 +2154,7 @@ number ::= [0-9]+`
         }
 
         this.addLog(`Run Mode: ${config.run_mode === 'subprocess' ? 'Subprocess (Direct)' : 'Container (Isolated)'}`, 'info');
-        this.addLog(`Compute Mode: ${config.use_cpu ? 'CPU' : 'GPU'}`, 'info');
+        this.addLog(`Compute Mode: ${config.use_cpu ? 'CPU' : `GPU (${config.accelerator?.toUpperCase() || 'NVIDIA'})`}`, 'info');
 
         try {
             const response = await fetch('/api/start', {

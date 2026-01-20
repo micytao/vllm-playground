@@ -1459,12 +1459,65 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     border: 1px solid var(--border-color);
 }
 
+/* Subprocess mode tip for additional accelerators */
+.subprocess-tip {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: var(--bg-tertiary);
+    border-left: 3px solid var(--primary-color);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
 .mode-toggle-buttons {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-wrap: wrap;
     gap: 10px;
     margin-top: 10px;
     margin-bottom: 8px;
+    align-items: center;
+}
+
+.mode-toggle-buttons .mode-button {
+    flex: 1;
+    min-width: 100px;
+}
+
+/* Accelerator dropdown row in compute mode section */
+.accelerator-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.accelerator-row label {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.accelerator-row select {
+    flex: 1;
+    max-width: 200px;
+    padding: 8px 12px;
+    font-size: 0.9rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    transition: all 0.2s;
+}
+
+.accelerator-row select:hover,
+.accelerator-row select:focus {
+    border-color: var(--primary-color);
+    outline: none;
 }
 
 .mode-button {

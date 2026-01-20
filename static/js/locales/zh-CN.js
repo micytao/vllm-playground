@@ -91,13 +91,21 @@ const zhCN = {
             label: '运行模式',
             subprocess: '⚡ 子进程',
             container: '📦 容器',
-            help: '子进程：直接运行（本地开发），容器：隔离运行（生产环境）'
+            help: '子进程：直接运行（本地开发），容器：隔离运行（生产环境）',
+            subprocessTip: '💡 提示：使用子进程模式可支持更多加速器（华为昇腾、Intel Gaudi、AWS Neuron），需在主机上安装 vLLM + 硬件插件。'
         },
         computeMode: {
             label: '计算模式',
             cpu: '🖥️ CPU',
             gpu: '🎮 GPU',
             help: 'macOS 推荐使用 CPU 模式'
+        },
+        accelerator: {
+            label: '加速器',
+            nvidia: 'NVIDIA (CUDA)',
+            amd: 'AMD (ROCm)',
+            tpu: '谷歌 TPU',
+            help: '选择容器模式的 GPU 加速器类型'
         },
         host: {
             label: '主机'

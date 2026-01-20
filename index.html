@@ -223,6 +223,9 @@
                                     </label>
                                 </div>
                                 <small class="form-help" id="run-mode-help-text" data-i18n="serverConfig.runMode.help">Container: Isolated (recommended), Subprocess: Direct (requires vLLM installed)</small>
+                                <div class="subprocess-tip" data-i18n="serverConfig.runMode.subprocessTip">
+                                    💡 Tip: Use subprocess mode for additional accelerators (Huawei Ascend, Intel Gaudi, AWS Neuron) with vLLM + hardware plugin installed on the host.
+                                </div>
                             </div>
 
                             <!-- CPU/GPU Mode Toggle -->
@@ -237,6 +240,15 @@
                                         <input type="radio" name="compute-mode" id="mode-gpu" value="gpu">
                                         <span data-i18n="serverConfig.computeMode.gpu">🎮 GPU</span>
                                     </label>
+                                </div>
+                                <!-- Accelerator Selection (separate line, shown when GPU mode selected) -->
+                                <div class="accelerator-row" id="accelerator-row" style="display: none;">
+                                    <label for="accelerator-select" data-i18n="serverConfig.accelerator.label">Accelerator</label>
+                                    <select id="accelerator-select" class="form-control">
+                                        <option value="nvidia" data-i18n="serverConfig.accelerator.nvidia">NVIDIA (CUDA)</option>
+                                        <option value="amd" data-i18n="serverConfig.accelerator.amd">AMD (ROCm)</option>
+                                        <option value="tpu" data-i18n="serverConfig.accelerator.tpu">Google TPU</option>
+                                    </select>
                                 </div>
                                 <small class="form-help" id="mode-help-text" data-i18n="serverConfig.computeMode.help">CPU mode is recommended for macOS</small>
                             </div>
