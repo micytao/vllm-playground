@@ -353,13 +353,22 @@ const ClaudeCodeMethods = {
             }
             
             this.ttydPort = data.port;
-            const wsUrl = data.ws_url;
+            
+            // Build WebSocket URL - handle both relative (/ws/ttyd) and absolute URLs
+            let wsUrl = data.ws_url;
+            if (wsUrl.startsWith('/')) {
+                // Relative URL - build full WebSocket URL from current page
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                wsUrl = `${protocol}//${window.location.host}${wsUrl}`;
+            }
             
             this.claudeTerminal.writeln(`\x1b[32m● ttyd started on port ${data.port}\x1b[0m`);
             this.claudeTerminal.writeln('\x1b[36m● Connecting to Claude Code...\x1b[0m');
             this.claudeTerminal.writeln('');
             
-            // Connect to ttyd WebSocket
+            console.log('Connecting to WebSocket:', wsUrl);
+            
+            // Connect to ttyd WebSocket (via our proxy)
             this.claudeWebSocket = new WebSocket(wsUrl);
             this.claudeWebSocket.binaryType = 'arraybuffer';
             

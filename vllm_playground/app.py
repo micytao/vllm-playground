@@ -4809,7 +4809,69 @@ async def start_claude_terminal():
         model_name=config_response["model"]
     )
     
+    # Return our proxy WebSocket URL instead of direct ttyd URL
+    # This allows cloud deployment to work (browser connects to our server, we proxy to ttyd)
+    if result.get("success"):
+        result["ws_url"] = "/ws/ttyd"  # Use our proxy endpoint
+    
     return result
+
+
+@app.websocket("/ws/ttyd")
+async def websocket_ttyd_proxy(websocket: WebSocket):
+    """WebSocket proxy to ttyd - allows cloud deployment to work"""
+    await websocket.accept()
+    
+    global ttyd_port
+    
+    if ttyd_port is None:
+        await websocket.close(code=1011, reason="ttyd not running")
+        return
+    
+    # Connect to ttyd's WebSocket
+    import websockets
+    ttyd_ws_url = f"ws://127.0.0.1:{ttyd_port}/ws"
+    
+    try:
+        async with websockets.connect(ttyd_ws_url) as ttyd_ws:
+            logger.info(f"Connected to ttyd WebSocket at {ttyd_ws_url}")
+            
+            async def forward_to_client():
+                """Forward messages from ttyd to browser"""
+                try:
+                    async for message in ttyd_ws:
+                        if isinstance(message, bytes):
+                            await websocket.send_bytes(message)
+                        else:
+                            await websocket.send_text(message)
+                except Exception as e:
+                    logger.debug(f"ttyd->client forward ended: {e}")
+            
+            async def forward_to_ttyd():
+                """Forward messages from browser to ttyd"""
+                try:
+                    while True:
+                        data = await websocket.receive()
+                        if data["type"] == "websocket.receive":
+                            if "bytes" in data:
+                                await ttyd_ws.send(data["bytes"])
+                            elif "text" in data:
+                                await ttyd_ws.send(data["text"])
+                        elif data["type"] == "websocket.disconnect":
+                            break
+                except Exception as e:
+                    logger.debug(f"client->ttyd forward ended: {e}")
+            
+            # Run both forwarding tasks concurrently
+            await asyncio.gather(
+                forward_to_client(),
+                forward_to_ttyd(),
+                return_exceptions=True
+            )
+            
+    except Exception as e:
+        logger.error(f"ttyd proxy error: {e}")
+        await websocket.close(code=1011, reason=str(e))
 
 
 @app.post("/api/claude-code/stop-terminal")
