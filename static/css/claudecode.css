@@ -329,6 +329,64 @@
     color: var(--text-primary);
 }
 
+/* Local Terminal Note */
+.claude-local-note {
+    margin-top: 12px;
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.claude-local-note details {
+    cursor: pointer;
+}
+
+.claude-local-note summary {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    user-select: none;
+}
+
+.claude-local-note summary:hover {
+    color: var(--text-primary);
+}
+
+.claude-local-note p {
+    margin: 12px 0 8px 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.claude-local-note pre {
+    margin: 8px 0;
+    padding: 12px 16px;
+    background: #1a1a2e;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow-x: auto;
+}
+
+.claude-local-note pre code {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.85rem;
+    color: #e4e4e7;
+    line-height: 1.6;
+}
+
+.claude-local-note .env-port,
+.claude-local-note .env-model {
+    color: #f59e0b;
+}
+
+.claude-local-note .note-hint {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
 /* ============================================
    Light Theme Overrides
    ============================================ */

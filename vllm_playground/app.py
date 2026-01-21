@@ -4486,28 +4486,50 @@ def start_ttyd_for_claude(env_config: Dict[str, str], model_name: str) -> Dict[s
     logger.info(f"Environment: ANTHROPIC_BASE_URL={env.get('ANTHROPIC_BASE_URL')}, MODEL={model_name}")
     
     try:
-        # Don't capture stdout/stderr - let ttyd run normally
-        # This allows the PTY to work correctly
+        # Capture stderr to see any ttyd errors
         ttyd_process = subprocess.Popen(
             ttyd_cmd,
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
         )
         ttyd_port = port
         
         # Give ttyd a moment to start
         import time
-        time.sleep(1.0)  # Increased wait time
+        time.sleep(1.5)  # Increased wait time for ttyd to bind port
         
         # Check if process is still running
         if ttyd_process.poll() is not None:
             exit_code = ttyd_process.returncode
-            logger.error(f"ttyd exited with code {exit_code}")
+            # Try to get stderr output
+            _, stderr_output = ttyd_process.communicate(timeout=1)
+            stderr_str = stderr_output.decode('utf-8', errors='replace') if stderr_output else "No error output"
+            logger.error(f"ttyd exited with code {exit_code}: {stderr_str}")
+            ttyd_process = None
+            ttyd_port = None
             return {
                 "success": False,
-                "error": f"ttyd exited immediately with code {exit_code}. Check if port {port} is available."
+                "error": f"ttyd exited with code {exit_code}: {stderr_str}"
             }
+        
+        # Verify ttyd is actually listening on the port
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            result = sock.connect_ex(('127.0.0.1', port))
+            if result != 0:
+                logger.error(f"ttyd started but not listening on port {port}")
+                # Kill the process since it's not working
+                ttyd_process.terminate()
+                ttyd_process = None
+                ttyd_port = None
+                return {
+                    "success": False,
+                    "error": f"ttyd started but failed to listen on port {port}"
+                }
+        finally:
+            sock.close()
         
         logger.info(f"ttyd started on port {port}, pid: {ttyd_process.pid}")
         logger.info(f"ttyd WebSocket URL: ws://127.0.0.1:{port}/ws")

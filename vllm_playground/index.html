@@ -1412,6 +1412,18 @@
                                 <p>💡 Claude Code is running with your vLLM server as the backend. Type your coding questions or requests above.</p>
                                 <p>Press <kbd>Ctrl+C</kbd> to interrupt, <kbd>Ctrl+D</kbd> to exit.</p>
                             </div>
+                            
+                            <!-- Local Terminal Note -->
+                            <div class="claude-local-note">
+                                <details>
+                                    <summary>💻 Prefer to run in your local terminal?</summary>
+                                    <p>You can always run Claude Code directly in your terminal with these environment variables:</p>
+                                    <pre><code>export ANTHROPIC_BASE_URL=http://localhost:<span class="env-port">8000</span>
+export ANTHROPIC_API_KEY=vllm-playground
+claude --model <span class="env-model">your-model-name</span></code></pre>
+                                    <p class="note-hint">Replace the port and model name with your vLLM server settings.</p>
+                                </details>
+                            </div>
                         </div>
 
                     </div>

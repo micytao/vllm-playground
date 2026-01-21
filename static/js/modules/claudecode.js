@@ -328,6 +328,7 @@ const ClaudeCodeMethods = {
         
         try {
             // Start ttyd terminal via API
+            console.log('Calling /api/claude-code/start-terminal...');
             const response = await fetch('/api/claude-code/start-terminal', {
                 method: 'POST',
                 headers: {
@@ -336,9 +337,11 @@ const ClaudeCodeMethods = {
             });
             
             const data = await response.json();
+            console.log('start-terminal response:', data);
             
             if (!data.success) {
                 this.claudeTerminal.writeln(`\x1b[31m✗ Failed to start terminal: ${data.error}\x1b[0m`);
+                console.error('Failed to start ttyd:', data.error);
                 
                 if (data.install_instructions) {
                     this.claudeTerminal.writeln('');
