@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 import uvicorn
 import struct
 import signal
+import aiohttp
 
 # Setup logging (must be before imports that use logger)
 logging.basicConfig(
