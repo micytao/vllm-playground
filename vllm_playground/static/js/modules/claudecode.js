@@ -37,6 +37,8 @@ const ClaudeCodeMethods = {
         this.claudeFitAddon = null;
         this.claudeWebLinksAddon = null;
         this.ttydPort = null;
+        this.claudeDataDisposable = null;  // Store onData disposable
+        this.claudeResizeDisposable = null;  // Store onResize disposable
         this.claudeStatus = {
             ttydAvailable: false,
             claudeInstalled: false,
@@ -318,6 +320,16 @@ const ClaudeCodeMethods = {
     },
     
     async connectClaudeTerminal() {
+        // Dispose existing event handlers to prevent duplicates
+        if (this.claudeDataDisposable) {
+            this.claudeDataDisposable.dispose();
+            this.claudeDataDisposable = null;
+        }
+        if (this.claudeResizeDisposable) {
+            this.claudeResizeDisposable.dispose();
+            this.claudeResizeDisposable = null;
+        }
+        
         // Close existing connection
         if (this.claudeWebSocket) {
             this.claudeWebSocket.close();
@@ -462,7 +474,8 @@ const ClaudeCodeMethods = {
             };
             
             // Handle terminal input - send to ttyd
-            this.claudeTerminal.onData(data => {
+            // Store disposable to prevent duplicate handlers on reconnect
+            this.claudeDataDisposable = this.claudeTerminal.onData(data => {
                 if (this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
                     // ttyd expects: type byte ASCII '0' (48) for input + data
                     const encoder = new TextEncoder();
@@ -476,7 +489,8 @@ const ClaudeCodeMethods = {
             });
             
             // Handle terminal resize - send to ttyd
-            this.claudeTerminal.onResize(({ cols, rows }) => {
+            // Store disposable to prevent duplicate handlers on reconnect
+            this.claudeResizeDisposable = this.claudeTerminal.onResize(({ cols, rows }) => {
                 if (this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
                     // ttyd resize: type byte ASCII '1' (49) + JSON {columns, rows}
                     const resizeData = JSON.stringify({ columns: cols, rows: rows });
@@ -635,6 +649,16 @@ const ClaudeCodeMethods = {
     // ============================================
     
     async cleanupClaudeCode() {
+        // Dispose event handlers
+        if (this.claudeDataDisposable) {
+            this.claudeDataDisposable.dispose();
+            this.claudeDataDisposable = null;
+        }
+        if (this.claudeResizeDisposable) {
+            this.claudeResizeDisposable.dispose();
+            this.claudeResizeDisposable = null;
+        }
+        
         // Stop terminal
         await this.stopClaudeTerminal();
         
