@@ -1413,6 +1413,17 @@
                                 <p>Press <kbd>Ctrl+C</kbd> to interrupt, <kbd>Ctrl+D</kbd> to exit.</p>
                             </div>
                             
+                            <!-- Recommended Model Note -->
+                            <div class="claude-local-note">
+                                <details>
+                                    <summary>🎯 Recommended model for Claude Code</summary>
+                                    <p>For best results with Claude Code, use a model with large context and strong tool calling:</p>
+                                    <pre><code>Model: Qwen/Qwen2.5-Coder-32B-Instruct
+Args:  --max-model-len 65536 --enable-auto-tool-choice --tool-call-parser hermes</code></pre>
+                                    <p class="note-hint">This model has 128K context window, ideal for coding tasks. Requires vLLM v0.12.0+.</p>
+                                </details>
+                            </div>
+                            
                             <!-- Local Terminal Note -->
                             <div class="claude-local-note">
                                 <details>
