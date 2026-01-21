@@ -85,3 +85,4 @@ dmypy.json
 /recipes/
 
 # Note: /assets/ is NOT ignored - it contains README images referenced by GitHub URLs
+/vllm_playground/CHANGELOG.md
