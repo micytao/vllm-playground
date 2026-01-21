@@ -4837,58 +4837,61 @@ async def websocket_ttyd_proxy(websocket: WebSocket):
         await websocket.close(code=1011, reason="ttyd not running")
         return
     
-    # Connect to ttyd's WebSocket using aiohttp
-    ttyd_ws_url = f"http://127.0.0.1:{ttyd_port}/ws"
+    # Connect to ttyd's WebSocket using websockets library
+    import websockets
+    ttyd_ws_url = f"ws://127.0.0.1:{ttyd_port}/ws"
     
     try:
-        async with aiohttp.ClientSession() as session:
-            # Try connecting without protocol first, let ttyd decide
-            async with session.ws_connect(ttyd_ws_url) as ttyd_ws:
-                logger.info(f"Connected to ttyd WebSocket at {ttyd_ws_url}")
-                
-                async def forward_to_client():
-                    """Forward messages from ttyd to browser"""
-                    try:
-                        async for msg in ttyd_ws:
-                            if msg.type == aiohttp.WSMsgType.BINARY:
-                                logger.info(f"ttyd->client: {len(msg.data)} bytes binary")
-                                await websocket.send_bytes(msg.data)
-                            elif msg.type == aiohttp.WSMsgType.TEXT:
-                                logger.info(f"ttyd->client: {len(msg.data)} chars text")
-                                await websocket.send_text(msg.data)
-                            elif msg.type == aiohttp.WSMsgType.CLOSED:
-                                logger.info("ttyd WebSocket closed")
-                                break
-                            elif msg.type == aiohttp.WSMsgType.ERROR:
-                                logger.error(f"ttyd WebSocket error: {ttyd_ws.exception()}")
-                                break
-                    except Exception as e:
-                        logger.info(f"ttyd->client forward ended: {e}")
-                
-                async def forward_to_ttyd():
-                    """Forward messages from browser to ttyd"""
-                    try:
-                        while True:
-                            data = await websocket.receive()
-                            if data["type"] == "websocket.receive":
-                                if "bytes" in data:
-                                    logger.info(f"client->ttyd: {len(data['bytes'])} bytes")
-                                    await ttyd_ws.send_bytes(data["bytes"])
-                                elif "text" in data:
-                                    logger.info(f"client->ttyd: {len(data['text'])} chars text")
-                                    await ttyd_ws.send_str(data["text"])
-                            elif data["type"] == "websocket.disconnect":
-                                logger.info("Client disconnected from proxy")
-                                break
-                    except Exception as e:
-                        logger.info(f"client->ttyd forward ended: {e}")
-                
-                # Run both forwarding tasks concurrently
-                await asyncio.gather(
-                    forward_to_client(),
-                    forward_to_ttyd(),
-                    return_exceptions=True
-                )
+        # Connect with tty subprotocol
+        async with websockets.connect(
+            ttyd_ws_url,
+            subprotocols=['tty'],
+            ping_interval=None,  # Disable ping to avoid interference
+            close_timeout=1
+        ) as ttyd_ws:
+            logger.info(f"Connected to ttyd WebSocket at {ttyd_ws_url}, protocol: {ttyd_ws.subprotocol}")
+            
+            async def forward_to_client():
+                """Forward messages from ttyd to browser"""
+                try:
+                    async for message in ttyd_ws:
+                        if isinstance(message, bytes):
+                            logger.info(f"ttyd->client: {len(message)} bytes")
+                            await websocket.send_bytes(message)
+                        else:
+                            logger.info(f"ttyd->client: {len(message)} chars text")
+                            await websocket.send_text(message)
+                except websockets.exceptions.ConnectionClosed as e:
+                    logger.info(f"ttyd connection closed: {e}")
+                except Exception as e:
+                    logger.info(f"ttyd->client forward ended: {e}")
+            
+            async def forward_to_ttyd():
+                """Forward messages from browser to ttyd"""
+                try:
+                    while True:
+                        data = await websocket.receive()
+                        if data["type"] == "websocket.receive":
+                            if "bytes" in data:
+                                logger.info(f"client->ttyd: {len(data['bytes'])} bytes")
+                                await ttyd_ws.send(data["bytes"])
+                            elif "text" in data:
+                                logger.info(f"client->ttyd: {len(data['text'])} chars text")
+                                await ttyd_ws.send(data["text"])
+                        elif data["type"] == "websocket.disconnect":
+                            logger.info("Client disconnected from proxy")
+                            break
+                except websockets.exceptions.ConnectionClosed as e:
+                    logger.info(f"ttyd connection closed while forwarding: {e}")
+                except Exception as e:
+                    logger.info(f"client->ttyd forward ended: {e}")
+            
+            # Run both forwarding tasks concurrently
+            await asyncio.gather(
+                forward_to_client(),
+                forward_to_ttyd(),
+                return_exceptions=True
+            )
             
     except Exception as e:
         logger.error(f"ttyd proxy error: {e}")
