@@ -40,7 +40,7 @@ cd openshift/
 - Creates CPU-mode deployment (0 replicas, for easy switching)
 - Exposes via Route (OpenShift) or Service (Kubernetes)
 
-**vLLM Image Used:** `vllm/vllm-openai:v0.11.0` (official community image)
+**vLLM Image Used:** `vllm/vllm-openai:v0.12.0` (official community image, v0.12.0+ for Claude Code)
 
 #### For CPU-Only Clusters
 

@@ -22,7 +22,7 @@ The Web UI runs in its own container and orchestrates vLLM service containers/po
   - Includes: Python 3.12, vLLM with CPU support, startup scripts
 
 **For GPU Mode:**
-- **Official vLLM Image** - `vllm/vllm-openai:v0.11.0`
+- **Official vLLM Image** - `vllm/vllm-openai:v0.12.0` (v0.12.0+ required for Claude Code)
   - Community-maintained official image
   - Pre-built with CUDA support
   - Publicly accessible from Docker Hub
@@ -46,7 +46,7 @@ The Web UI runs in its own container and orchestrates vLLM service containers/po
 ## Current Container Strategy
 
 **GPU Deployments:**
-- ✅ Use official vLLM image: `vllm/vllm-openai:v0.11.0`
+- ✅ Use official vLLM image: `vllm/vllm-openai:v0.12.0`
 - ✅ No build required - pull directly from Docker Hub
 - ✅ No authentication needed (public image)
 
@@ -118,7 +118,7 @@ See [../openshift/README.md](../openshift/README.md) and [../openshift/QUICK_STA
 | Image | Registry | Public | Authentication |
 |-------|----------|--------|----------------|
 | Web UI (OpenShift) | `quay.io/rh_ee_micyang/vllm-playground:0.2` | ✅ Yes | ❌ None |
-| vLLM GPU | `vllm/vllm-openai:v0.11.0` | ✅ Yes | ❌ None |
+| vLLM GPU | `vllm/vllm-openai:v0.12.0` | ✅ Yes | ❌ None |
 | vLLM CPU | `quay.io/rh_ee_micyang/vllm-cpu:v0.11.0` | ✅ Yes | ❌ None |
 | vLLM macOS | `quay.io/rh_ee_micyang/vllm-mac:v0.11.0` | ✅ Yes | ❌ None |
 
@@ -131,7 +131,7 @@ See [../openshift/README.md](../openshift/README.md) and [../openshift/QUICK_STA
 All images are public - no authentication needed:
 ```bash
 # Test GPU image pull
-podman pull vllm/vllm-openai:v0.11.0
+podman pull vllm/vllm-openai:v0.12.0
 
 # Test CPU image pull
 podman pull quay.io/rh_ee_micyang/vllm-cpu:v0.11.0

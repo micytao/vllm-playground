@@ -4705,6 +4705,8 @@ async def claude_code_config():
     
     # Build the base URL for vLLM's Anthropic-compatible endpoint
     # Use localhost since Claude Code runs on the same machine
+    # Per vLLM docs: ANTHROPIC_BASE_URL should be the server root (e.g. http://localhost:8000)
+    # Claude Code/Anthropic SDK appends /v1/messages to this base URL
     port = current_config.port
     base_url = f"http://localhost:{port}"
     

@@ -65,7 +65,7 @@ echo
 DEPLOYMENT_MODE_UPPER=$(echo "${DEPLOYMENT_MODE}" | tr '[:lower:]' '[:upper:]')
 echo -e "${BLUE}Deployment Mode: ${DEPLOYMENT_MODE_UPPER}${NC}"
 if [ "$DEPLOYMENT_MODE" = "gpu" ]; then
-    echo -e "${BLUE}vLLM Image: vllm/vllm-openai:v0.11.0 (official)${NC}"
+    echo -e "${BLUE}vLLM Image: vllm/vllm-openai:v0.12.0 (official)${NC}"
 else
     echo -e "${BLUE}vLLM Image: quay.io/rh_ee_micyang/vllm-cpu:v0.11.0 (self-built, public)${NC}"
 fi

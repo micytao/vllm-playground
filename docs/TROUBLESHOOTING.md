@@ -61,7 +61,7 @@ podman stop vllm-service && podman rm vllm-service
 # Pull latest vLLM images
 podman pull quay.io/rh_ee_micyang/vllm-mac:v0.11.0     # macOS ARM64
 podman pull quay.io/rh_ee_micyang/vllm-cpu:v0.11.0    # Linux x86_64
-podman pull vllm/vllm-openai:v0.11.0                  # GPU (official)
+podman pull vllm/vllm-openai:v0.12.0                  # GPU (official, v0.12.0+ for Claude Code)
 ```
 
 ---
@@ -184,12 +184,12 @@ oc apply -f openshift/manifests/04-webui-deployment.yaml
 ### Image Pull Errors
 
 All images are publicly accessible - no authentication needed:
-- **GPU**: `vllm/vllm-openai:v0.11.0`
+- **GPU**: `vllm/vllm-openai:v0.12.0`
 - **CPU**: `quay.io/rh_ee_micyang/vllm-cpu:v0.11.0`
 
 ```bash
 # Verify image accessibility
-podman pull vllm/vllm-openai:v0.11.0
+podman pull vllm/vllm-openai:v0.12.0
 podman pull quay.io/rh_ee_micyang/vllm-cpu:v0.11.0
 ```
 
