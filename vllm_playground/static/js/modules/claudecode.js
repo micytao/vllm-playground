@@ -375,36 +375,38 @@ const ClaudeCodeMethods = {
             this.claudeWebSocket.onopen = () => {
                 console.log('ttyd WebSocket connected');
                 
-                // IMPORTANT: ttyd requires an auth token to be sent first (empty string if no auth)
-                // Without this, ttyd won't start sending output
-                // Send as TEXT frame, not binary - ttyd expects text for auth token
-                this.claudeWebSocket.send('');  // Empty auth token as text
-                console.log('Sent empty auth token to ttyd (as text)');
-                
                 // Focus terminal
                 if (this.focusClaudeTerminal) this.focusClaudeTerminal();
                 
-                // Send initial resize to ttyd after auth
+                // Give ttyd a moment to initialize, then send auth and resize
                 setTimeout(() => {
-                    this.fitClaudeTerminal();
-                    
-                    // Send resize message to ttyd
-                    if (this.claudeTerminal && this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
-                        const cols = this.claudeTerminal.cols;
-                        const rows = this.claudeTerminal.rows;
-                        console.log('Sending initial resize to ttyd:', cols, 'x', rows);
+                    if (this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
+                        // Send empty auth token as text
+                        this.claudeWebSocket.send('');
+                        console.log('Sent empty auth token to ttyd');
                         
-                        // ttyd resize format: type byte '1' + JSON
-                        const resizeData = JSON.stringify({ columns: cols, rows: rows });
-                        const encoder = new TextEncoder();
-                        const jsonData = encoder.encode(resizeData);
-                        const message = new Uint8Array(jsonData.length + 1);
-                        message[0] = 49;  // ASCII '1' for resize
-                        message.set(jsonData, 1);
-                        this.claudeWebSocket.send(message);
+                        // Send resize after a short delay
+                        setTimeout(() => {
+                            this.fitClaudeTerminal();
+                            
+                            if (this.claudeTerminal && this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
+                                const cols = this.claudeTerminal.cols;
+                                const rows = this.claudeTerminal.rows;
+                                console.log('Sending initial resize to ttyd:', cols, 'x', rows);
+                                
+                                // ttyd resize format: type byte '1' + JSON
+                                const resizeData = JSON.stringify({ columns: cols, rows: rows });
+                                const encoder = new TextEncoder();
+                                const jsonData = encoder.encode(resizeData);
+                                const message = new Uint8Array(jsonData.length + 1);
+                                message[0] = 49;  // ASCII '1' for resize
+                                message.set(jsonData, 1);
+                                this.claudeWebSocket.send(message);
+                            }
+                            
+                            if (this.focusClaudeTerminal) this.focusClaudeTerminal();
+                        }, 200);
                     }
-                    
-                    if (this.focusClaudeTerminal) this.focusClaudeTerminal();
                 }, 100);
             };
             

@@ -4837,13 +4837,13 @@ async def websocket_ttyd_proxy(websocket: WebSocket):
         await websocket.close(code=1011, reason="ttyd not running")
         return
     
-    # Connect to ttyd's WebSocket using aiohttp (better binary handling)
-    # ttyd requires the 'tty' subprotocol
+    # Connect to ttyd's WebSocket using aiohttp
     ttyd_ws_url = f"http://127.0.0.1:{ttyd_port}/ws"
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.ws_connect(ttyd_ws_url, protocols=['tty']) as ttyd_ws:
+            # Try connecting without protocol first, let ttyd decide
+            async with session.ws_connect(ttyd_ws_url) as ttyd_ws:
                 logger.info(f"Connected to ttyd WebSocket at {ttyd_ws_url}")
                 
                 async def forward_to_client():
