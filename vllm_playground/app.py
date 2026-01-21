@@ -4841,11 +4841,13 @@ async def websocket_ttyd_proxy(websocket: WebSocket):
                 try:
                     async for message in ttyd_ws:
                         if isinstance(message, bytes):
+                            logger.info(f"ttyd->client: {len(message)} bytes")
                             await websocket.send_bytes(message)
                         else:
+                            logger.info(f"ttyd->client: {len(message)} chars text")
                             await websocket.send_text(message)
                 except Exception as e:
-                    logger.debug(f"ttyd->client forward ended: {e}")
+                    logger.info(f"ttyd->client forward ended: {e}")
             
             async def forward_to_ttyd():
                 """Forward messages from browser to ttyd"""
@@ -4854,13 +4856,16 @@ async def websocket_ttyd_proxy(websocket: WebSocket):
                         data = await websocket.receive()
                         if data["type"] == "websocket.receive":
                             if "bytes" in data:
+                                logger.info(f"client->ttyd: {len(data['bytes'])} bytes")
                                 await ttyd_ws.send(data["bytes"])
                             elif "text" in data:
+                                logger.info(f"client->ttyd: {len(data['text'])} chars text")
                                 await ttyd_ws.send(data["text"])
                         elif data["type"] == "websocket.disconnect":
+                            logger.info("Client disconnected from proxy")
                             break
                 except Exception as e:
-                    logger.debug(f"client->ttyd forward ended: {e}")
+                    logger.info(f"client->ttyd forward ended: {e}")
             
             # Run both forwarding tasks concurrently
             await asyncio.gather(
@@ -4871,6 +4876,8 @@ async def websocket_ttyd_proxy(websocket: WebSocket):
             
     except Exception as e:
         logger.error(f"ttyd proxy error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         await websocket.close(code=1011, reason=str(e))
 
 
