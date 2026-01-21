@@ -377,9 +377,9 @@ const ClaudeCodeMethods = {
                 
                 // IMPORTANT: ttyd requires an auth token to be sent first (empty string if no auth)
                 // Without this, ttyd won't start sending output
-                const encoder = new TextEncoder();
-                this.claudeWebSocket.send(encoder.encode(''));  // Empty auth token
-                console.log('Sent empty auth token to ttyd');
+                // Send as TEXT frame, not binary - ttyd expects text for auth token
+                this.claudeWebSocket.send('');  // Empty auth token as text
+                console.log('Sent empty auth token to ttyd (as text)');
                 
                 // Focus terminal
                 if (this.focusClaudeTerminal) this.focusClaudeTerminal();
