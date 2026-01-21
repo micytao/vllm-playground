@@ -159,7 +159,7 @@ if __name__ == "__main__":
     print("=" * 60)
     
     try:
-        from app import main
+        from vllm_playground.app import main
         main()
     except KeyboardInterrupt:
         print("\n🛑 Interrupted by user")
