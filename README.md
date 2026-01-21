@@ -2,6 +2,11 @@
 
 A modern web interface for managing and interacting with vLLM servers (www.github.com/vllm-project/vllm). Supports GPU and CPU modes, with special optimizations for macOS Apple Silicon and enterprise deployment on OpenShift/Kubernetes.
 
+### ✨ Claude Code Integration
+![vLLM Playground Claude Code](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-claude-code.gif)
+
+*Run Claude Code with open-source models served by vLLM - your private, local coding assistant.*
+
 ### ✨ Agentic-Ready with MCP Support
 ![vLLM Playground MCP Integration](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-mcp-client.png)
 
@@ -55,6 +60,7 @@ vllm-playground status              # Check status
 
 | Feature | Description |
 |---------|-------------|
+| 🤖 **Claude Code** | Use open-source models as Claude Code backend via vLLM |
 | 💬 **Modern Chat UI** | Streamlined ChatGPT-style interface with streaming responses |
 | 🔧 **Tool Calling** | Function calling with Llama, Mistral, Qwen, and more |
 | 🔗 **MCP Integration** | Connect to MCP servers for agentic capabilities |
@@ -95,6 +101,25 @@ Enable in **Server Configuration** before starting:
 - Mistral (`mistral`)
 - Qwen (`hermes`)
 - Hermes (`hermes`)
+
+### Claude Code Integration
+
+Use vLLM to serve open-source models as a backend for [Claude Code](https://docs.anthropic.com/en/docs/claude-code):
+
+1. Go to **Claude Code** in the sidebar
+2. Start vLLM with a recommended model (see tips on the page)
+3. The embedded terminal connects automatically
+
+**Requirements:**
+- vLLM v0.12.0+ (for Anthropic Messages API)
+- Model with native 65K+ context and tool calling support
+- [ttyd](https://github.com/tsl0922/ttyd) installed for web terminal
+
+**Recommended Model for most GPUs:**
+```bash
+meta-llama/Llama-3.1-8B-Instruct
+--max-model-len 65536 --enable-auto-tool-choice --tool-call-parser llama3_json
+```
 
 ### MCP Servers
 
@@ -185,6 +210,7 @@ export VLLM_CPU_OMP_THREADS_BIND=auto
 ## 🔗 Related Projects
 
 - **[vLLM](https://github.com/vllm-project/vllm)** - High-throughput LLM serving
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** - Anthropic's agentic coding tool
 - **[LLMCompressor Playground](https://github.com/micytao/llmcompressor-playground)** - Model compression & quantization
 - **[GuideLLM](https://github.com/neuralmagic/guidellm)** - Performance benchmarking
 - **[MCP Servers](https://github.com/modelcontextprotocol/servers)** - Official MCP servers
