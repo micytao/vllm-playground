@@ -1413,14 +1413,45 @@
                                 <p>Press <kbd>Ctrl+C</kbd> to interrupt, <kbd>Ctrl+D</kbd> to exit.</p>
                             </div>
                             
-                            <!-- Recommended Model Note -->
+                            <!-- Claude Code Setup Tips -->
                             <div class="claude-local-note">
                                 <details>
-                                    <summary>🎯 Recommended model for Claude Code</summary>
-                                    <p>For best results with Claude Code, use a model with large context and strong tool calling:</p>
-                                    <pre><code>Model: Qwen/Qwen2.5-Coder-32B-Instruct
-Args:  --max-model-len 65536 --enable-auto-tool-choice --tool-call-parser hermes</code></pre>
-                                    <p class="note-hint">This model has 128K context window, ideal for coding tasks. Requires vLLM v0.12.0+.</p>
+                                    <summary>📋 Setup Requirements & Tips</summary>
+                                    <div class="claude-tips-content">
+                                        <h4>Requirements</h4>
+                                        <ul>
+                                            <li><strong>vLLM v0.12.0+</strong> - Required for the Anthropic Messages API (<code>/v1/messages</code> endpoint)</li>
+                                            <li><strong>Native 65K+ context</strong> - Claude Code requests 32K max_tokens, so you need at least 65K total context (32K output + input tokens)</li>
+                                            <li><strong>Tool calling support</strong> - Model must support function/tool calling with appropriate parser</li>
+                                        </ul>
+                                        
+                                        <h4>Recommended Model</h4>
+                                        <p><strong>Meta Llama 3.1 8B Instruct</strong> - Best balance of context, tool calling, and GPU memory:</p>
+                                        <pre><code>Model: meta-llama/Llama-3.1-8B-Instruct
+Args:  --max-model-len 65536 --enable-auto-tool-choice --tool-call-parser llama3_json --gpu-memory-utilization 0.9</code></pre>
+                                        
+                                        <h4>Why These Settings?</h4>
+                                        <ul>
+                                            <li><strong>Native 128K context</strong> - No rope scaling hacks needed</li>
+                                            <li><strong>65536 max-model-len</strong> - Fits 32K output + 33K input on ~44GB GPU</li>
+                                            <li><strong>llama3_json parser</strong> - Built-in tool calling support</li>
+                                        </ul>
+                                        
+                                        <h4>GPU Memory Guide</h4>
+                                        <table class="claude-tips-table">
+                                            <tr><th>GPU VRAM</th><th>Recommended Model</th><th>Max Context</th></tr>
+                                            <tr><td>24GB (L4)</td><td>Llama-3.1-8B-Instruct</td><td>32K-48K</td></tr>
+                                            <tr><td>40-48GB (A6000)</td><td>Llama-3.1-8B-Instruct</td><td>65K</td></tr>
+                                            <tr><td>80GB (A100/H100)</td><td>Llama-3.1-70B-Instruct</td><td>128K</td></tr>
+                                        </table>
+                                        
+                                        <h4>Troubleshooting</h4>
+                                        <ul>
+                                            <li><strong>404 on /init</strong> - Upgrade to vLLM v0.12.0+</li>
+                                            <li><strong>max_tokens too large</strong> - Increase <code>--max-model-len</code> or use <code>/clear</code> to reset context</li>
+                                            <li><strong>CUDA OOM</strong> - Reduce <code>--max-model-len</code> or use quantized model (AWQ/GPTQ)</li>
+                                        </ul>
+                                    </div>
                                 </details>
                             </div>
                             

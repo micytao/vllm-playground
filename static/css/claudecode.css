@@ -387,6 +387,75 @@
     font-style: italic;
 }
 
+/* Claude Tips Content */
+.claude-tips-content {
+    margin-top: 12px;
+}
+
+.claude-tips-content h4 {
+    margin: 16px 0 8px 0;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.claude-tips-content h4:first-child {
+    margin-top: 0;
+}
+
+.claude-tips-content ul {
+    margin: 8px 0;
+    padding-left: 20px;
+}
+
+.claude-tips-content ul li {
+    margin: 6px 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.claude-tips-content ul li strong {
+    color: var(--text-primary);
+}
+
+.claude-tips-content ul li code {
+    padding: 2px 6px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: #f59e0b;
+}
+
+/* Tips Table */
+.claude-tips-table {
+    width: 100%;
+    margin: 8px 0;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.claude-tips-table th,
+.claude-tips-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border: 1px solid var(--border-color);
+}
+
+.claude-tips-table th {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.claude-tips-table td {
+    color: var(--text-secondary);
+}
+
+.claude-tips-table tr:nth-child(even) td {
+    background: rgba(0, 0, 0, 0.1);
+}
+
 /* ============================================
    Light Theme Overrides
    ============================================ */
