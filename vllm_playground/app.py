@@ -4596,6 +4596,11 @@ async def websocket_terminal(websocket: WebSocket):
     env = os.environ.copy()
     env.update(config_response["env"])
     
+    # Ensure HOME is set so Claude Code can find ~/.claude.json config
+    if "HOME" not in env:
+        env["HOME"] = os.path.expanduser("~")
+    logger.info(f"PTY HOME directory: {env.get('HOME')}")
+    
     # Set terminal environment variables for proper TUI rendering
     env["TERM"] = "xterm-256color"
     env["COLORTERM"] = "truecolor"
