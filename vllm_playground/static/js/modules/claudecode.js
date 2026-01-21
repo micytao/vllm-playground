@@ -378,36 +378,26 @@ const ClaudeCodeMethods = {
                 // Focus terminal
                 if (this.focusClaudeTerminal) this.focusClaudeTerminal();
                 
-                // Give ttyd a moment to initialize, then send auth and resize
+                // Send resize immediately - ttyd without auth may not need auth token
                 setTimeout(() => {
-                    if (this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
-                        // Send empty auth token as BINARY (0 bytes) - ttyd expects this format
-                        // ttyd's client uses: socket.send(textEncoder.encode('')) which creates empty Uint8Array
-                        this.claudeWebSocket.send(new Uint8Array(0));
-                        console.log('Sent empty auth token to ttyd (binary)');
+                    this.fitClaudeTerminal();
+                    
+                    if (this.claudeTerminal && this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
+                        const cols = this.claudeTerminal.cols;
+                        const rows = this.claudeTerminal.rows;
+                        console.log('Sending initial resize to ttyd:', cols, 'x', rows);
                         
-                        // Send resize after a short delay
-                        setTimeout(() => {
-                            this.fitClaudeTerminal();
-                            
-                            if (this.claudeTerminal && this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
-                                const cols = this.claudeTerminal.cols;
-                                const rows = this.claudeTerminal.rows;
-                                console.log('Sending initial resize to ttyd:', cols, 'x', rows);
-                                
-                                // ttyd resize format: type byte '1' + JSON
-                                const resizeData = JSON.stringify({ columns: cols, rows: rows });
-                                const encoder = new TextEncoder();
-                                const jsonData = encoder.encode(resizeData);
-                                const message = new Uint8Array(jsonData.length + 1);
-                                message[0] = 49;  // ASCII '1' for resize
-                                message.set(jsonData, 1);
-                                this.claudeWebSocket.send(message);
-                            }
-                            
-                            if (this.focusClaudeTerminal) this.focusClaudeTerminal();
-                        }, 200);
+                        // ttyd resize format: type byte '1' + JSON
+                        const resizeData = JSON.stringify({ columns: cols, rows: rows });
+                        const encoder = new TextEncoder();
+                        const jsonData = encoder.encode(resizeData);
+                        const message = new Uint8Array(jsonData.length + 1);
+                        message[0] = 49;  // ASCII '1' for resize
+                        message.set(jsonData, 1);
+                        this.claudeWebSocket.send(message);
                     }
+                    
+                    if (this.focusClaudeTerminal) this.focusClaudeTerminal();
                 }, 100);
             };
             
