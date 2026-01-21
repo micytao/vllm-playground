@@ -57,9 +57,8 @@ benchmark = [
 mcp = [
     "mcp>=1.0.0",
 ]
-claudecode = [
-    "ptyprocess>=0.7.0",
-]
+# claudecode extra removed - ttyd is a system package, not a pip package
+# Install ttyd with: brew install ttyd (macOS) or apt install ttyd (Ubuntu)
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
@@ -67,7 +66,7 @@ dev = [
     "ruff>=0.1.0",
 ]
 all = [
-    "vllm-playground[benchmark,mcp,claudecode,dev]",
+    "vllm-playground[benchmark,mcp,dev]",
 ]
 
 [project.scripts]

@@ -1314,17 +1314,21 @@
                             </div>
                         </div>
 
-                        <!-- Not Available Warning (shown when ptyprocess not installed) -->
+                        <!-- Not Available Warning (shown when ttyd not installed) -->
                         <div class="claude-install-warning" id="claude-pty-warning" style="display: none;">
                             <div class="warning-icon">⚠️</div>
                             <h3>Terminal Support Not Available</h3>
-                            <p>Install the terminal support package to enable Claude Code:</p>
+                            <p>Install <strong>ttyd</strong> to enable the Claude Code terminal:</p>
                             <div class="install-commands">
-                                <code class="primary-cmd">pip install vllm-playground[claudecode]</code>
-                                <span class="cmd-divider">or</span>
-                                <code class="alt-cmd">pip install ptyprocess</code>
+                                <code class="primary-cmd">brew install ttyd</code>
+                                <span class="cmd-divider">(macOS)</span>
                             </div>
-                            <p class="warning-hint" style="margin-top: 12px;">Note: You also need to install Claude Code CLI separately. See <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener">official setup guide</a> for installation options.</p>
+                            <div class="install-commands" style="margin-top: 8px;">
+                                <code class="alt-cmd">sudo apt install ttyd</code>
+                                <span class="cmd-divider">(Ubuntu/Debian)</span>
+                            </div>
+                            <p class="warning-hint" style="margin-top: 12px;">Note: You also need to install Claude Code CLI. See <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener">official setup guide</a> for installation options.</p>
+                            <p class="warning-hint" style="margin-top: 8px;">Or run Claude Code manually in your terminal with the vLLM environment variables shown in <a href="#" id="claude-show-manual-instructions">manual setup</a>.</p>
                         </div>
 
                         <!-- Claude Not Installed Warning -->

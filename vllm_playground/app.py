@@ -4377,19 +4377,205 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
 # Claude Code Integration
 # ============================================
 
-# Import ptyprocess (optional - only needed for Claude Code terminal)
-CLAUDE_CODE_AVAILABLE = False
-ptyprocess = None
-try:
-    import ptyprocess as pty_module
-    ptyprocess = pty_module
-    CLAUDE_CODE_AVAILABLE = True
-    logger.info("ptyprocess available - Claude Code terminal support enabled")
-except ImportError:
-    logger.info("ptyprocess not installed - Claude Code terminal will be disabled. Install with: pip install vllm-playground[claudecode]")
+# Global state for ttyd process
+ttyd_process: Optional[subprocess.Popen] = None
+ttyd_port: Optional[int] = None
 
-# Global state for Claude Code terminal sessions
-claude_terminal_sessions: Dict[str, Any] = {}  # session_id -> {"process": PtyProcess, "websocket": WebSocket}
+
+def is_ttyd_installed() -> bool:
+    """Check if ttyd is installed on the system"""
+    return shutil.which("ttyd") is not None
+
+
+def find_available_port(start_port: int = 7681, max_attempts: int = 100) -> int:
+    """Find an available port starting from start_port"""
+    import socket
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('127.0.0.1', port))
+                return port
+        except OSError:
+            continue
+    raise RuntimeError(f"Could not find available port in range {start_port}-{start_port + max_attempts}")
+
+
+def start_ttyd_for_claude(env_config: Dict[str, str], model_name: str) -> Dict[str, Any]:
+    """Start ttyd process running Claude Code with the given environment
+    
+    Args:
+        env_config: Environment variables for Claude Code (ANTHROPIC_BASE_URL, etc.)
+        model_name: The model name to pass to Claude Code
+        
+    Returns:
+        Dict with success status, port, and websocket URL
+    """
+    global ttyd_process, ttyd_port
+    
+    # Check if ttyd is already running
+    if ttyd_process is not None and ttyd_process.poll() is None:
+        return {
+            "success": True,
+            "already_running": True,
+            "port": ttyd_port,
+            "ws_url": f"ws://127.0.0.1:{ttyd_port}/ws"
+        }
+    
+    # Check if ttyd is installed
+    if not is_ttyd_installed():
+        return {
+            "success": False,
+            "error": "ttyd is not installed",
+            "install_instructions": {
+                "macos": "brew install ttyd",
+                "ubuntu": "sudo apt install ttyd",
+                "fedora": "sudo dnf install ttyd"
+            }
+        }
+    
+    # Find Claude command
+    claude_path = find_claude_command()
+    if not claude_path:
+        return {
+            "success": False,
+            "error": "Claude Code CLI is not installed"
+        }
+    
+    # Find available port
+    try:
+        port = find_available_port()
+    except RuntimeError as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+    
+    # Build environment
+    env = os.environ.copy()
+    env.update(env_config)
+    
+    # Ensure HOME is set so Claude Code can find ~/.claude.json config
+    if "HOME" not in env:
+        env["HOME"] = os.path.expanduser("~")
+    
+    # Set terminal environment variables for proper TUI rendering
+    env["TERM"] = "xterm-256color"
+    env["COLORTERM"] = "truecolor"
+    env["FORCE_COLOR"] = "1"
+    env["NO_COLOR"] = ""
+    env["CLICOLOR"] = "1"
+    env["CLICOLOR_FORCE"] = "1"
+    env["FORCE_TTY"] = "1"
+    env["NODE_NO_READLINE"] = "0"
+    env["LANG"] = env.get("LANG", "en_US.UTF-8")
+    env["LC_ALL"] = env.get("LC_ALL", "en_US.UTF-8")
+    
+    # Build ttyd command
+    # ttyd --port PORT --interface 127.0.0.1 --once claude --model MODEL
+    ttyd_cmd = [
+        "ttyd",
+        "--port", str(port),
+        "--interface", "127.0.0.1",
+        "--once",  # Exit after client disconnects
+        "--writable",  # Allow input
+        claude_path,
+        "--model", model_name
+    ]
+    
+    logger.info(f"Starting ttyd: {' '.join(ttyd_cmd)}")
+    logger.info(f"Environment: ANTHROPIC_BASE_URL={env.get('ANTHROPIC_BASE_URL')}, MODEL={model_name}")
+    
+    try:
+        # Don't capture stdout/stderr - let ttyd run normally
+        # This allows the PTY to work correctly
+        ttyd_process = subprocess.Popen(
+            ttyd_cmd,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        ttyd_port = port
+        
+        # Give ttyd a moment to start
+        import time
+        time.sleep(1.0)  # Increased wait time
+        
+        # Check if process is still running
+        if ttyd_process.poll() is not None:
+            exit_code = ttyd_process.returncode
+            logger.error(f"ttyd exited with code {exit_code}")
+            return {
+                "success": False,
+                "error": f"ttyd exited immediately with code {exit_code}. Check if port {port} is available."
+            }
+        
+        logger.info(f"ttyd started on port {port}, pid: {ttyd_process.pid}")
+        logger.info(f"ttyd WebSocket URL: ws://127.0.0.1:{port}/ws")
+        
+        return {
+            "success": True,
+            "already_running": False,
+            "port": port,
+            "ws_url": f"ws://127.0.0.1:{port}/ws",
+            "pid": ttyd_process.pid
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to start ttyd: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+def stop_ttyd() -> Dict[str, Any]:
+    """Stop the ttyd process if running"""
+    global ttyd_process, ttyd_port
+    
+    if ttyd_process is None:
+        return {
+            "success": True,
+            "message": "ttyd was not running"
+        }
+    
+    if ttyd_process.poll() is not None:
+        # Process already exited
+        ttyd_process = None
+        ttyd_port = None
+        return {
+            "success": True,
+            "message": "ttyd had already exited"
+        }
+    
+    try:
+        pid = ttyd_process.pid
+        ttyd_process.terminate()
+        
+        # Wait for graceful shutdown
+        try:
+            ttyd_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            ttyd_process.kill()
+            ttyd_process.wait()
+        
+        ttyd_process = None
+        ttyd_port = None
+        
+        logger.info(f"ttyd stopped (pid: {pid})")
+        
+        return {
+            "success": True,
+            "message": f"ttyd stopped (pid: {pid})"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error stopping ttyd: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 
 def find_claude_command() -> Optional[str]:
@@ -4448,14 +4634,17 @@ def is_claude_installed() -> Dict[str, Any]:
 async def claude_code_status():
     """Get Claude Code availability and installation status"""
     claude_info = is_claude_installed()
+    ttyd_available = is_ttyd_installed()
     
     return {
-        "terminal_available": CLAUDE_CODE_AVAILABLE,
+        "ttyd_available": ttyd_available,
         "claude_installed": claude_info["installed"],
         "claude_path": claude_info.get("path"),
         "claude_version": claude_info.get("version"),
         "vllm_running": vllm_running,
-        "message": "Ready" if (CLAUDE_CODE_AVAILABLE and claude_info["installed"] and vllm_running) else "Not ready"
+        "ttyd_running": ttyd_process is not None and ttyd_process.poll() is None,
+        "ttyd_port": ttyd_port,
+        "message": "Ready" if (ttyd_available and claude_info["installed"] and vllm_running) else "Not ready"
     }
 
 
@@ -4560,264 +4749,63 @@ async def claude_code_install(method: str = "npm"):
         }
 
 
-@app.websocket("/ws/terminal")
-async def websocket_terminal(websocket: WebSocket):
-    """WebSocket endpoint for Claude Code terminal PTY communication"""
-    await websocket.accept()
+@app.post("/api/claude-code/start-terminal")
+async def start_claude_terminal():
+    """Start ttyd terminal for Claude Code"""
+    # Check if ttyd is installed
+    if not is_ttyd_installed():
+        return {
+            "success": False,
+            "error": "ttyd is not installed. Please install it first.",
+            "install_instructions": {
+                "macos": "brew install ttyd",
+                "ubuntu": "sudo apt install ttyd",
+                "fedora": "sudo dnf install ttyd"
+            }
+        }
     
-    if not CLAUDE_CODE_AVAILABLE:
-        await websocket.send_json({
-            "type": "error",
-            "message": "Terminal support not available. Install ptyprocess: pip install vllm-playground[claudecode]"
-        })
-        await websocket.close()
-        return
-    
+    # Check if Claude Code is installed
     claude_info = is_claude_installed()
     if not claude_info["installed"]:
-        await websocket.send_json({
-            "type": "error", 
-            "message": "Claude Code not installed. Install with: npm install -g @anthropic-ai/claude-code"
-        })
-        await websocket.close()
-        return
+        return {
+            "success": False,
+            "error": "Claude Code CLI is not installed. Install with: npm install -g @anthropic-ai/claude-code"
+        }
     
     # Get vLLM config for Claude Code environment
     config_response = await claude_code_config()
     if not config_response["available"]:
-        await websocket.send_json({
-            "type": "error",
-            "message": config_response["message"]
-        })
-        await websocket.close()
-        return
-    
-    # Build environment for Claude Code
-    env = os.environ.copy()
-    env.update(config_response["env"])
-    
-    # Ensure HOME is set so Claude Code can find ~/.claude.json config
-    if "HOME" not in env:
-        env["HOME"] = os.path.expanduser("~")
-    logger.info(f"PTY HOME directory: {env.get('HOME')}")
-    
-    # Set terminal environment variables for proper TUI rendering
-    env["TERM"] = "xterm-256color"
-    env["COLORTERM"] = "truecolor"
-    env["FORCE_COLOR"] = "1"
-    env["NO_COLOR"] = ""  # Ensure color is not disabled
-    # Additional vars to signal interactive terminal
-    env["CLICOLOR"] = "1"
-    env["CLICOLOR_FORCE"] = "1"
-    # Tell Node.js (Claude Code is likely Node-based) it's in a TTY
-    env["FORCE_TTY"] = "1"
-    env["NODE_NO_READLINE"] = "0"
-    # Ensure proper locale for Unicode
-    env["LANG"] = env.get("LANG", "en_US.UTF-8")
-    env["LC_ALL"] = env.get("LC_ALL", "en_US.UTF-8")
-    
-    # Verify vLLM server is actually responding before starting Claude Code
-    vllm_url = config_response["env"]["ANTHROPIC_BASE_URL"]
-    try:
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{vllm_url}/health", timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                if resp.status != 200:
-                    logger.warning(f"vLLM health check returned status {resp.status}")
-    except Exception as e:
-        logger.warning(f"vLLM health check failed: {e}")
-        await websocket.send_json({
-            "type": "error",
-            "message": f"Cannot connect to vLLM server at {vllm_url}. Make sure the server is running."
-        })
-        await websocket.close()
-        return
-    
-    # Create PTY process running claude
-    session_id = f"claude_{id(websocket)}"
-    proc = None
-    
-    try:
-        # Start claude in PTY
-        from ptyprocess import PtyProcess
-        
-        claude_path = claude_info["path"]
-        model_name = config_response["model"]
-        
-        # Log environment for debugging
-        logger.info(f"Starting Claude Code with env: ANTHROPIC_BASE_URL={env.get('ANTHROPIC_BASE_URL')}, MODEL={model_name}")
-        
-        # Build command with explicit model argument
-        claude_cmd = [
-            claude_path,
-            "--model", model_name,  # Explicitly pass model name
-        ]
-        
-        proc = PtyProcess.spawn(
-            claude_cmd,
-            env=env,
-            dimensions=(24, 80)  # Default terminal size
-        )
-        
-        logger.info(f"PTY spawned, pid: {proc.pid}")
-        
-        claude_terminal_sessions[session_id] = {
-            "process": proc,
-            "websocket": websocket
+        return {
+            "success": False,
+            "error": config_response["message"],
+            "needs_served_model_name": config_response.get("needs_served_model_name", False)
         }
-        
-        # Give Claude Code time to start
-        await asyncio.sleep(0.5)
-        
-        # Try to read any initial output that might be buffered
-        try:
-            initial_output = proc.read(4096)
-            if initial_output:
-                if isinstance(initial_output, bytes):
-                    initial_output = initial_output.decode('utf-8', errors='replace')
-                logger.info(f"Initial PTY output: {len(initial_output)} chars")
-                await websocket.send_json({
-                    "type": "output",
-                    "data": initial_output
-                })
-        except Exception as e:
-            logger.info(f"No initial output or error: {e}")
-        
-        # Check if process is still alive
-        if not proc.isalive():
-            # Process exited immediately - try to get exit status
-            exit_status = proc.exitstatus
-            signal_status = proc.signalstatus
-            logger.error(f"Claude Code exited immediately. Exit status: {exit_status}, Signal: {signal_status}")
-            await websocket.send_json({
-                "type": "error",
-                "message": f"Claude Code exited immediately (exit code: {exit_status}). Check server logs for details."
-            })
-            await websocket.close()
-            return
-        
-        await websocket.send_json({
-            "type": "connected",
-            "message": f"Claude Code terminal started (using vLLM at localhost:{config_response['port']})",
-            "model": config_response["model"]
-        })
-        
-        # Read from PTY and send to WebSocket
-        async def read_pty():
-            loop = asyncio.get_event_loop()
-            try:
-                while proc.isalive():
-                    try:
-                        # Read with timeout
-                        data = await asyncio.wait_for(
-                            loop.run_in_executor(None, lambda: proc.read(4096)),
-                            timeout=0.1
-                        )
-                        if data:
-                            # PtyProcess returns bytes, decode to string
-                            if isinstance(data, bytes):
-                                data = data.decode('utf-8', errors='replace')
-                            logger.info(f"PTY output: {len(data)} chars")
-                            await websocket.send_json({
-                                "type": "output",
-                                "data": data
-                            })
-                    except asyncio.TimeoutError:
-                        continue
-                    except EOFError:
-                        break
-                    except OSError as e:
-                        # Process likely exited - this is expected
-                        if e.errno == 5:  # Input/output error
-                            break
-                        raise
-                
-                # Process ended - get exit status
-                if not proc.isalive():
-                    exit_status = proc.exitstatus
-                    signal_status = proc.signalstatus
-                    logger.info(f"Claude Code process ended. Exit status: {exit_status}, Signal: {signal_status}")
-                    await websocket.send_json({
-                        "type": "exit",
-                        "exit_status": exit_status,
-                        "signal_status": signal_status
-                    })
-                    
-            except Exception as e:
-                logger.error(f"PTY read error: {e}")
-        
-        # Start reading task
-        read_task = asyncio.create_task(read_pty())
-        
-        # Handle incoming messages from WebSocket
-        try:
-            while True:
-                message = await websocket.receive_json()
-                
-                if message.get("type") == "input":
-                    # Check if process is still alive before writing
-                    if not proc.isalive():
-                        await websocket.send_json({
-                            "type": "error",
-                            "message": "Claude Code process has exited"
-                        })
-                        break
-                    # Write input to PTY (PtyProcess expects bytes)
-                    data = message.get("data", "")
-                    logger.info(f"PTY input received: {repr(data)}")
-                    if isinstance(data, str):
-                        data = data.encode('utf-8')
-                    try:
-                        proc.write(data)
-                        logger.info(f"PTY write: {len(data)} bytes written, proc alive: {proc.isalive()}")
-                    except OSError as e:
-                        if e.errno == 5:  # Input/output error - process died
-                            await websocket.send_json({
-                                "type": "error",
-                                "message": "Claude Code process exited unexpectedly"
-                            })
-                            break
-                        raise
-                
-                elif message.get("type") == "resize":
-                    # Handle terminal resize
-                    if proc.isalive():
-                        rows = message.get("rows", 24)
-                        cols = message.get("cols", 80)
-                        logger.info(f"Resizing PTY to {rows}x{cols}")
-                        proc.setwinsize(rows, cols)
-                        # Send SIGWINCH to force redraw
-                        import signal
-                        try:
-                            os.kill(proc.pid, signal.SIGWINCH)
-                            logger.info(f"Sent SIGWINCH to process {proc.pid}")
-                        except Exception as e:
-                            logger.warning(f"Failed to send SIGWINCH: {e}")
-                
-                elif message.get("type") == "ping":
-                    await websocket.send_json({"type": "pong"})
-                    
-        except WebSocketDisconnect:
-            logger.info(f"Claude Code terminal disconnected: {session_id}")
-        finally:
-            read_task.cancel()
-            
-    except Exception as e:
-        logger.error(f"Claude Code terminal error: {e}")
-        await websocket.send_json({
-            "type": "error",
-            "message": f"Terminal error: {str(e)}"
-        })
-    finally:
-        # Clean up
-        if proc and proc.isalive():
-            proc.terminate(force=True)
-        if session_id in claude_terminal_sessions:
-            del claude_terminal_sessions[session_id]
-        try:
-            await websocket.close()
-        except:
-            pass
+    
+    # Start ttyd
+    result = start_ttyd_for_claude(
+        env_config=config_response["env"],
+        model_name=config_response["model"]
+    )
+    
+    return result
+
+
+@app.post("/api/claude-code/stop-terminal")
+async def stop_claude_terminal():
+    """Stop the ttyd terminal"""
+    return stop_ttyd()
+
+
+@app.get("/api/claude-code/terminal-status")
+async def claude_terminal_status():
+    """Get the status of the ttyd terminal"""
+    is_running = ttyd_process is not None and ttyd_process.poll() is None
+    
+    return {
+        "running": is_running,
+        "port": ttyd_port if is_running else None,
+        "ws_url": f"ws://127.0.0.1:{ttyd_port}/ws" if is_running else None
+    }
 
 
 def main(host: str = None, port: int = None, reload: bool = False):
