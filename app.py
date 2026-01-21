@@ -4633,7 +4633,8 @@ async def websocket_terminal(websocket: WebSocket):
     
     try:
         # Start claude in PTY
-        from ptyprocess import PtyProcess
+        # Use PtyProcessUnicode for better text handling
+        from ptyprocess import PtyProcessUnicode
         
         claude_path = claude_info["path"]
         model_name = config_response["model"]
@@ -4647,11 +4648,15 @@ async def websocket_terminal(websocket: WebSocket):
             "--model", model_name,  # Explicitly pass model name
         ]
         
-        proc = PtyProcess.spawn(
+        proc = PtyProcessUnicode.spawn(
             claude_cmd,
             env=env,
             dimensions=(24, 80)  # Default terminal size
         )
+        
+        # Enable echo so input is visible
+        proc.setecho(True)
+        logger.info(f"PTY echo enabled, pid: {proc.pid}")
         
         claude_terminal_sessions[session_id] = {
             "process": proc,
@@ -4692,9 +4697,7 @@ async def websocket_terminal(websocket: WebSocket):
                             timeout=0.1
                         )
                         if data:
-                            # Decode bytes to string for JSON serialization
-                            if isinstance(data, bytes):
-                                data = data.decode('utf-8', errors='replace')
+                            # PtyProcessUnicode returns strings directly
                             logger.info(f"PTY output: {len(data)} chars")
                             await websocket.send_json({
                                 "type": "output",
@@ -4740,14 +4743,13 @@ async def websocket_terminal(websocket: WebSocket):
                             "message": "Claude Code process has exited"
                         })
                         break
-                    # Write input to PTY (encode to bytes if needed)
+                    # Write input to PTY (PtyProcessUnicode expects strings)
                     data = message.get("data", "")
                     logger.info(f"PTY input received: {repr(data)}")
-                    if isinstance(data, str):
-                        data = data.encode('utf-8')
                     try:
-                        written = proc.write(data)
-                        logger.info(f"PTY write: {len(data)} bytes written, proc alive: {proc.isalive()}")
+                        # PtyProcessUnicode.write() expects a string
+                        proc.write(data)
+                        logger.info(f"PTY write: {len(data)} chars written, proc alive: {proc.isalive()}")
                     except OSError as e:
                         if e.errno == 5:  # Input/output error - process died
                             await websocket.send_json({
