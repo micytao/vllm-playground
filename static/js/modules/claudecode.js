@@ -396,6 +396,7 @@ const ClaudeCodeMethods = {
                         
                         // ttyd resize format: type byte '1' + JSON
                         const resizeData = JSON.stringify({ columns: cols, rows: rows });
+                        const encoder = new TextEncoder();
                         const jsonData = encoder.encode(resizeData);
                         const message = new Uint8Array(jsonData.length + 1);
                         message[0] = 49;  // ASCII '1' for resize
