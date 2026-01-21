@@ -336,10 +336,39 @@ const ClaudeCodeMethods = {
             }
         });
         
-        // Also add a custom key event handler for debugging
+        // Custom key event handler - handle Ctrl+C specially
         this.claudeTerminal.attachCustomKeyEventHandler((event) => {
-            console.log('Key event:', event.type, event.key, event.keyCode);
-            // Return true to allow xterm to process the key
+            console.log('Key event:', event.type, event.key, event.keyCode, 'ctrl:', event.ctrlKey);
+            
+            // Handle Ctrl+C - send interrupt signal to terminal instead of browser copy
+            if (event.ctrlKey && event.key === 'c' && event.type === 'keydown') {
+                // Don't let browser handle it (copy)
+                event.preventDefault();
+                // Send ETX (Ctrl+C) character to terminal
+                if (this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
+                    console.log('Sending Ctrl+C (ETX) to terminal');
+                    this.claudeWebSocket.send(JSON.stringify({
+                        type: 'input',
+                        data: '\x03'  // ETX character (Ctrl+C)
+                    }));
+                }
+                return false;  // Don't let xterm also process it
+            }
+            
+            // Handle Ctrl+D - send EOF
+            if (event.ctrlKey && event.key === 'd' && event.type === 'keydown') {
+                event.preventDefault();
+                if (this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
+                    console.log('Sending Ctrl+D (EOT) to terminal');
+                    this.claudeWebSocket.send(JSON.stringify({
+                        type: 'input',
+                        data: '\x04'  // EOT character (Ctrl+D)
+                    }));
+                }
+                return false;
+            }
+            
+            // Return true to allow xterm to process other keys
             return true;
         });
         
