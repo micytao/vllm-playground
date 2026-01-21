@@ -4756,6 +4756,13 @@ async def websocket_terminal(websocket: WebSocket):
                         cols = message.get("cols", 80)
                         logger.info(f"Resizing PTY to {rows}x{cols}")
                         proc.setwinsize(rows, cols)
+                        # Send SIGWINCH to force redraw
+                        import signal
+                        try:
+                            os.kill(proc.pid, signal.SIGWINCH)
+                            logger.info(f"Sent SIGWINCH to process {proc.pid}")
+                        except Exception as e:
+                            logger.warning(f"Failed to send SIGWINCH: {e}")
                 
                 elif message.get("type") == "ping":
                     await websocket.send_json({"type": "pong"})
