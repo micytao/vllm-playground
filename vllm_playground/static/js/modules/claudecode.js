@@ -381,9 +381,10 @@ const ClaudeCodeMethods = {
                 // Give ttyd a moment to initialize, then send auth and resize
                 setTimeout(() => {
                     if (this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
-                        // Send empty auth token as text
-                        this.claudeWebSocket.send('');
-                        console.log('Sent empty auth token to ttyd');
+                        // Send empty auth token as BINARY (0 bytes) - ttyd expects this format
+                        // ttyd's client uses: socket.send(textEncoder.encode('')) which creates empty Uint8Array
+                        this.claudeWebSocket.send(new Uint8Array(0));
+                        console.log('Sent empty auth token to ttyd (binary)');
                         
                         // Send resize after a short delay
                         setTimeout(() => {
