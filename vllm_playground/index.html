@@ -1314,17 +1314,21 @@
                             </div>
                         </div>
 
-                        <!-- Not Available Warning (shown when ptyprocess not installed) -->
+                        <!-- Not Available Warning (shown when ttyd not installed) -->
                         <div class="claude-install-warning" id="claude-pty-warning" style="display: none;">
                             <div class="warning-icon">⚠️</div>
                             <h3>Terminal Support Not Available</h3>
-                            <p>Install the terminal support package to enable Claude Code:</p>
+                            <p>Install <strong>ttyd</strong> to enable the Claude Code terminal:</p>
                             <div class="install-commands">
-                                <code class="primary-cmd">pip install vllm-playground[claudecode]</code>
-                                <span class="cmd-divider">or</span>
-                                <code class="alt-cmd">pip install ptyprocess</code>
+                                <code class="primary-cmd">brew install ttyd</code>
+                                <span class="cmd-divider">(macOS)</span>
                             </div>
-                            <p class="warning-hint" style="margin-top: 12px;">Note: You also need to install Claude Code CLI separately. See <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener">official setup guide</a> for installation options.</p>
+                            <div class="install-commands" style="margin-top: 8px;">
+                                <code class="alt-cmd">sudo apt install ttyd</code>
+                                <span class="cmd-divider">(Ubuntu/Debian)</span>
+                            </div>
+                            <p class="warning-hint" style="margin-top: 12px;">Note: You also need to install Claude Code CLI. See <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener">official setup guide</a> for installation options.</p>
+                            <p class="warning-hint" style="margin-top: 8px;">Or run Claude Code manually in your terminal with the vLLM environment variables shown in <a href="#" id="claude-show-manual-instructions">manual setup</a>.</p>
                         </div>
 
                         <!-- Claude Not Installed Warning -->
@@ -1407,6 +1411,60 @@
                             <div class="claude-help-text">
                                 <p>💡 Claude Code is running with your vLLM server as the backend. Type your coding questions or requests above.</p>
                                 <p>Press <kbd>Ctrl+C</kbd> to interrupt, <kbd>Ctrl+D</kbd> to exit.</p>
+                            </div>
+                            
+                            <!-- Claude Code Setup Tips -->
+                            <div class="claude-local-note">
+                                <details>
+                                    <summary>📋 Setup Requirements & Tips</summary>
+                                    <div class="claude-tips-content">
+                                        <h4>Requirements</h4>
+                                        <ul>
+                                            <li><strong>vLLM v0.12.0+</strong> - Required for the Anthropic Messages API (<code>/v1/messages</code> endpoint)</li>
+                                            <li><strong>Native 65K+ context</strong> - Claude Code requests 32K max_tokens, so you need at least 65K total context (32K output + input tokens)</li>
+                                            <li><strong>Tool calling support</strong> - Model must support function/tool calling with appropriate parser</li>
+                                        </ul>
+                                        
+                                        <h4>Recommended Model</h4>
+                                        <p><strong>Meta Llama 3.1 8B Instruct</strong> - Best balance of context, tool calling, and GPU memory:</p>
+                                        <pre><code>Model: meta-llama/Llama-3.1-8B-Instruct
+Args:  --max-model-len 65536 --enable-auto-tool-choice --tool-call-parser llama3_json --gpu-memory-utilization 0.9</code></pre>
+                                        
+                                        <h4>Why These Settings?</h4>
+                                        <ul>
+                                            <li><strong>Native 128K context</strong> - No rope scaling hacks needed</li>
+                                            <li><strong>65536 max-model-len</strong> - Fits 32K output + 33K input on ~44GB GPU</li>
+                                            <li><strong>llama3_json parser</strong> - Built-in tool calling support</li>
+                                        </ul>
+                                        
+                                        <h4>GPU Memory Guide</h4>
+                                        <table class="claude-tips-table">
+                                            <tr><th>GPU VRAM</th><th>Recommended Model</th><th>Max Context</th></tr>
+                                            <tr><td>24GB (L4)</td><td>Llama-3.1-8B-Instruct</td><td>32K-48K</td></tr>
+                                            <tr><td>40-48GB (A6000)</td><td>Llama-3.1-8B-Instruct</td><td>65K</td></tr>
+                                            <tr><td>80GB (A100/H100)</td><td>Llama-3.1-70B-Instruct</td><td>128K</td></tr>
+                                        </table>
+                                        
+                                        <h4>Troubleshooting</h4>
+                                        <ul>
+                                            <li><strong>404 on /init</strong> - Upgrade to vLLM v0.12.0+</li>
+                                            <li><strong>max_tokens too large</strong> - Increase <code>--max-model-len</code> or use <code>/clear</code> to reset context</li>
+                                            <li><strong>CUDA OOM</strong> - Reduce <code>--max-model-len</code> or use quantized model (AWQ/GPTQ)</li>
+                                        </ul>
+                                    </div>
+                                </details>
+                            </div>
+                            
+                            <!-- Local Terminal Note -->
+                            <div class="claude-local-note">
+                                <details>
+                                    <summary>💻 Prefer to run in your local terminal?</summary>
+                                    <p>You can always run Claude Code directly in your terminal with these environment variables:</p>
+                                    <pre><code>export ANTHROPIC_BASE_URL=http://localhost:<span class="env-port">8000</span>
+export ANTHROPIC_API_KEY=vllm-playground
+claude --model <span class="env-model">your-model-name</span></code></pre>
+                                    <p class="note-hint">Replace the port and model name with your vLLM server settings.</p>
+                                </details>
                             </div>
                         </div>
 

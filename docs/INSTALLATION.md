@@ -135,7 +135,7 @@ oc get route vllm-playground -n vllm-playground
 
 | Mode | Image | Notes |
 |------|-------|-------|
-| GPU | `vllm/vllm-openai:v0.11.0` | Official vLLM image |
+| GPU | `vllm/vllm-openai:v0.12.0` | Official vLLM image (v0.12.0+ for Claude Code) |
 | CPU (Linux x86) | `quay.io/rh_ee_micyang/vllm-cpu:v0.11.0` | Self-built |
 | CPU (macOS ARM64) | `quay.io/rh_ee_micyang/vllm-mac:v0.11.0` | Self-built |
 

@@ -141,7 +141,7 @@ vim openshift/manifests/04-webui-deployment.yaml  # Update image reference
 
 # 3. Deploy to OpenShift (GPU mode)
 cd openshift/
-./deploy.sh --gpu  # Uses vllm/vllm-openai:v0.11.0
+./deploy.sh --gpu  # Uses vllm/vllm-openai:v0.12.0
 
 # 4. Get Web UI URL
 echo "https://$(oc get route vllm-playground -n vllm-playground -o jsonpath='{.spec.host}')"
@@ -233,7 +233,7 @@ The deployment supports both **CPU-only** and **GPU-enabled** clusters:
 
 | Mode | Container Image | Use Case |
 |------|----------------|----------|
-| **GPU** (default) | `vllm/vllm-openai:v0.11.0` | Production workloads on GPU clusters (official vLLM image) |
+| **GPU** (default) | `vllm/vllm-openai:v0.12.0` | Production workloads on GPU clusters (official vLLM image, v0.12.0+ for Claude Code) |
 | **CPU** | `quay.io/rh_ee_micyang/vllm-cpu:v0.11.0` | Development/testing on CPU-only clusters (self-built, optimized) |
 
 **Container Strategy:**

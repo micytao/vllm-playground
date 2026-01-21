@@ -282,7 +282,8 @@ def cmd_pull(args):
     pull_cpu = args.cpu or args.all
     
     # Image definitions (must match container_manager.py)
-    NVIDIA_IMAGE = "docker.io/vllm/vllm-openai:v0.11.0"
+    # Note: v0.12.0+ required for Anthropic Messages API (Claude Code support)
+    NVIDIA_IMAGE = "docker.io/vllm/vllm-openai:v0.12.0"
     AMD_IMAGE = "docker.io/rocm/vllm:latest"
     TPU_IMAGE = "docker.io/vllm/vllm-tpu:latest"
     CPU_IMAGE_MACOS = "quay.io/rh_ee_micyang/vllm-mac:v0.11.0"

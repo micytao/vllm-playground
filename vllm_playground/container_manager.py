@@ -47,7 +47,8 @@ class VLLMContainerManager:
     
     # Default images for different platforms and accelerators (must use fully-qualified names for Podman)
     # GPU images by accelerator type
-    DEFAULT_IMAGE_GPU_NVIDIA = "docker.io/vllm/vllm-openai:v0.11.0"  # Official vLLM CUDA image (linux/amd64)
+    # Note: v0.12.0+ required for Anthropic Messages API (Claude Code support)
+    DEFAULT_IMAGE_GPU_NVIDIA = "docker.io/vllm/vllm-openai:v0.12.0"  # Official vLLM CUDA image (linux/amd64)
     DEFAULT_IMAGE_GPU_AMD = "docker.io/rocm/vllm:latest"  # Official vLLM ROCm image from AMD
     DEFAULT_IMAGE_GPU_TPU = "docker.io/vllm/vllm-tpu:latest"  # Official vLLM TPU image for Google Cloud TPU
     # CPU images by platform
@@ -96,7 +97,7 @@ class VLLMContainerManager:
            - macOS (ARM64): quay.io/rh_ee_micyang/vllm-mac:v0.11.0
            - Linux x86_64: quay.io/rh_ee_micyang/vllm-cpu:v0.11.0
         2. GPU mode: Select based on accelerator type
-           - nvidia: docker.io/vllm/vllm-openai:v0.11.0 (Official CUDA image)
+           - nvidia: docker.io/vllm/vllm-openai:v0.12.0 (Official CUDA image, v0.12.0+ for Claude Code)
            - amd: docker.io/rocm/vllm:latest (Official ROCm image)
            - tpu: docker.io/vllm/vllm-tpu:latest (Official TPU image for Google Cloud)
         

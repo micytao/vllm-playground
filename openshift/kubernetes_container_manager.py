@@ -301,7 +301,7 @@ class VLLMKubernetesManager:
         
         # Image pull secrets - only needed for private registries
         # Public images don't need pull secrets:
-        # - vllm/vllm-openai:v0.11.0 (official community image for GPU)
+        # - vllm/vllm-openai:v0.12.0 (official community image for GPU, v0.12.0+ for Claude Code)
         # - quay.io/rh_ee_micyang/vllm-cpu:v0.11.0 (self-built, publicly accessible for CPU)
         # 
         # Example for private registries (not needed for current setup):
