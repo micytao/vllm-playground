@@ -67,3 +67,22 @@ coverage.xml
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# =============================================================================
+# Single Source of Truth - Prevent duplicate source files at root
+# =============================================================================
+# All source code lives in vllm_playground/ (the package directory).
+# These patterns prevent accidental recreation of root-level duplicates.
+# See CONTRIBUTING.md for details on the project structure.
+
+/app.py
+/container_manager.py
+/index.html
+/benchmarks.json
+/static/
+/mcp_client/
+/config/
+/recipes/
+
+# Note: /assets/ is NOT ignored - it contains README images referenced by GitHub URLs
+/vllm_playground/CHANGELOG.md
