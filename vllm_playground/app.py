@@ -19,6 +19,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Fil
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
+import struct
+import signal
+import aiohttp
 
 # Setup logging (must be before imports that use logger)
 logging.basicConfig(
@@ -79,6 +82,25 @@ websocket_connections: List[WebSocket] = []
 latest_vllm_metrics: Dict[str, Any] = {}  # Store latest metrics from logs
 metrics_timestamp: Optional[datetime] = None  # Track when metrics were last updated
 current_model_identifier: Optional[str] = None  # Track the actual model identifier passed to vLLM
+current_served_model_name: Optional[str] = None  # Track the served model name alias (for API calls)
+
+
+def get_model_name_for_api() -> Optional[str]:
+    """
+    Get the model name to use in API calls.
+    
+    Uses served_model_name if set (required when --served-model-name is used),
+    otherwise falls back to current_model_identifier or current_config.model.
+    
+    Returns None if no model name is available.
+    """
+    if current_served_model_name:
+        return current_served_model_name
+    if current_model_identifier:
+        return current_model_identifier
+    if current_config:
+        return current_config.model
+    return None
 
 
 class VLLMConfig(BaseModel):
@@ -114,6 +136,9 @@ class VLLMConfig(BaseModel):
     run_mode: Literal["subprocess", "container"] = "subprocess"
     # GPU device selection for subprocess mode (e.g., "0", "1", "0,1" for multi-GPU)
     gpu_device: Optional[str] = None
+    # GPU accelerator type for container mode - determines which image and device flags to use
+    # Options: nvidia (CUDA), amd (ROCm), tpu (Google Cloud TPU)
+    accelerator: Literal["nvidia", "amd", "tpu"] = "nvidia"
     # Tool calling support - enables function calling with compatible models
     # Requires vLLM server to be started with --enable-auto-tool-choice and --tool-call-parser
     enable_tool_calling: bool = False  # Disabled by default (can cause issues with some models)
@@ -127,6 +152,15 @@ class VLLMConfig(BaseModel):
     # ModelScope SDK token for accessing gated models
     # Get token from https://www.modelscope.cn/my/myaccesstoken
     modelscope_token: Optional[str] = None
+    # Served model name - alias for the model used in API calls
+    # Required for Claude Code integration (model names with '/' don't work)
+    # When set, all API calls will use this name instead of the model path
+    served_model_name: Optional[str] = None
+    # Compute mode: cpu, gpu, or metal (Apple Silicon GPU)
+    compute_mode: Literal["cpu", "gpu", "metal"] = "cpu"
+    # Custom virtual environment path for subprocess mode
+    # Allows using specific vLLM installations (e.g., vllm-metal)
+    venv_path: Optional[str] = None
 
 
 def detect_tool_call_parser(model_name: str) -> Optional[str]:
@@ -854,17 +888,25 @@ async def get_features():
     try:
         import vllm
         features["vllm_installed"] = True
-        # Try multiple ways to get vLLM version
+
+        # Try to get vLLM version
         vllm_ver = getattr(vllm, '__version__', None)
-        if not vllm_ver:
+        if vllm_ver is None:
             try:
                 from importlib.metadata import version
                 vllm_ver = version('vllm')
             except Exception:
                 pass
-        features["vllm_version"] = vllm_ver  # None if not found
+
+        features["vllm_version"] = vllm_ver
+
+        if vllm_ver:
+            logger.info(f"vLLM v{vllm_ver} detected")
+        else:
+            logger.info("vLLM installed (version unknown)")
     except ImportError:
-        pass
+        features["vllm_installed"] = False
+        logger.info("vLLM not installed")
     
     # Check guidellm
     try:
@@ -1145,14 +1187,20 @@ async def mcp_get_presets():
 @app.get("/api/hardware-capabilities")
 async def get_hardware_capabilities():
     """
-    Check GPU availability
+    Check GPU availability and detect accelerator type
     
     This endpoint checks if GPU hardware is available in the cluster.
-    For Kubernetes/OpenShift: Checks node resources for nvidia.com/gpu
-    For local/container: Falls back to nvidia-smi check
+    For Kubernetes/OpenShift: Checks node resources for nvidia.com/gpu or amd.com/gpu
+    For local/container: Falls back to nvidia-smi or amd-smi check
+    
+    Returns:
+        gpu_available: bool - Whether any GPU is detected
+        detection_method: str - How GPU was detected (nvidia-smi, amd-smi, kubernetes, none)
+        accelerator: str - Detected accelerator type (nvidia, amd, or null if none)
     """
     gpu_available = False
     detection_method = "none"
+    accelerator = None  # Will be "nvidia" or "amd" if detected
     
     # First, try Kubernetes API if we're in a K8s environment
     if os.getenv('KUBERNETES_NAMESPACE'):
@@ -1166,26 +1214,63 @@ async def get_hardware_capabilities():
             # List all nodes and check for GPU resources
             nodes = v1.list_node()
             for node in nodes.items:
-                # Check node capacity for nvidia.com/gpu
                 if node.status and node.status.capacity:
-                    gpu_capacity = node.status.capacity.get('nvidia.com/gpu', '0')
-                    if gpu_capacity and int(gpu_capacity) > 0:
+                    # Check for NVIDIA GPUs
+                    nvidia_capacity = node.status.capacity.get('nvidia.com/gpu', '0')
+                    if nvidia_capacity and int(nvidia_capacity) > 0:
                         gpu_available = True
                         detection_method = "kubernetes"
-                        logger.info(f"GPU detected via Kubernetes API: {node.metadata.name} has {gpu_capacity} GPUs")
+                        accelerator = "nvidia"
+                        logger.info(f"NVIDIA GPU detected via Kubernetes API: {node.metadata.name} has {nvidia_capacity} GPUs")
+                        break
+                    
+                    # Check for AMD GPUs
+                    amd_capacity = node.status.capacity.get('amd.com/gpu', '0')
+                    if amd_capacity and int(amd_capacity) > 0:
+                        gpu_available = True
+                        detection_method = "kubernetes"
+                        accelerator = "amd"
+                        logger.info(f"AMD GPU detected via Kubernetes API: {node.metadata.name} has {amd_capacity} GPUs")
+                        break
+                    
+                    # Check for Google Cloud TPUs
+                    tpu_capacity = node.status.capacity.get('google.com/tpu', '0')
+                    if tpu_capacity and int(tpu_capacity) > 0:
+                        gpu_available = True
+                        detection_method = "kubernetes"
+                        accelerator = "tpu"
+                        logger.info(f"TPU detected via Kubernetes API: {node.metadata.name} has {tpu_capacity} TPUs")
                         break
                 
                 # Also check node labels for GPU indicators
                 if node.metadata and node.metadata.labels:
                     labels = node.metadata.labels
-                    if any('gpu' in k.lower() or 'nvidia' in k.lower() for k in labels.keys()):
-                        # Double-check with capacity to avoid false positives
+                    if any('nvidia' in k.lower() for k in labels.keys()):
                         if node.status and node.status.capacity:
                             gpu_capacity = node.status.capacity.get('nvidia.com/gpu', '0')
                             if gpu_capacity and int(gpu_capacity) > 0:
                                 gpu_available = True
                                 detection_method = "kubernetes"
-                                logger.info(f"GPU detected via node labels: {node.metadata.name}")
+                                accelerator = "nvidia"
+                                logger.info(f"NVIDIA GPU detected via node labels: {node.metadata.name}")
+                                break
+                    if any('amd' in k.lower() for k in labels.keys()):
+                        if node.status and node.status.capacity:
+                            gpu_capacity = node.status.capacity.get('amd.com/gpu', '0')
+                            if gpu_capacity and int(gpu_capacity) > 0:
+                                gpu_available = True
+                                detection_method = "kubernetes"
+                                accelerator = "amd"
+                                logger.info(f"AMD GPU detected via node labels: {node.metadata.name}")
+                                break
+                    if any('tpu' in k.lower() or 'cloud.google.com/gke-tpu' in k for k in labels.keys()):
+                        if node.status and node.status.capacity:
+                            tpu_capacity = node.status.capacity.get('google.com/tpu', '0')
+                            if tpu_capacity and int(tpu_capacity) > 0:
+                                gpu_available = True
+                                detection_method = "kubernetes"
+                                accelerator = "tpu"
+                                logger.info(f"TPU detected via node labels: {node.metadata.name}")
                                 break
             
             if not gpu_available:
@@ -1196,7 +1281,7 @@ async def get_hardware_capabilities():
         except Exception as e:
             logger.warning(f"Error checking GPU via Kubernetes API: {e}")
     
-    # Fallback: Try nvidia-smi for local/container environments
+    # Fallback: Try nvidia-smi for NVIDIA GPUs (local/container environments)
     if not gpu_available and not os.getenv('KUBERNETES_NAMESPACE'):
         try:
             result = subprocess.run(
@@ -1208,18 +1293,76 @@ async def get_hardware_capabilities():
             if result.returncode == 0 and bool(result.stdout.strip()):
                 gpu_available = True
                 detection_method = "nvidia-smi"
-                logger.info(f"GPU detected via nvidia-smi: {result.stdout.strip()}")
+                accelerator = "nvidia"
+                logger.info(f"NVIDIA GPU detected via nvidia-smi: {result.stdout.strip()}")
         except FileNotFoundError:
-            logger.info("nvidia-smi not found - no local GPU detected")
+            logger.debug("nvidia-smi not found - checking for AMD GPU")
         except subprocess.TimeoutExpired:
             logger.warning("nvidia-smi timeout")
         except Exception as e:
             logger.warning(f"Error checking GPU via nvidia-smi: {e}")
     
-    logger.info(f"Final GPU availability: {gpu_available} (method: {detection_method})")
+    # Fallback: Try amd-smi for AMD GPUs (local/container environments)
+    if not gpu_available and not os.getenv('KUBERNETES_NAMESPACE'):
+        try:
+            result = subprocess.run(
+                ['amd-smi', 'list'],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            # amd-smi list returns 0 and shows GPU info if AMD GPUs are present
+            if result.returncode == 0 and 'GPU' in result.stdout:
+                gpu_available = True
+                detection_method = "amd-smi"
+                accelerator = "amd"
+                # Extract GPU name from output (first line after GPU:)
+                lines = result.stdout.strip().split('\n')
+                gpu_info = next((l for l in lines if 'BDF' in l or 'GPU' in l), 'AMD GPU')
+                logger.info(f"AMD GPU detected via amd-smi: {gpu_info}")
+        except FileNotFoundError:
+            logger.debug("amd-smi not found - no AMD GPU detected")
+        except subprocess.TimeoutExpired:
+            logger.warning("amd-smi timeout")
+        except Exception as e:
+            logger.warning(f"Error checking GPU via amd-smi: {e}")
+    
+    # Fallback: Try tpu-info for Google Cloud TPUs (local/container environments)
+    if not gpu_available and not os.getenv('KUBERNETES_NAMESPACE'):
+        try:
+            result = subprocess.run(
+                ['tpu-info'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            # tpu-info returns 0 and shows TPU info if TPUs are present
+            if result.returncode == 0 and ('TPU' in result.stdout or 'chip' in result.stdout.lower()):
+                gpu_available = True
+                detection_method = "tpu-info"
+                accelerator = "tpu"
+                logger.info(f"TPU detected via tpu-info")
+        except FileNotFoundError:
+            # Fallback: Check for /dev/accel* devices (TPU device nodes)
+            import glob
+            accel_devices = glob.glob('/dev/accel*')
+            if accel_devices:
+                gpu_available = True
+                detection_method = "dev-accel"
+                accelerator = "tpu"
+                logger.info(f"TPU detected via /dev/accel* devices: {accel_devices}")
+            else:
+                logger.debug("tpu-info not found and no /dev/accel* devices - no TPU detected")
+        except subprocess.TimeoutExpired:
+            logger.warning("tpu-info timeout")
+        except Exception as e:
+            logger.warning(f"Error checking TPU via tpu-info: {e}")
+    
+    logger.info(f"Final GPU availability: {gpu_available} (method: {detection_method}, accelerator: {accelerator})")
     return {
         "gpu_available": gpu_available,
-        "detection_method": detection_method
+        "detection_method": detection_method,
+        "accelerator": accelerator  # "nvidia", "amd", "tpu", or None
     }
 
 
@@ -1347,15 +1490,20 @@ def get_jetson_temperature():
 async def get_gpu_status():
     """
     Get detailed GPU status information including memory usage and utilization.
-    Supports both desktop GPUs (4090, etc.) and NVIDIA Jetson devices (Thor, Orin, etc.)
+    Supports:
+    - NVIDIA desktop GPUs (4090, etc.) via nvidia-smi
+    - NVIDIA Jetson devices (Thor, Orin, etc.) with unified memory
+    - AMD GPUs via amd-smi
     
     For Jetson devices with unified memory, memory info is read from /proc/meminfo
     since nvidia-smi returns [N/A] for memory fields.
     """
     gpu_info = []
+    accelerator_type = None
     
+    # First, try nvidia-smi for NVIDIA GPUs
+    nvidia_found = False
     try:
-        # Use nvidia-smi to get detailed GPU information
         result = subprocess.run([
             'nvidia-smi', 
             '--query-gpu=index,name,memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu',
@@ -1363,6 +1511,8 @@ async def get_gpu_status():
         ], capture_output=True, text=True, timeout=5)
         
         if result.returncode == 0 and result.stdout.strip():
+            nvidia_found = True
+            accelerator_type = "nvidia"
             lines = result.stdout.strip().split('\n')
             for line in lines:
                 parts = [p.strip() for p in line.split(',')]
@@ -1400,44 +1550,98 @@ async def get_gpu_status():
                         "utilization": safe_int(parts[5], 0),
                         "temperature": temperature,
                         "is_jetson": is_jetson,
-                        "unified_memory": is_jetson  # Jetson uses unified CPU/GPU memory
+                        "unified_memory": is_jetson,
+                        "accelerator": "nvidia"
                     })
-        
-        return {
-            "gpu_available": len(gpu_info) > 0,
-            "gpu_count": len(gpu_info),
-            "gpus": gpu_info
-        }
-        
     except FileNotFoundError:
-        logger.info("nvidia-smi not found - no GPU status available")
-        return {
-            "gpu_available": False,
-            "gpu_count": 0,
-            "gpus": []
-        }
+        logger.debug("nvidia-smi not found - checking for AMD GPU")
     except subprocess.TimeoutExpired:
         logger.warning("nvidia-smi timeout")
-        return {
-            "gpu_available": False,
-            "gpu_count": 0,
-            "gpus": [],
-            "error": "GPU query timeout"
-        }
     except Exception as e:
-        logger.warning(f"Error getting GPU status: {e}")
-        return {
-            "gpu_available": False,
-            "gpu_count": 0,
-            "gpus": [],
-            "error": str(e)
-        }
+        logger.warning(f"Error getting NVIDIA GPU status: {e}")
+    
+    # If no NVIDIA GPUs found, try amd-smi for AMD GPUs
+    if not nvidia_found:
+        try:
+            # Use amd-smi metric to get GPU metrics in JSON format
+            result = subprocess.run(
+                ['amd-smi', 'metric', '--json'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                import json as json_module
+                try:
+                    amd_data = json_module.loads(result.stdout)
+                    accelerator_type = "amd"
+                    
+                    # amd-smi returns a list of GPU metrics
+                    if isinstance(amd_data, list):
+                        for idx, gpu_data in enumerate(amd_data):
+                            # Extract metrics from AMD SMI output
+                            # Structure may vary by version, handle gracefully
+                            gpu_name = gpu_data.get('asic', {}).get('name', f'AMD GPU {idx}')
+                            if not gpu_name or gpu_name == f'AMD GPU {idx}':
+                                gpu_name = gpu_data.get('gpu', f'AMD GPU {idx}')
+                            
+                            # Memory info (in MB)
+                            memory = gpu_data.get('vram', {})
+                            if not memory:
+                                memory = gpu_data.get('memory', {})
+                            memory_total = safe_int(memory.get('total', {}).get('value', 0), 0)
+                            memory_used = safe_int(memory.get('used', {}).get('value', 0), 0)
+                            memory_free = memory_total - memory_used if memory_total > 0 else 0
+                            
+                            # Utilization
+                            usage = gpu_data.get('usage', {})
+                            utilization = safe_int(usage.get('gfx_activity', {}).get('value', 0), 0)
+                            if utilization == 0:
+                                utilization = safe_int(gpu_data.get('gfx_activity', {}).get('value', 0), 0)
+                            
+                            # Temperature
+                            temp_data = gpu_data.get('temperature', {})
+                            temperature = safe_int(temp_data.get('hotspot', {}).get('value', 0), 0)
+                            if temperature == 0:
+                                temperature = safe_int(temp_data.get('edge', {}).get('value', 0), 0)
+                            
+                            gpu_info.append({
+                                "index": idx,
+                                "name": str(gpu_name),
+                                "memory_used": memory_used,
+                                "memory_total": memory_total,
+                                "memory_free": memory_free,
+                                "utilization": utilization,
+                                "temperature": temperature,
+                                "is_jetson": False,
+                                "unified_memory": False,
+                                "accelerator": "amd"
+                            })
+                            
+                    logger.info(f"AMD GPU status retrieved: {len(gpu_info)} GPUs found")
+                except json_module.JSONDecodeError:
+                    logger.warning("Failed to parse amd-smi JSON output")
+                    
+        except FileNotFoundError:
+            logger.debug("amd-smi not found - no AMD GPU status available")
+        except subprocess.TimeoutExpired:
+            logger.warning("amd-smi timeout")
+        except Exception as e:
+            logger.warning(f"Error getting AMD GPU status: {e}")
+    
+    return {
+        "gpu_available": len(gpu_info) > 0,
+        "gpu_count": len(gpu_info),
+        "gpus": gpu_info,
+        "accelerator": accelerator_type
+    }
 
 
 @app.post("/api/start")
 async def start_server(config: VLLMConfig):
     """Start the vLLM server in subprocess or container mode"""
-    global container_id, vllm_process, vllm_running, current_config, server_start_time, current_model_identifier, current_run_mode
+    global container_id, vllm_process, vllm_running, current_config, server_start_time, current_model_identifier, current_served_model_name, current_run_mode
     
     # Check if server is already running
     if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
@@ -1509,20 +1713,173 @@ async def start_server(config: VLLMConfig):
             )
         
         await broadcast_log(f"[WEBUI] Run mode: {config.run_mode.upper()}")
-        
-        # Check if user manually selected CPU mode (takes precedence)
-        if config.use_cpu:
-            logger.info("CPU mode manually selected by user")
-            await broadcast_log("[WEBUI] Using CPU mode (manual selection)")
-        else:
-            # Auto-detect macOS and enable CPU mode
-            import platform
-            is_macos = platform.system() == "Darwin"
-            
-            if is_macos:
-                config.use_cpu = True
-                logger.info("Detected macOS - enabling CPU mode")
-                await broadcast_log("[WEBUI] Detected macOS - using CPU mode")
+
+        # Validate and configure custom virtual environment if provided
+        python_executable = sys.executable  # Default to current Python
+        if config.venv_path and config.run_mode == "subprocess":
+            await broadcast_log("[WEBUI] Validating custom virtual environment...")
+
+            try:
+                # Expand and resolve path (security: prevent path traversal)
+                venv_path = Path(config.venv_path).expanduser().resolve(strict=False)
+
+                # Verify path exists
+                if not venv_path.exists():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Virtual environment path does not exist: {config.venv_path}"
+                    )
+
+                # Verify it's a directory
+                if not venv_path.is_dir():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Virtual environment path is not a directory: {config.venv_path}"
+                    )
+
+                # Find Python executable (platform-specific)
+                import platform
+                if platform.system() == "Windows":
+                    python_path = venv_path / "Scripts" / "python.exe"
+                else:
+                    python_path = venv_path / "bin" / "python"
+
+                # Verify Python executable exists
+                if not python_path.exists():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Python executable not found in virtual environment: {python_path}"
+                    )
+
+                # Verify it's actually a valid Python executable
+                try:
+                    result = subprocess.run(
+                        [str(python_path), "--version"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode != 0:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Invalid Python executable: {python_path}"
+                        )
+                    python_version = result.stdout.strip()
+                    await broadcast_log(f"[WEBUI] Found Python: {python_version}")
+                except subprocess.TimeoutExpired:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Python executable timed out: {python_path}"
+                    )
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Failed to verify Python executable: {e}"
+                    )
+
+                # Check for vLLM installation using multiple methods
+                vllm_found = False
+                vllm_version = None
+                detection_method = None
+
+                # Method 1: Try direct Python import
+                try:
+                    result = subprocess.run(
+                        [str(python_path), "-c", "import vllm; print(vllm.__version__)"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        vllm_found = True
+                        vllm_version = result.stdout.strip()
+                        detection_method = "Python import"
+                except Exception:
+                    pass
+
+                # Method 2: Try pip list
+                if not vllm_found:
+                    try:
+                        pip_path = python_path.parent / ("pip.exe" if platform.system() == "Windows" else "pip")
+                        result = subprocess.run(
+                            [str(pip_path), "list", "--format=freeze"],
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        if result.returncode == 0:
+                            for line in result.stdout.split('\n'):
+                                if line.startswith('vllm=='):
+                                    vllm_found = True
+                                    vllm_version = line.split('==')[1]
+                                    detection_method = "pip list"
+                                    break
+                    except Exception:
+                        pass
+
+                # Method 3: Try uv pip list (fallback for vllm-metal installations)
+                if not vllm_found:
+                    try:
+                        result = subprocess.run(
+                            ["uv", "pip", "list", "--python", str(python_path)],
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        if result.returncode == 0:
+                            for line in result.stdout.split('\n'):
+                                if 'vllm' in line.lower():
+                                    vllm_found = True
+                                    # Extract version from "vllm 0.13.0" format
+                                    parts = line.split()
+                                    if len(parts) >= 2:
+                                        vllm_version = parts[1]
+                                    detection_method = "uv pip list"
+                                    break
+                    except FileNotFoundError:
+                        # uv not installed, skip this method
+                        pass
+                    except Exception:
+                        pass
+
+                # Error if vLLM not found by any method
+                if not vllm_found:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"vLLM not found in virtual environment: {venv_path}\n"
+                                f"Tried: Python import, pip list, uv pip list\n"
+                                f"Please ensure vLLM is installed in this environment."
+                    )
+
+                # Success - use this Python executable
+                python_executable = str(python_path)
+                await broadcast_log(f"[WEBUI] ✓ vLLM detected via {detection_method}: v{vllm_version}")
+                await broadcast_log(f"[WEBUI] Using Python from: {python_executable}")
+
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error validating virtual environment: {e}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Error validating virtual environment: {str(e)}"
+                )
+
+        # Convert compute_mode to use_cpu for backend compatibility
+        # compute_mode: "cpu" | "gpu" | "metal"
+        # Metal mode uses GPU settings (not CPU)
+        if config.compute_mode == "cpu":
+            config.use_cpu = True
+            logger.info("CPU mode selected via compute_mode")
+            await broadcast_log("[WEBUI] Compute Mode: CPU")
+        elif config.compute_mode == "metal":
+            config.use_cpu = False  # Metal uses GPU settings
+            logger.info("Metal mode selected via compute_mode")
+            await broadcast_log("[WEBUI] Compute Mode: Metal (Apple Silicon GPU)")
+        else:  # gpu
+            config.use_cpu = False
+            logger.info("GPU mode selected via compute_mode")
+            await broadcast_log("[WEBUI] Compute Mode: GPU")
         
         # Set environment variables for CPU mode
         env = os.environ.copy()
@@ -1565,17 +1922,30 @@ async def start_server(config: VLLMConfig):
             await broadcast_log(f"[WEBUI] CPU Settings - KV Cache: {config.cpu_kvcache_space}GB, Thread Binding: {config.cpu_omp_threads_bind}")
             await broadcast_log(f"[WEBUI] CPU Optimizations disabled for Apple Silicon compatibility")
             await broadcast_log(f"[WEBUI] Using V1 engine for CPU mode")
+        elif config.compute_mode == "metal":
+            # Metal GPU mode (Apple Silicon)
+            env['VLLM_TARGET_DEVICE'] = 'metal'
+            env['VLLM_USE_V1'] = '1'
+            logger.info("Metal Mode - VLLM_TARGET_DEVICE=metal, VLLM_USE_V1=1")
+            await broadcast_log(f"[WEBUI] Metal Settings - Target Device: metal, V1 Engine: enabled")
+            await broadcast_log(f"[WEBUI] Using Apple Silicon GPU acceleration")
         else:
             await broadcast_log("[WEBUI] Using GPU mode")
         
         # Build command
         cmd = [
-            sys.executable,
+            python_executable,
             "-m", "vllm.entrypoints.openai.api_server",
             "--model", model_source,  # Use model_source (local path or HF model name)
             "--host", config.host,
             "--port", str(config.port),
         ]
+        
+        # Add served-model-name if specified (required for Claude Code integration)
+        # This sets an alias for the model that doesn't contain '/'
+        if config.served_model_name:
+            cmd.extend(["--served-model-name", config.served_model_name])
+            await broadcast_log(f"[WEBUI] Served model name: {config.served_model_name}")
         
         # Add GPU-specific parameters only if not using CPU
         # Note: vLLM auto-detects CPU platform, no --device flag needed
@@ -1606,12 +1976,13 @@ async def start_server(config: VLLMConfig):
             cmd.extend(["--max-model-len", str(max_len)])
             cmd.extend(["--max-num-batched-tokens", str(max_len)])
             await broadcast_log(f"[WEBUI] Using user-specified max-model-len: {max_len}")
-        elif config.use_cpu:
-            # CPU mode: Use conservative defaults (2048)
+        elif config.compute_mode in ["cpu", "metal"]:
+            # CPU/Metal mode: Use conservative defaults (2048)
+            # Metal has less memory than desktop GPUs, so use same as CPU
             max_len = 2048
             cmd.extend(["--max-model-len", str(max_len)])
             cmd.extend(["--max-num-batched-tokens", str(max_len)])
-            await broadcast_log(f"[WEBUI] Using default max-model-len for CPU: {max_len}")
+            await broadcast_log(f"[WEBUI] Using default max-model-len for {config.compute_mode.upper()}: {max_len}")
         else:
             # GPU mode: Use reasonable default (8192) instead of letting vLLM auto-detect
             max_len = 8192
@@ -1696,7 +2067,9 @@ async def start_server(config: VLLMConfig):
                 'custom_chat_template': config.custom_chat_template,
                 'local_model_path': config.local_model_path,
                 'enable_tool_calling': config.enable_tool_calling,
-                'tool_call_parser': config.tool_call_parser
+                'tool_call_parser': config.tool_call_parser,
+                'accelerator': config.accelerator,  # GPU accelerator type (nvidia/amd)
+                'served_model_name': config.served_model_name  # Model alias (for Claude Code)
             }
             
             logger.info(f"Container config: enable_tool_calling={config.enable_tool_calling}, tool_call_parser={config.tool_call_parser}")
@@ -1711,6 +2084,7 @@ async def start_server(config: VLLMConfig):
             
             # Store the actual model identifier for use in API calls
             current_model_identifier = model_source
+            current_served_model_name = config.served_model_name  # May be None
             
             # Start log reader task
             asyncio.create_task(read_logs_container())
@@ -1793,6 +2167,7 @@ async def start_server(config: VLLMConfig):
             
             # Store the actual model identifier for use in API calls
             current_model_identifier = model_source
+            current_served_model_name = config.served_model_name  # May be None
             
             # Start log reader task
             asyncio.create_task(read_logs_subprocess())
@@ -1820,7 +2195,7 @@ async def start_server(config: VLLMConfig):
 @app.post("/api/stop")
 async def stop_server():
     """Stop the vLLM server (container or subprocess)"""
-    global container_id, vllm_process, vllm_running, server_start_time, current_model_identifier, current_run_mode
+    global container_id, vllm_process, vllm_running, server_start_time, current_model_identifier, current_served_model_name, current_run_mode
     
     # Check if server is running based on mode
     if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
@@ -1865,6 +2240,7 @@ async def stop_server():
         vllm_running = False
         server_start_time = None
         current_model_identifier = None
+        current_served_model_name = None
         current_run_mode = None
         
         return {"status": "stopped"}
@@ -2183,9 +2559,10 @@ async def chat(request: ChatRequestWithStopTokens):
             messages_dict.append(msg)
         
         # Build payload for OpenAI-compatible endpoint
-        # Use current_model_identifier (actual path or HF model) instead of config.model
+        # Use get_model_name_for_api() to get the correct model name
+        # (served_model_name if set, otherwise model identifier)
         payload = {
-            "model": current_model_identifier if current_model_identifier else current_config.model,
+            "model": get_model_name_for_api(),
             "messages": messages_dict,
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
@@ -2822,7 +3199,7 @@ async def completion(request: CompletionRequest):
             logger.info(f"Using URL: {url}")
         
         payload = {
-            "model": current_model_identifier if current_model_identifier else current_config.model,
+            "model": get_model_name_for_api(),
             "prompt": request.prompt,
             "temperature": request.temperature,
             "max_tokens": request.max_tokens
@@ -3796,7 +4173,7 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
                 
                 try:
                     payload = {
-                        "model": current_model_identifier if current_model_identifier else server_config.model,
+                        "model": get_model_name_for_api(),
                         "messages": [{"role": "user", "content": prompt_text}],
                         "max_tokens": config.output_tokens,
                         "temperature": 0.7,
@@ -4169,6 +4546,547 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
         benchmark_results = None
 
 
+
+
+# ============================================
+# Claude Code Integration
+# ============================================
+
+# Global state for ttyd process
+ttyd_process: Optional[subprocess.Popen] = None
+ttyd_port: Optional[int] = None
+
+
+def is_ttyd_installed() -> bool:
+    """Check if ttyd is installed on the system"""
+    return shutil.which("ttyd") is not None
+
+
+def find_available_port(start_port: int = 7681, max_attempts: int = 100) -> int:
+    """Find an available port starting from start_port"""
+    import socket
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('127.0.0.1', port))
+                return port
+        except OSError:
+            continue
+    raise RuntimeError(f"Could not find available port in range {start_port}-{start_port + max_attempts}")
+
+
+def start_ttyd_for_claude(env_config: Dict[str, str], model_name: str) -> Dict[str, Any]:
+    """Start ttyd process running Claude Code with the given environment
+    
+    Args:
+        env_config: Environment variables for Claude Code (ANTHROPIC_BASE_URL, etc.)
+        model_name: The model name to pass to Claude Code
+        
+    Returns:
+        Dict with success status, port, and websocket URL
+    """
+    global ttyd_process, ttyd_port
+    
+    # Check if ttyd is already running
+    if ttyd_process is not None and ttyd_process.poll() is None:
+        return {
+            "success": True,
+            "already_running": True,
+            "port": ttyd_port,
+            "ws_url": f"ws://127.0.0.1:{ttyd_port}/ws"
+        }
+    
+    # Check if ttyd is installed
+    if not is_ttyd_installed():
+        return {
+            "success": False,
+            "error": "ttyd is not installed",
+            "install_instructions": {
+                "macos": "brew install ttyd",
+                "ubuntu": "sudo apt install ttyd",
+                "fedora": "sudo dnf install ttyd"
+            }
+        }
+    
+    # Find Claude command
+    claude_path = find_claude_command()
+    if not claude_path:
+        return {
+            "success": False,
+            "error": "Claude Code CLI is not installed"
+        }
+    
+    # Find available port
+    try:
+        port = find_available_port()
+    except RuntimeError as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+    
+    # Build environment
+    env = os.environ.copy()
+    env.update(env_config)
+    
+    # Ensure HOME is set so Claude Code can find ~/.claude.json config
+    if "HOME" not in env:
+        env["HOME"] = os.path.expanduser("~")
+    
+    # Set terminal environment variables for proper TUI rendering
+    env["TERM"] = "xterm-256color"
+    env["COLORTERM"] = "truecolor"
+    env["FORCE_COLOR"] = "1"
+    env["NO_COLOR"] = ""
+    env["CLICOLOR"] = "1"
+    env["CLICOLOR_FORCE"] = "1"
+    env["FORCE_TTY"] = "1"
+    env["NODE_NO_READLINE"] = "0"
+    env["LANG"] = env.get("LANG", "en_US.UTF-8")
+    env["LC_ALL"] = env.get("LC_ALL", "en_US.UTF-8")
+    
+    # Build ttyd command
+    # ttyd --port PORT --interface 127.0.0.1 --once claude --model MODEL
+    ttyd_cmd = [
+        "ttyd",
+        "--port", str(port),
+        "--interface", "127.0.0.1",
+        "--once",  # Exit after client disconnects
+        "--writable",  # Allow input
+        claude_path,
+        "--model", model_name
+    ]
+    
+    logger.info(f"Starting ttyd: {' '.join(ttyd_cmd)}")
+    logger.info(f"Environment: ANTHROPIC_BASE_URL={env.get('ANTHROPIC_BASE_URL')}, MODEL={model_name}")
+    
+    try:
+        # Capture stderr to see any ttyd errors
+        ttyd_process = subprocess.Popen(
+            ttyd_cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        ttyd_port = port
+        
+        # Give ttyd a moment to start
+        import time
+        time.sleep(1.5)  # Increased wait time for ttyd to bind port
+        
+        # Check if process is still running
+        if ttyd_process.poll() is not None:
+            exit_code = ttyd_process.returncode
+            # Try to get stderr output
+            _, stderr_output = ttyd_process.communicate(timeout=1)
+            stderr_str = stderr_output.decode('utf-8', errors='replace') if stderr_output else "No error output"
+            logger.error(f"ttyd exited with code {exit_code}: {stderr_str}")
+            ttyd_process = None
+            ttyd_port = None
+            return {
+                "success": False,
+                "error": f"ttyd exited with code {exit_code}: {stderr_str}"
+            }
+        
+        # Verify ttyd is actually listening on the port
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            result = sock.connect_ex(('127.0.0.1', port))
+            if result != 0:
+                logger.error(f"ttyd started but not listening on port {port}")
+                # Kill the process since it's not working
+                ttyd_process.terminate()
+                ttyd_process = None
+                ttyd_port = None
+                return {
+                    "success": False,
+                    "error": f"ttyd started but failed to listen on port {port}"
+                }
+        finally:
+            sock.close()
+        
+        logger.info(f"ttyd started on port {port}, pid: {ttyd_process.pid}")
+        logger.info(f"ttyd WebSocket URL: ws://127.0.0.1:{port}/ws")
+        
+        return {
+            "success": True,
+            "already_running": False,
+            "port": port,
+            "ws_url": f"ws://127.0.0.1:{port}/ws",
+            "pid": ttyd_process.pid
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to start ttyd: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+def stop_ttyd() -> Dict[str, Any]:
+    """Stop the ttyd process if running"""
+    global ttyd_process, ttyd_port
+    
+    if ttyd_process is None:
+        return {
+            "success": True,
+            "message": "ttyd was not running"
+        }
+    
+    if ttyd_process.poll() is not None:
+        # Process already exited
+        ttyd_process = None
+        ttyd_port = None
+        return {
+            "success": True,
+            "message": "ttyd had already exited"
+        }
+    
+    try:
+        pid = ttyd_process.pid
+        ttyd_process.terminate()
+        
+        # Wait for graceful shutdown
+        try:
+            ttyd_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            ttyd_process.kill()
+            ttyd_process.wait()
+        
+        ttyd_process = None
+        ttyd_port = None
+        
+        logger.info(f"ttyd stopped (pid: {pid})")
+        
+        return {
+            "success": True,
+            "message": f"ttyd stopped (pid: {pid})"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error stopping ttyd: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+def find_claude_command() -> Optional[str]:
+    """Find the claude command on the system"""
+    # Check common locations for claude CLI
+    possible_commands = ["claude", "claude-code"]
+    
+    for cmd in possible_commands:
+        result = shutil.which(cmd)
+        if result:
+            return result
+    
+    # Check npm global bin
+    try:
+        npm_bin = subprocess.run(["npm", "bin", "-g"], capture_output=True, text=True)
+        if npm_bin.returncode == 0:
+            npm_path = Path(npm_bin.stdout.strip()) / "claude"
+            if npm_path.exists():
+                return str(npm_path)
+    except Exception:
+        pass
+    
+    return None
+
+
+def is_claude_installed() -> Dict[str, Any]:
+    """Check if Claude Code CLI is installed"""
+    claude_path = find_claude_command()
+    
+    if claude_path:
+        # Try to get version
+        try:
+            result = subprocess.run([claude_path, "--version"], capture_output=True, text=True, timeout=5)
+            version = result.stdout.strip() if result.returncode == 0 else "unknown"
+            return {
+                "installed": True,
+                "path": claude_path,
+                "version": version
+            }
+        except Exception as e:
+            return {
+                "installed": True,
+                "path": claude_path,
+                "version": "unknown",
+                "error": str(e)
+            }
+    
+    return {
+        "installed": False,
+        "path": None,
+        "version": None
+    }
+
+
+@app.get("/api/claude-code/status")
+async def claude_code_status():
+    """Get Claude Code availability and installation status"""
+    claude_info = is_claude_installed()
+    ttyd_available = is_ttyd_installed()
+    
+    return {
+        "ttyd_available": ttyd_available,
+        "claude_installed": claude_info["installed"],
+        "claude_path": claude_info.get("path"),
+        "claude_version": claude_info.get("version"),
+        "vllm_running": vllm_running,
+        "ttyd_running": ttyd_process is not None and ttyd_process.poll() is None,
+        "ttyd_port": ttyd_port,
+        "message": "Ready" if (ttyd_available and claude_info["installed"] and vllm_running) else "Not ready"
+    }
+
+
+@app.get("/api/claude-code/config")
+async def claude_code_config():
+    """Get the environment configuration for Claude Code to connect to vLLM"""
+    global current_config, current_model_identifier, current_served_model_name, vllm_running
+    
+    if not vllm_running or not current_config:
+        return {
+            "available": False,
+            "message": "vLLM server is not running. Start the server first.",
+            "env": {},
+            "needs_served_model_name": False
+        }
+    
+    # Get the model name to use
+    # Use served_model_name if set (required for Claude Code as model names with '/' don't work)
+    if current_served_model_name:
+        model_name = current_served_model_name
+    else:
+        model_name = current_model_identifier or current_config.model
+        # Check if model name contains '/' which won't work with Claude Code
+        if '/' in model_name:
+            return {
+                "available": False,
+                "message": "Model name contains '/'. Set a 'Served Model Name' in vLLM server configuration for Claude Code to work.",
+                "env": {},
+                "needs_served_model_name": True,
+                "current_model": model_name
+            }
+    
+    # Check if tool calling is enabled (required for Claude Code)
+    tool_calling_enabled = current_config.enable_tool_calling
+    
+    # Build the base URL for vLLM's Anthropic-compatible endpoint
+    # Use localhost since Claude Code runs on the same machine
+    # Per vLLM docs: ANTHROPIC_BASE_URL should be the server root (e.g. http://localhost:8000)
+    # Claude Code/Anthropic SDK appends /v1/messages to this base URL
+    port = current_config.port
+    base_url = f"http://localhost:{port}"
+    
+    env_config = {
+        "ANTHROPIC_BASE_URL": base_url,
+        "ANTHROPIC_API_KEY": "vllm-playground",  # vLLM doesn't require auth by default
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": model_name,
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": model_name,
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": model_name,
+    }
+    
+    return {
+        "available": True,
+        "message": "vLLM server is running and ready for Claude Code",
+        "tool_calling_enabled": tool_calling_enabled,
+        "tool_calling_warning": None if tool_calling_enabled else "Tool calling is not enabled. Claude Code may not work properly.",
+        "env": env_config,
+        "model": model_name,
+        "port": port
+    }
+
+
+@app.post("/api/claude-code/install")
+async def claude_code_install(method: str = "npm"):
+    """Install Claude Code CLI"""
+    try:
+        if method == "npm":
+            # Install via npm globally
+            process = await asyncio.create_subprocess_exec(
+                "npm", "install", "-g", "@anthropic-ai/claude-code",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode == 0:
+                return {
+                    "success": True,
+                    "message": "Claude Code installed successfully via npm",
+                    "output": stdout.decode()
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "Failed to install Claude Code",
+                    "error": stderr.decode()
+                }
+        else:
+            return {
+                "success": False,
+                "message": f"Unknown installation method: {method}",
+                "supported_methods": ["npm"]
+            }
+    except FileNotFoundError:
+        return {
+            "success": False,
+            "message": "npm not found. Please install Node.js first.",
+            "error": "npm command not available"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Installation failed: {str(e)}",
+            "error": str(e)
+        }
+
+
+@app.post("/api/claude-code/start-terminal")
+async def start_claude_terminal():
+    """Start ttyd terminal for Claude Code"""
+    # Check if ttyd is installed
+    if not is_ttyd_installed():
+        return {
+            "success": False,
+            "error": "ttyd is not installed. Please install it first.",
+            "install_instructions": {
+                "macos": "brew install ttyd",
+                "ubuntu": "sudo apt install ttyd",
+                "fedora": "sudo dnf install ttyd"
+            }
+        }
+    
+    # Check if Claude Code is installed
+    claude_info = is_claude_installed()
+    if not claude_info["installed"]:
+        return {
+            "success": False,
+            "error": "Claude Code CLI is not installed. Install with: npm install -g @anthropic-ai/claude-code"
+        }
+    
+    # Get vLLM config for Claude Code environment
+    config_response = await claude_code_config()
+    if not config_response["available"]:
+        return {
+            "success": False,
+            "error": config_response["message"],
+            "needs_served_model_name": config_response.get("needs_served_model_name", False)
+        }
+    
+    # Start ttyd
+    result = start_ttyd_for_claude(
+        env_config=config_response["env"],
+        model_name=config_response["model"]
+    )
+    
+    # Return our proxy WebSocket URL instead of direct ttyd URL
+    # This allows cloud deployment to work (browser connects to our server, we proxy to ttyd)
+    if result.get("success"):
+        result["ws_url"] = "/ws/ttyd"  # Use our proxy endpoint
+    
+    return result
+
+
+@app.websocket("/ws/ttyd")
+async def websocket_ttyd_proxy(websocket: WebSocket):
+    """WebSocket proxy to ttyd - allows cloud deployment to work"""
+    await websocket.accept()
+    
+    global ttyd_port
+    
+    if ttyd_port is None:
+        await websocket.close(code=1011, reason="ttyd not running")
+        return
+    
+    # Connect to ttyd's WebSocket using websockets library
+    import websockets
+    ttyd_ws_url = f"ws://127.0.0.1:{ttyd_port}/ws"
+    
+    try:
+        # Connect with tty subprotocol
+        async with websockets.connect(
+            ttyd_ws_url,
+            subprotocols=['tty'],
+            ping_interval=None,  # Disable ping to avoid interference
+            close_timeout=1
+        ) as ttyd_ws:
+            logger.info(f"Connected to ttyd WebSocket at {ttyd_ws_url}, protocol: {ttyd_ws.subprotocol}")
+            
+            async def forward_to_client():
+                """Forward messages from ttyd to browser"""
+                try:
+                    async for message in ttyd_ws:
+                        if isinstance(message, bytes):
+                            logger.info(f"ttyd->client: {len(message)} bytes")
+                            await websocket.send_bytes(message)
+                        else:
+                            logger.info(f"ttyd->client: {len(message)} chars text")
+                            await websocket.send_text(message)
+                except websockets.exceptions.ConnectionClosed as e:
+                    logger.info(f"ttyd connection closed: {e}")
+                except Exception as e:
+                    logger.info(f"ttyd->client forward ended: {e}")
+            
+            async def forward_to_ttyd():
+                """Forward messages from browser to ttyd"""
+                try:
+                    while True:
+                        data = await websocket.receive()
+                        if data["type"] == "websocket.receive":
+                            if "bytes" in data:
+                                logger.info(f"client->ttyd: {len(data['bytes'])} bytes")
+                                await ttyd_ws.send(data["bytes"])
+                            elif "text" in data:
+                                logger.info(f"client->ttyd: {len(data['text'])} chars text")
+                                await ttyd_ws.send(data["text"])
+                        elif data["type"] == "websocket.disconnect":
+                            logger.info("Client disconnected from proxy")
+                            break
+                except websockets.exceptions.ConnectionClosed as e:
+                    logger.info(f"ttyd connection closed while forwarding: {e}")
+                except Exception as e:
+                    logger.info(f"client->ttyd forward ended: {e}")
+            
+            # Run both forwarding tasks concurrently
+            await asyncio.gather(
+                forward_to_client(),
+                forward_to_ttyd(),
+                return_exceptions=True
+            )
+            
+    except Exception as e:
+        logger.error(f"ttyd proxy error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        try:
+            await websocket.close(code=1011, reason=str(e))
+        except:
+            pass
+
+
+@app.post("/api/claude-code/stop-terminal")
+async def stop_claude_terminal():
+    """Stop the ttyd terminal"""
+    return stop_ttyd()
+
+
+@app.get("/api/claude-code/terminal-status")
+async def claude_terminal_status():
+    """Get the status of the ttyd terminal"""
+    is_running = ttyd_process is not None and ttyd_process.poll() is None
+    
+    return {
+        "running": is_running,
+        "port": ttyd_port if is_running else None,
+        "ws_url": f"ws://127.0.0.1:{ttyd_port}/ws" if is_running else None
+    }
 
 
 def main(host: str = None, port: int = None, reload: bool = False):

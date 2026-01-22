@@ -6,6 +6,51 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 ---
 
+## [v0.1.3](releases/v0.1.3.md) - 2026-01-22
+
+**Multi-Accelerators, Claude Code & vLLM-Metal Support**
+
+### Added
+- 🎮 **Multi-Accelerators Support** - NVIDIA CUDA, AMD ROCm, Google Cloud TPU
+  - Auto-detection via nvidia-smi, amd-smi, tpu-info
+  - CLI pull flags: `--nvidia`, `--amd`, `--tpu`, `--cpu`, `--all`
+  - Kubernetes detection for gpu/tpu resources
+- 🤖 **Claude Code Integration** - Use open-source models as Claude Code backend
+  - Web terminal via ttyd for Claude Code TUI
+  - WebSocket proxy for cloud deployment support
+  - API endpoints: start-terminal, stop-terminal, terminal-status
+  - Recommended model configuration tips
+- ⚡ **vLLM-Metal Support** - Apple Silicon GPU acceleration
+  - Metal GPU mode for Apple Silicon (requires vllm-metal)
+  - Custom virtual environment path (`venv_path`)
+  - `compute_mode` configuration field with cpu/gpu/metal options
+  - Multi-method vLLM detection (Python import → pip list → uv pip list)
+- 📁 **Single Source Restructure** - All source code in `vllm_playground/`
+  - Removed ~32,000 lines of duplicate root-level files
+  - Added `CONTRIBUTING.md` with development guidelines
+  - Added `scripts/verify_structure.py` for validation
+- 📖 Documentation: [Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md)
+- 📖 Documentation: [macOS Metal Guide](docs/MACOS_METAL_GUIDE.md)
+
+### Changed
+- 🐳 **Container image updated to `vllm/vllm-openai:v0.12.0`** (required for Anthropic Messages API)
+- `compute_mode` enum field replaces boolean `use_cpu` for clearer configuration
+- Subprocess mode uses custom venv's Python interpreter when `venv_path` is specified
+- Metal mode sets `VLLM_TARGET_DEVICE=metal` and `VLLM_USE_V1=1` environment variables
+- Improved UI messaging to distinguish three vLLM states (not installed / installed without version / installed with version)
+- Updated README with Metal GPU and custom venv quick start instructions
+
+### Fixed
+- sys.path pollution bug in run.py that made sibling directories accidentally importable
+- Command preview now matches actual Metal execution environment
+
+### Breaking Changes
+- Root-level source files removed (single source restructure)
+  - Edit files in `vllm_playground/` (not root)
+  - Run with `python run.py` (unchanged)
+
+---
+
 ## [v0.1.2](releases/v0.1.2.md) - 2026-01-19
 
 **ModelScope Integration & i18n Improvements**
@@ -87,6 +132,7 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| v0.1.3 | 2026-01-22 | Multi-accelerators, Claude Code, vLLM-Metal |
 | v0.1.2 | 2026-01-19 | ModelScope integration, i18n improvements |
 | v0.1.1 | 2026-01-08 | MCP integration, runtime detection |
 | v0.1.0 | 2026-01-02 | First release, modern UI, tool calling |

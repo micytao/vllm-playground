@@ -91,13 +91,27 @@ const zhCN = {
             label: '运行模式',
             subprocess: '⚡ 子进程',
             container: '📦 容器',
-            help: '子进程：直接运行（本地开发），容器：隔离运行（生产环境）'
+            help: '子进程：直接运行（本地开发），容器：隔离运行（生产环境）',
+            subprocessTip: '💡 提示：使用子进程模式可支持更多加速器（华为昇腾、Intel Gaudi、AWS Neuron），需在主机上安装 vLLM + 硬件插件。'
         },
         computeMode: {
             label: '计算模式',
             cpu: '🖥️ CPU',
             gpu: '🎮 GPU',
+            metal: '⚡ Metal',
             help: 'macOS 推荐使用 CPU 模式'
+        },
+        accelerator: {
+            label: '加速器',
+            nvidia: 'NVIDIA (CUDA)',
+            amd: 'AMD (ROCm)',
+            tpu: '谷歌 TPU',
+            help: '选择容器模式的 GPU 加速器类型'
+        },
+        venvPath: {
+            label: '自定义虚拟环境路径（可选）',
+            placeholder: '~/.venv-vllm-metal',
+            help: '指定包含 vLLM 或 vLLM-Metal 的虚拟环境路径。留空则使用系统 Python。'
         },
         host: {
             label: '主机'
@@ -132,8 +146,8 @@ const zhCN = {
         },
         maxModelLen: {
             label: '最大模型长度（可选）',
-            placeholder: '2048（CPU）/ 8192（GPU）',
-            help: '留空则使用安全默认值：2048（CPU）或 8192（GPU）'
+            placeholder: '2048（CPU/Metal）/ 8192（GPU）',
+            help: '留空则使用安全默认值：2048（CPU/Metal）或 8192（GPU）'
         },
         chatTemplate: {
             title: '聊天模板参考（高级）',

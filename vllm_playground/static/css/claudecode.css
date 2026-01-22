@@ -1,0 +1,561 @@
+/**
+ * Claude Code Integration Styles
+ * Styling for the Claude Code terminal view in vLLM Playground
+ */
+
+/* ============================================
+   Layout
+   ============================================ */
+
+.claude-code-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 20px;
+    gap: 20px;
+}
+
+.claude-code-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+/* ============================================
+   Header
+   ============================================ */
+
+.claude-code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.claude-header-title {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.claude-header-icon {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+}
+
+.claude-header-title h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.claude-header-subtitle {
+    margin: 4px 0 0 0;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.claude-header-status {
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.claude-header-status.ready {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+}
+
+.claude-header-status.not-ready {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.claude-header-status.checking {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+}
+
+/* ============================================
+   Warning/Install Panels
+   ============================================ */
+
+.claude-install-warning {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 40px;
+    text-align: center;
+    flex: 1;
+}
+
+.claude-install-warning .warning-icon {
+    font-size: 4rem;
+    margin-bottom: 20px;
+}
+
+.claude-install-warning .warning-icon .warning-logo {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+}
+
+.claude-install-warning h3 {
+    margin: 0 0 12px 0;
+    font-size: 1.5rem;
+    color: var(--text-primary);
+}
+
+.claude-install-warning p {
+    margin: 0 0 20px 0;
+    color: var(--text-secondary);
+    max-width: 500px;
+}
+
+.claude-install-warning .warning-hint {
+    font-size: 0.9rem;
+    color: var(--text-tertiary);
+}
+
+.claude-install-warning .warning-hint a,
+.claude-install-warning a {
+    color: #60a5fa;  /* Bright blue for visibility on dark background */
+    text-decoration: underline;
+}
+
+.claude-install-warning .warning-hint a:hover,
+.claude-install-warning a:hover {
+    color: #93c5fd;  /* Lighter blue on hover */
+}
+
+.claude-install-warning .install-commands {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 24px;
+}
+
+.claude-install-warning .install-commands code {
+    display: block;
+    padding: 12px 24px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+.claude-install-warning .install-commands code.primary-cmd {
+    background: linear-gradient(135deg, rgba(79, 70, 229, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+    border-color: rgba(79, 70, 229, 0.3);
+}
+
+.claude-install-warning .install-commands .cmd-divider {
+    color: var(--text-tertiary);
+    font-size: 0.85rem;
+}
+
+.claude-install-warning .btn {
+    margin-top: 8px;
+    padding: 8px 16px;
+    font-size: 0.85rem;
+    flex: 0 0 auto;
+}
+
+/* Model Tip Box in Warning */
+.claude-model-tip {
+    text-align: left;
+    max-width: 500px;
+    margin: 20px auto;
+    padding: 16px 20px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.claude-model-tip h4 {
+    margin: 0 0 12px 0;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.claude-model-tip .tip-model,
+.claude-model-tip .tip-args {
+    margin: 8px 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.claude-model-tip .tip-model code,
+.claude-model-tip .tip-args code {
+    padding: 2px 6px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: #10b981;
+}
+
+.claude-model-tip .tip-args ul {
+    margin: 8px 0 0 0;
+    padding-left: 20px;
+}
+
+.claude-model-tip .tip-args li {
+    margin: 6px 0;
+    line-height: 1.5;
+}
+
+.claude-model-tip .tip-note {
+    margin: 12px 0 0 0;
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+/* ============================================
+   Terminal Wrapper
+   ============================================ */
+
+.claude-terminal-wrapper {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    padding: 16px;
+}
+
+/* Requirements Note */
+.claude-requirements-note {
+    display: flex;
+    gap: 12px;
+    padding: 12px 16px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+.claude-requirements-note .note-icon {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.claude-requirements-note .note-content {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.claude-requirements-note .note-content strong {
+    color: var(--text-primary);
+}
+
+.claude-requirements-note .note-content ul {
+    margin: 8px 0 0 0;
+    padding-left: 20px;
+}
+
+.claude-requirements-note .note-content li {
+    margin: 4px 0;
+}
+
+/* Connection Bar */
+.claude-connection-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px 8px 0 0;
+    border-bottom: none;
+}
+
+.connection-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.85rem;
+}
+
+.connection-label {
+    color: var(--text-secondary);
+}
+
+.connection-info code {
+    padding: 4px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.8rem;
+    color: #10b981;
+}
+
+.connection-model {
+    color: var(--text-secondary);
+    padding-left: 12px;
+    border-left: 1px solid var(--border-color);
+}
+
+.terminal-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.terminal-controls .btn {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    min-width: 90px;
+    flex: 0 0 auto;
+}
+
+/* Terminal Container */
+.claude-terminal {
+    flex: 1;
+    min-height: 500px;
+    background: #1a1a2e;
+    border: 1px solid var(--border-color);
+    border-radius: 0 0 8px 8px;
+    overflow: hidden;
+}
+
+/* xterm.js overrides for dark theme */
+.claude-terminal .xterm {
+    padding: 12px;
+    height: 100%;
+}
+
+.claude-terminal .xterm-viewport {
+    background: #1a1a2e !important;
+}
+
+.claude-terminal .xterm-screen {
+    background: #1a1a2e;
+    height: 100%;
+}
+
+/* Help Text */
+.claude-help-text {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: rgba(79, 70, 229, 0.1);
+    border: 1px solid rgba(79, 70, 229, 0.2);
+    border-radius: 8px;
+}
+
+.claude-help-text p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.claude-help-text p + p {
+    margin-top: 8px;
+}
+
+.claude-help-text kbd {
+    display: inline-block;
+    padding: 2px 6px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+}
+
+/* Local Terminal Note */
+.claude-local-note {
+    margin-top: 12px;
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.claude-local-note details {
+    cursor: pointer;
+}
+
+.claude-local-note summary {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    user-select: none;
+}
+
+.claude-local-note summary:hover {
+    color: var(--text-primary);
+}
+
+.claude-local-note p {
+    margin: 12px 0 8px 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.claude-local-note pre {
+    margin: 8px 0;
+    padding: 12px 16px;
+    background: #1a1a2e;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow-x: auto;
+}
+
+.claude-local-note pre code {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.85rem;
+    color: #e4e4e7;
+    line-height: 1.6;
+}
+
+.claude-local-note .env-port,
+.claude-local-note .env-model {
+    color: #f59e0b;
+}
+
+.claude-local-note .note-hint {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+/* Claude Tips Content */
+.claude-tips-content {
+    margin-top: 12px;
+}
+
+.claude-tips-content h4 {
+    margin: 16px 0 8px 0;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.claude-tips-content h4:first-child {
+    margin-top: 0;
+}
+
+.claude-tips-content ul {
+    margin: 8px 0;
+    padding-left: 20px;
+}
+
+.claude-tips-content ul li {
+    margin: 6px 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.claude-tips-content ul li strong {
+    color: var(--text-primary);
+}
+
+.claude-tips-content ul li code {
+    padding: 2px 6px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: #f59e0b;
+}
+
+/* Tips Table */
+.claude-tips-table {
+    width: 100%;
+    margin: 8px 0;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.claude-tips-table th,
+.claude-tips-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border: 1px solid var(--border-color);
+}
+
+.claude-tips-table th {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.claude-tips-table td {
+    color: var(--text-secondary);
+}
+
+.claude-tips-table tr:nth-child(even) td {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+/* ============================================
+   Light Theme Overrides
+   ============================================ */
+
+[data-theme="light"] .claude-terminal {
+    background: #1e1e2e;
+}
+
+[data-theme="light"] .claude-terminal .xterm-viewport {
+    background: #1e1e2e !important;
+}
+
+[data-theme="light"] .claude-code-container {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* ============================================
+   Responsive Design
+   ============================================ */
+
+@media (max-width: 768px) {
+    .claude-code-layout {
+        padding: 12px;
+    }
+    
+    .claude-code-header {
+        flex-direction: column;
+        gap: 16px;
+        text-align: center;
+    }
+    
+    .claude-header-title {
+        flex-direction: column;
+    }
+    
+    .claude-connection-bar {
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .connection-info {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .connection-model {
+        border-left: none;
+        padding-left: 0;
+        width: 100%;
+        text-align: center;
+    }
+}

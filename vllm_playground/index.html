@@ -8,6 +8,12 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="/static/css/mcp.css">
     <link rel="stylesheet" href="/static/css/guidellm.css">
+    <link rel="stylesheet" href="/static/css/claudecode.css">
+    <!-- xterm.js for Claude Code terminal -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
 </head>
 <body>
     <div class="app-layout">
@@ -19,6 +25,8 @@
             </div>
             
             <div class="nav-items">
+                <!-- vLLM Projects Section -->
+                <div class="nav-section-label">vLLM Projects</div>
                 <button class="nav-item active" data-view="vllm-server" title="vLLM Server">
                     <img src="/assets/vllm-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label" data-i18n="nav.vllmServer">vLLM Server</span>
@@ -27,10 +35,21 @@
                     <img src="/assets/guidellm-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label" data-i18n="nav.guidellm">GuideLLM</span>
                 </button>
+                
+                <!-- Divider -->
+                <div class="nav-divider">
+                    <span class="nav-divider-label">Integrations</span>
+                </div>
+                
+                <!-- Integrations Section -->
                 <button class="nav-item" data-view="mcp-config" title="MCP Servers" id="nav-mcp">
                     <span class="nav-item-icon icon-mcp-nav"></span>
                     <span class="nav-label">MCP Servers</span>
                     <span class="nav-badge" id="mcp-servers-badge" style="display: none;">0</span>
+                </button>
+                <button class="nav-item" data-view="claude-code" title="Claude Code" id="nav-claude-code">
+                    <img src="/assets/Claude.png" alt="" class="nav-item-logo" onerror="this.style.display='none'">
+                    <span class="nav-label">Claude Code</span>
                 </button>
             </div>
             
@@ -223,6 +242,22 @@
                                     </label>
                                 </div>
                                 <small class="form-help" id="run-mode-help-text" data-i18n="serverConfig.runMode.help">Container: Isolated (recommended), Subprocess: Direct (requires vLLM installed)</small>
+                                <div class="subprocess-tip" data-i18n="serverConfig.runMode.subprocessTip">
+                                    💡 Tip: Use subprocess mode for additional accelerators (Huawei Ascend, Intel Gaudi, AWS Neuron) with vLLM + hardware plugin installed on the host.
+                                </div>
+                            </div>
+
+                            <!-- Virtual Environment Path (optional) - Only for Subprocess mode -->
+                            <div class="form-group" id="venv-path-group" style="display: none;">
+                                <label for="venv-path" data-i18n="serverConfig.venvPath.label">Custom Virtual Environment Path (Optional)</label>
+                                <input
+                                    type="text"
+                                    id="venv-path"
+                                    class="form-control"
+                                    placeholder="~/.venv-vllm-metal"
+                                    data-i18n-placeholder="serverConfig.venvPath.placeholder"
+                                >
+                                <small class="form-help" data-i18n="serverConfig.venvPath.help">Specify path to a virtual environment containing vLLM or vLLM-Metal. Leave empty to use system Python.</small>
                             </div>
 
                             <!-- CPU/GPU Mode Toggle -->
@@ -237,6 +272,19 @@
                                         <input type="radio" name="compute-mode" id="mode-gpu" value="gpu">
                                         <span data-i18n="serverConfig.computeMode.gpu">🎮 GPU</span>
                                     </label>
+                                    <label class="mode-button" id="mode-metal-label">
+                                        <input type="radio" name="compute-mode" id="mode-metal" value="metal">
+                                        <span data-i18n="serverConfig.computeMode.metal">⚡ Metal</span>
+                                    </label>
+                                </div>
+                                <!-- Accelerator Selection (separate line, shown when GPU mode selected) -->
+                                <div class="accelerator-row" id="accelerator-row" style="display: none;">
+                                    <label for="accelerator-select" data-i18n="serverConfig.accelerator.label">Accelerator</label>
+                                    <select id="accelerator-select" class="form-control">
+                                        <option value="nvidia" data-i18n="serverConfig.accelerator.nvidia">NVIDIA (CUDA)</option>
+                                        <option value="amd" data-i18n="serverConfig.accelerator.amd">AMD (ROCm)</option>
+                                        <option value="tpu" data-i18n="serverConfig.accelerator.tpu">Google TPU</option>
+                                    </select>
                                 </div>
                                 <small class="form-help" id="mode-help-text" data-i18n="serverConfig.computeMode.help">CPU mode is recommended for macOS</small>
                             </div>
@@ -314,8 +362,8 @@
 
                             <div class="form-group">
                                 <label for="max-model-len" data-i18n="serverConfig.maxModelLen.label">Max Model Length (optional)</label>
-                                <input type="number" id="max-model-len" class="form-control" placeholder="2048 (CPU) / 8192 (GPU)">
-                                <small class="form-help" data-i18n="serverConfig.maxModelLen.help">Leave empty to use safe defaults: 2048 (CPU) or 8192 (GPU)</small>
+                                <input type="number" id="max-model-len" class="form-control" placeholder="2048 (CPU/Metal) / 8192 (GPU)">
+                                <small class="form-help" data-i18n="serverConfig.maxModelLen.help">Leave empty to use safe defaults: 2048 (CPU/Metal) or 8192 (GPU)</small>
                             </div>
 
                             <!-- Advanced: Chat Template Settings -->
@@ -377,6 +425,13 @@
                                     <option value="pythonic">Pythonic (experimental)</option>
                                 </select>
                                 <small class="form-hint">Parser for model tool call output. Auto-detect uses model name.</small>
+                            </div>
+
+                            <!-- Served Model Name (for Claude Code) -->
+                            <div class="form-group" id="served-model-name-group">
+                                <label for="served-model-name">Served Model Name (Optional)</label>
+                                <input type="text" id="served-model-name" class="form-control" placeholder="e.g., my-model">
+                                <small class="form-help">Alias for the model in API calls. <strong>Required for Claude Code</strong> (cannot contain '/').</small>
                             </div>
 
                             <!-- Command Preview Section -->
@@ -1254,6 +1309,199 @@
                             </div>
 
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Claude Code View -->
+            <div class="view-content" id="claude-code-view" style="display: none;">
+                <div class="claude-code-layout">
+                    <div class="claude-code-container">
+                        <!-- Header -->
+                        <div class="claude-code-header">
+                            <div class="claude-header-title">
+                                <img src="/assets/Claude.png" alt="Claude Code" class="claude-header-icon">
+                                <div>
+                                    <h2>Claude Code</h2>
+                                    <p class="claude-header-subtitle">AI-powered coding assistant connected to your vLLM server</p>
+                                </div>
+                            </div>
+                            <div class="claude-header-status" id="claude-status">
+                                <span class="status-checking">Checking status...</span>
+                            </div>
+                        </div>
+
+                        <!-- Not Available Warning (shown when ttyd not installed) -->
+                        <div class="claude-install-warning" id="claude-pty-warning" style="display: none;">
+                            <div class="warning-icon">⚠️</div>
+                            <h3>Terminal Support Not Available</h3>
+                            <p>Install <strong>ttyd</strong> to enable the Claude Code terminal:</p>
+                            <div class="install-commands">
+                                <code class="primary-cmd">brew install ttyd</code>
+                                <span class="cmd-divider">(macOS)</span>
+                            </div>
+                            <div class="install-commands" style="margin-top: 8px;">
+                                <code class="alt-cmd">sudo apt install ttyd</code>
+                                <span class="cmd-divider">(Ubuntu/Debian)</span>
+                            </div>
+                            <p class="warning-hint" style="margin-top: 12px;">Note: You also need to install Claude Code CLI. See <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener">official setup guide</a> for installation options.</p>
+                            <p class="warning-hint" style="margin-top: 8px;">Or run Claude Code manually in your terminal with the vLLM environment variables shown in <a href="#" id="claude-show-manual-instructions">manual setup</a>.</p>
+                        </div>
+
+                        <!-- Claude Not Installed Warning -->
+                        <div class="claude-install-warning" id="claude-not-installed" style="display: none;">
+                            <div class="warning-icon">📦</div>
+                            <h3>Claude Code Not Installed</h3>
+                            <p>Install Claude Code CLI to use this feature.</p>
+                            <p class="warning-hint">Recommended (native install):</p>
+                            <div class="install-commands">
+                                <code class="primary-cmd">curl -fsSL https://claude.ai/install.sh | bash</code>
+                            </div>
+                            <p class="warning-hint" style="margin-top: 8px;">See <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener">official setup guide</a> for all installation options (Homebrew, WinGet, npm).</p>
+                        </div>
+
+                        <!-- vLLM Not Running Warning -->
+                        <div class="claude-install-warning" id="claude-vllm-warning" style="display: none;">
+                            <div class="warning-icon"><img src="/assets/vllm-logo.svg" alt="vLLM" class="warning-logo"></div>
+                            <h3>vLLM Server Not Running</h3>
+                            <p>Start a vLLM server first to use Claude Code.</p>
+                            
+                            <div class="claude-model-tip">
+                                <h4>Recommended Configuration</h4>
+                                <div class="tip-model">
+                                    <strong>Model:</strong> <code>meta-llama/Llama-3.1-8B-Instruct</code>
+                                </div>
+                                <div class="tip-args">
+                                    <strong>Required Settings:</strong>
+                                    <ul>
+                                        <li>Max Model Length: <code>65536</code> (Claude Code needs 32K+ for responses)</li>
+                                        <li>Enable Tool Calling: <code>✓</code></li>
+                                        <li>Tool Call Parser: <code>llama3_json</code></li>
+                                        <li>Served Model Name: Set a simple name (e.g., <code>my-code</code>)</li>
+                                    </ul>
+                                </div>
+                                <p class="tip-note">Requires vLLM v0.12.0+ for Anthropic API support. See setup tips below terminal for GPU memory guide.</p>
+                            </div>
+                            
+                            <a href="#" id="claude-goto-vllm" class="btn btn-primary">Go to vLLM Server</a>
+                        </div>
+
+                        <!-- Served Model Name Required Warning -->
+                        <div class="claude-install-warning" id="claude-served-name-warning" style="display: none;">
+                            <div class="warning-icon">⚠️</div>
+                            <h3>Served Model Name Required</h3>
+                            <p>Claude Code cannot use model names containing "/".</p>
+                            <p class="warning-hint">Set a <strong>Served Model Name</strong> (e.g., "my-model") in the vLLM Server configuration panel, then restart the server.</p>
+                            <a href="#" id="claude-goto-vllm-config" class="btn btn-primary">Configure vLLM Server</a>
+                        </div>
+
+                        <!-- Tool Calling Warning -->
+                        <div class="claude-install-warning" id="claude-tool-warning" style="display: none;">
+                            <div class="warning-icon">🔧</div>
+                            <h3>Tool Calling Not Enabled</h3>
+                            <p>Claude Code requires tool calling to be enabled.</p>
+                            <p class="warning-hint">Enable <strong>Tool Calling</strong> in the vLLM Server configuration panel, then restart the server.</p>
+                            <a href="#" id="claude-goto-vllm-tools" class="btn btn-primary">Configure vLLM Server</a>
+                        </div>
+
+                        <!-- Terminal Container (shown when ready) -->
+                        <div class="claude-terminal-wrapper" id="claude-terminal-wrapper" style="display: none;">
+                            <!-- Requirements Note -->
+                            <div class="claude-requirements-note">
+                                <div class="note-icon">💡</div>
+                                <div class="note-content">
+                                    <strong>Requirements for Claude Code:</strong>
+                                    <ul>
+                                        <li><strong>Served Model Name</strong> must be set (e.g., "my-model") - model names with "/" don't work</li>
+                                        <li><strong>Tool Calling</strong> must be enabled in vLLM server configuration</li>
+                                        <li>Use a <strong>larger model</strong> (7B+ parameters) with strong tool calling capabilities</li>
+                                        <li>Set <strong>Max Model Length</strong> to 8192+ for longer context</li>
+                                        <li>Recommended models: Qwen 2.5 7B+, Llama 3.1 8B+, Mistral 7B+</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <!-- Connection Info Bar -->
+                            <div class="claude-connection-bar">
+                                <div class="connection-info">
+                                    <span class="connection-label">Connected to:</span>
+                                    <code id="claude-endpoint">http://localhost:8000</code>
+                                    <span class="connection-model" id="claude-model-name">Model: -</span>
+                                </div>
+                                <div class="terminal-controls">
+                                    <button class="btn btn-sm btn-secondary" id="claude-reconnect-btn" title="Reconnect terminal">
+                                        🔄 Reconnect
+                                    </button>
+                                    <button class="btn btn-sm btn-secondary" id="claude-clear-btn" title="Clear terminal">
+                                        🗑️ Clear
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Terminal -->
+                            <div class="claude-terminal" id="claude-terminal" tabindex="0"></div>
+                            
+                            <!-- Help Text -->
+                            <div class="claude-help-text">
+                                <p>💡 Claude Code is running with your vLLM server as the backend. Type your coding questions or requests above.</p>
+                                <p>Press <kbd>Ctrl+C</kbd> to interrupt, <kbd>Ctrl+D</kbd> to exit.</p>
+                            </div>
+                            
+                            <!-- Claude Code Setup Tips -->
+                            <div class="claude-local-note">
+                                <details>
+                                    <summary>📋 Setup Requirements & Tips</summary>
+                                    <div class="claude-tips-content">
+                                        <h4>Requirements</h4>
+                                        <ul>
+                                            <li><strong>vLLM v0.12.0+</strong> - Required for the Anthropic Messages API (<code>/v1/messages</code> endpoint)</li>
+                                            <li><strong>Native 65K+ context</strong> - Claude Code requests 32K max_tokens, so you need at least 65K total context (32K output + input tokens)</li>
+                                            <li><strong>Tool calling support</strong> - Model must support function/tool calling with appropriate parser</li>
+                                        </ul>
+                                        
+                                        <h4>Recommended Model</h4>
+                                        <p><strong>Meta Llama 3.1 8B Instruct</strong> - Best balance of context, tool calling, and GPU memory:</p>
+                                        <pre><code>Model: meta-llama/Llama-3.1-8B-Instruct
+Args:  --max-model-len 65536 --enable-auto-tool-choice --tool-call-parser llama3_json --gpu-memory-utilization 0.9</code></pre>
+                                        
+                                        <h4>Why These Settings?</h4>
+                                        <ul>
+                                            <li><strong>Native 128K context</strong> - No rope scaling hacks needed</li>
+                                            <li><strong>65536 max-model-len</strong> - Fits 32K output + 33K input on ~44GB GPU</li>
+                                            <li><strong>llama3_json parser</strong> - Built-in tool calling support</li>
+                                        </ul>
+                                        
+                                        <h4>GPU Memory Guide</h4>
+                                        <table class="claude-tips-table">
+                                            <tr><th>GPU VRAM</th><th>Recommended Model</th><th>Max Context</th></tr>
+                                            <tr><td>24GB (L4)</td><td>Llama-3.1-8B-Instruct</td><td>32K-48K</td></tr>
+                                            <tr><td>40-48GB (A6000)</td><td>Llama-3.1-8B-Instruct</td><td>65K</td></tr>
+                                            <tr><td>80GB (A100/H100)</td><td>Llama-3.1-70B-Instruct</td><td>128K</td></tr>
+                                        </table>
+                                        
+                                        <h4>Troubleshooting</h4>
+                                        <ul>
+                                            <li><strong>404 on /init</strong> - Upgrade to vLLM v0.12.0+</li>
+                                            <li><strong>max_tokens too large</strong> - Increase <code>--max-model-len</code> or use <code>/clear</code> to reset context</li>
+                                            <li><strong>CUDA OOM</strong> - Reduce <code>--max-model-len</code> or use quantized model (AWQ/GPTQ)</li>
+                                        </ul>
+                                    </div>
+                                </details>
+                            </div>
+                            
+                            <!-- Local Terminal Note -->
+                            <div class="claude-local-note">
+                                <details>
+                                    <summary>💻 Prefer to run in your local terminal?</summary>
+                                    <p>You can always run Claude Code directly in your terminal with these environment variables:</p>
+                                    <pre><code>export ANTHROPIC_BASE_URL=http://localhost:<span class="env-port">8000</span>
+export ANTHROPIC_API_KEY=vllm-playground
+claude --model <span class="env-model">your-model-name</span></code></pre>
+                                    <p class="note-hint">Replace the port and model name with your vLLM server settings.</p>
+                                </details>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>

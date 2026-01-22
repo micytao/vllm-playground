@@ -2,6 +2,11 @@
 
 A modern web interface for managing and interacting with vLLM servers (www.github.com/vllm-project/vllm). Supports GPU and CPU modes, with special optimizations for macOS Apple Silicon and enterprise deployment on OpenShift/Kubernetes.
 
+### ✨ Claude Code Integration
+![vLLM Playground Claude Code](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-claude-code.gif)
+
+*Run Claude Code with open-source models served by vLLM - your private, local coding assistant.*
+
 ### ✨ Agentic-Ready with MCP Support
 ![vLLM Playground MCP Integration](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-mcp-client.png)
 
@@ -13,12 +18,13 @@ A modern web interface for managing and interacting with vLLM servers (www.githu
 ### ✨ Structured Outputs Support
 ![vLLM Playground with Structured Outputs](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-structured-outputs.png)
 
-### 🆕 What's New in v0.1.2
+### 🆕 What's New in v0.1.3
 
-- 🌏 **ModelScope Support** - Alternative model source for China region users
-- 🌐 **i18n Chinese** - Comprehensive Chinese language translations
-- 💬 **Chat Export** - Save conversations with export functionality
-- 🐛 **Bug Fixes** - Windows Unicode fix, sidebar UI improvements
+- 🎮 **Multi-Accelerators** - NVIDIA CUDA, AMD ROCm, Google TPU support
+- 🤖 **Claude Code** - Use open-source models as Claude Code backend
+- ⚡ **Metal GPU** - Apple Silicon GPU acceleration via vllm-metal
+- 🔧 **Custom venv** - Use specific vLLM versions or custom builds
+- 🐳 **vLLM v0.12.0** - Updated container image with Anthropic Messages API
 
 See **[Changelog](CHANGELOG.md)** for full details.
 
@@ -42,8 +48,12 @@ Open http://localhost:7860 and click "Start Server" - that's it! 🎉
 ### CLI Options
 
 ```bash
-vllm-playground pull                # Pre-download GPU image
+vllm-playground pull                # Pre-download GPU image (NVIDIA)
+vllm-playground pull --nvidia       # Pre-download NVIDIA GPU image
+vllm-playground pull --amd          # Pre-download AMD ROCm image
+vllm-playground pull --tpu          # Pre-download Google TPU image
 vllm-playground pull --cpu          # Pre-download CPU image
+vllm-playground pull --all          # Pre-download all images
 vllm-playground --port 8080         # Custom port
 vllm-playground stop                # Stop running instance
 vllm-playground status              # Check status
@@ -55,6 +65,7 @@ vllm-playground status              # Check status
 
 | Feature | Description |
 |---------|-------------|
+| 🤖 **Claude Code** | Use open-source models as Claude Code backend via vLLM |
 | 💬 **Modern Chat UI** | Streamlined ChatGPT-style interface with streaming responses |
 | 🔧 **Tool Calling** | Function calling with Llama, Mistral, Qwen, and more |
 | 🔗 **MCP Integration** | Connect to MCP servers for agentic capabilities |
@@ -96,6 +107,27 @@ Enable in **Server Configuration** before starting:
 - Qwen (`hermes`)
 - Hermes (`hermes`)
 
+### Claude Code Integration
+
+Use vLLM to serve open-source models as a backend for [Claude Code](https://docs.anthropic.com/en/docs/claude-code):
+
+1. Go to **Claude Code** in the sidebar
+2. Start vLLM with a recommended model (see tips on the page)
+3. The embedded terminal connects automatically
+
+**Requirements:**
+- vLLM v0.12.0+ (for Anthropic Messages API)
+- Model with native 65K+ context and tool calling support
+- [ttyd](https://github.com/tsl0922/ttyd) installed for web terminal
+
+**Recommended Model for most GPUs:**
+```bash
+meta-llama/Llama-3.1-8B-Instruct
+--max-model-len 65536 --enable-auto-tool-choice --tool-call-parser llama3_json
+```
+
+> **Note:** This integration demonstrates using vLLM as a backend for Claude Code. Claude Code is a separate product by Anthropic - users must install it independently and comply with [Anthropic's Commercial Terms of Service](https://www.anthropic.com/legal/commercial-terms). vLLM Playground provides the terminal interface only.
+
 ### MCP Servers
 
 Connect to external tools via Model Context Protocol:
@@ -114,6 +146,29 @@ export VLLM_CPU_KVCACHE_SPACE=40
 export VLLM_CPU_OMP_THREADS_BIND=auto
 ```
 
+### Metal GPU Support (macOS Apple Silicon)
+
+vLLM Playground supports Apple Silicon GPU acceleration:
+
+1. Install vllm-metal following [official instructions](https://github.com/vllm-project/vllm-metal)
+2. Configure playground to use Metal:
+   - Run Mode: Subprocess
+   - Compute Mode: Metal
+   - Venv Path: `~/.venv-vllm-metal` (or your installation path)
+
+See [macOS Metal Guide](docs/MACOS_METAL_GUIDE.md) for details.
+
+### Custom vLLM Installations
+
+Use specific vLLM versions or custom builds:
+
+1. Install vLLM in a virtual environment
+2. Configure playground:
+   - Run Mode: Subprocess
+   - Venv Path: `/path/to/your/venv`
+
+See [Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md) for details.
+
 ---
 
 ## 📖 Documentation
@@ -121,7 +176,9 @@ export VLLM_CPU_OMP_THREADS_BIND=auto
 ### Getting Started
 - **[Installation Guide](docs/INSTALLATION.md)** - All installation methods
 - **[Quick Start](docs/QUICKSTART.md)** - Get running in minutes
-- **[macOS CPU Guide](docs/MACOS_CPU_GUIDE.md)** - Apple Silicon setup
+- **[macOS CPU Guide](docs/MACOS_CPU_GUIDE.md)** - Apple Silicon CPU setup
+- **[macOS Metal Guide](docs/MACOS_METAL_GUIDE.md)** - Apple Silicon GPU acceleration
+- **[Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md)** - Using custom vLLM installations
 
 ### Features
 - **[Features Overview](docs/FEATURES.md)** - Complete feature list
@@ -139,6 +196,7 @@ export VLLM_CPU_OMP_THREADS_BIND=auto
 
 ### Releases
 - **[Changelog](CHANGELOG.md)** - Version history and changes
+- **[v0.1.3](releases/v0.1.3.md)** - Multi-accelerators, Claude Code, vLLM-Metal
 - **[v0.1.2](releases/v0.1.2.md)** - ModelScope integration, i18n improvements
 - **[v0.1.1](releases/v0.1.1.md)** - MCP integration, runtime detection
 - **[v0.1.0](releases/v0.1.0.md)** - First release, modern UI, tool calling
@@ -185,6 +243,7 @@ export VLLM_CPU_OMP_THREADS_BIND=auto
 ## 🔗 Related Projects
 
 - **[vLLM](https://github.com/vllm-project/vllm)** - High-throughput LLM serving
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** - Anthropic's agentic coding tool
 - **[LLMCompressor Playground](https://github.com/micytao/llmcompressor-playground)** - Model compression & quantization
 - **[GuideLLM](https://github.com/neuralmagic/guidellm)** - Performance benchmarking
 - **[MCP Servers](https://github.com/modelcontextprotocol/servers)** - Official MCP servers

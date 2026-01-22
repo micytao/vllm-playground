@@ -71,7 +71,7 @@ const en = {
         },
         maxModelLen: {
             label: 'Max Model Length (optional)',
-            help: 'Leave empty to use safe defaults: 2048 (CPU) or 8192 (GPU)'
+            help: 'Leave empty to use safe defaults: 2048 (CPU/Metal) or 8192 (GPU)'
         },
         checkboxes: {
             trustRemoteCode: 'Trust Remote Code',
@@ -87,13 +87,27 @@ const en = {
             label: 'Run Mode',
             subprocess: '⚡ Subprocess',
             container: '📦 Container',
-            help: 'Container: Isolated (recommended), Subprocess: Direct (requires vLLM installed)'
+            help: 'Container: Isolated (recommended), Subprocess: Direct (requires vLLM installed)',
+            subprocessTip: '💡 Tip: Use subprocess mode for additional accelerators (Huawei Ascend, Intel Gaudi, AWS Neuron) with vLLM + hardware plugin installed on the host.'
         },
         computeMode: {
             label: 'Compute Mode',
             cpu: '🖥️ CPU',
             gpu: '🎮 GPU',
+            metal: '⚡ Metal',
             help: 'CPU mode is recommended for macOS'
+        },
+        accelerator: {
+            label: 'Accelerator',
+            nvidia: 'NVIDIA (CUDA)',
+            amd: 'AMD (ROCm)',
+            tpu: 'Google TPU',
+            help: 'Select your GPU accelerator type for container mode'
+        },
+        venvPath: {
+            label: 'Custom Virtual Environment Path (Optional)',
+            placeholder: '~/.venv-vllm-metal',
+            help: 'Specify path to a virtual environment containing vLLM or vLLM-Metal. Leave empty to use system Python.'
         },
         host: {
             label: 'Host'

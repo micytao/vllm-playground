@@ -12,7 +12,8 @@ data:
   # GPU vLLM image - Official community vLLM image with CUDA support
   # This image is used when users click "Start Server" in GPU clusters
   # Publicly accessible from Docker Hub (no authentication needed)
-  VLLM_IMAGE: "vllm/vllm-openai:v0.11.0"
+  # v0.12.0+ required for Anthropic Messages API (Claude Code support)
+  VLLM_IMAGE: "vllm/vllm-openai:v0.12.0"
   
   # Web UI port
   WEBUI_PORT: "7860"
