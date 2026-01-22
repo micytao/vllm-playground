@@ -18,12 +18,13 @@ A modern web interface for managing and interacting with vLLM servers (www.githu
 ### ✨ Structured Outputs Support
 ![vLLM Playground with Structured Outputs](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-structured-outputs.png)
 
-### 🆕 What's New in v0.1.2
+### 🆕 What's New in v0.1.3
 
-- 🌏 **ModelScope Support** - Alternative model source for China region users
-- 🌐 **i18n Chinese** - Comprehensive Chinese language translations
-- 💬 **Chat Export** - Save conversations with export functionality
-- 🐛 **Bug Fixes** - Windows Unicode fix, sidebar UI improvements
+- 🎮 **Multi-Accelerators** - NVIDIA CUDA, AMD ROCm, Google TPU support
+- 🤖 **Claude Code** - Use open-source models as Claude Code backend
+- ⚡ **Metal GPU** - Apple Silicon GPU acceleration via vllm-metal
+- 🔧 **Custom venv** - Use specific vLLM versions or custom builds
+- 🐳 **vLLM v0.12.0** - Updated container image with Anthropic Messages API
 
 See **[Changelog](CHANGELOG.md)** for full details.
 
@@ -189,6 +190,7 @@ See [Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md) for details.
 
 ### Releases
 - **[Changelog](CHANGELOG.md)** - Version history and changes
+- **[v0.1.3](releases/v0.1.3.md)** - Multi-accelerators, Claude Code, vLLM-Metal
 - **[v0.1.2](releases/v0.1.2.md)** - ModelScope integration, i18n improvements
 - **[v0.1.1](releases/v0.1.1.md)** - MCP integration, runtime detection
 - **[v0.1.0](releases/v0.1.0.md)** - First release, modern UI, tool calling
