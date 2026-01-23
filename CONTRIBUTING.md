@@ -44,6 +44,22 @@ These are blocked by `.gitignore` to prevent accidental duplication.
 
 ## Development Workflow
 
+### Setting Up Your Environment
+
+```bash
+# 1. Fork and clone the repository
+git clone https://github.com/YOUR_USERNAME/vllm-playground.git
+cd vllm-playground
+
+# 2. Install with dev dependencies
+pip install -e ".[dev]"
+
+# 3. Set up pre-commit hooks (one-time setup)
+pre-commit install
+```
+
+After running `pre-commit install`, code formatting and linting will run automatically on every commit.
+
 ### Running Locally
 
 ```bash
@@ -78,9 +94,22 @@ This will report any files that shouldn't exist at root level.
 
 ## Code Style
 
-- Python: Follow PEP 8
-- JavaScript: Use consistent formatting
-- HTML/CSS: Keep styling in separate CSS files
+This project uses **pre-commit hooks** to enforce consistent code style automatically:
+
+- **Python**: Formatted by [Ruff](https://docs.astral.sh/ruff/)
+
+When you commit, pre-commit will automatically format your code. If files are modified, simply stage the changes and commit again:
+
+```bash
+git add -A
+git commit -m "your message"
+```
+
+To manually run formatting on all files:
+
+```bash
+pre-commit run --all-files
+```
 
 ## Testing
 
