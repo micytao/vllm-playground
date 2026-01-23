@@ -65,6 +65,9 @@ coverage.xml
 
 # MyPy
 .mypy_cache/
+
+# Ruff
+.ruff_cache/
 .dmypy.json
 dmypy.json
 
