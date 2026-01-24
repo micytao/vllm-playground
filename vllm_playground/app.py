@@ -83,6 +83,15 @@ metrics_timestamp: Optional[datetime] = None  # Track when metrics were last upd
 current_model_identifier: Optional[str] = None  # Track the actual model identifier passed to vLLM
 current_served_model_name: Optional[str] = None  # Track the served model name alias (for API calls)
 
+# vLLM-Omni global state (separate from vLLM)
+omni_process: Optional[asyncio.subprocess.Process] = None  # For subprocess mode
+omni_container_id: Optional[str] = None  # For container mode
+omni_running: bool = False
+omni_run_mode: Optional[str] = None
+omni_config: Optional["OmniConfig"] = None
+omni_start_time: Optional[datetime] = None
+omni_log_queue: asyncio.Queue = asyncio.Queue()
+
 
 def get_model_name_for_api() -> Optional[str]:
     """
@@ -161,6 +170,129 @@ class VLLMConfig(BaseModel):
     # Custom virtual environment path for subprocess mode
     # Allows using specific vLLM installations (e.g., vllm-metal)
     venv_path: Optional[str] = None
+
+
+# =============================================================================
+# vLLM-Omni Configuration (Separate from VLLMConfig)
+# =============================================================================
+
+
+class OmniConfig(BaseModel):
+    """Configuration for vLLM-Omni server (separate from VLLMConfig for omni-modality generation)"""
+
+    model: str = "Tongyi-MAI/Z-Image-Turbo"  # Default image generation model
+    host: str = "0.0.0.0"
+    port: int = 8091  # Different default port from vLLM (8000)
+    model_type: Literal["image", "omni", "video", "audio"] = "image"
+
+    # Image generation defaults
+    default_height: int = 1024
+    default_width: int = 1024
+    num_inference_steps: int = 50
+    guidance_scale: float = 4.0
+
+    # GPU settings (same pattern as VLLMConfig)
+    tensor_parallel_size: int = 1
+    gpu_memory_utilization: float = 0.9
+    gpu_device: Optional[str] = None
+    accelerator: Literal["nvidia", "amd"] = "nvidia"  # GPU accelerator type
+
+    # Run mode: subprocess (CLI) or container (same as vLLM Server)
+    run_mode: Literal["subprocess", "container"] = "subprocess"
+    venv_path: Optional[str] = None  # Path to vLLM-Omni venv (for subprocess mode)
+
+    # HuggingFace token for gated models
+    hf_token: Optional[str] = None
+
+    # Model source option
+    # ModelScope support - for users in China who can't access HuggingFace
+    # When enabled, models are downloaded from modelscope.cn instead of huggingface.co
+    use_modelscope: bool = False
+
+    # Trust remote code (required for some models)
+    trust_remote_code: bool = False
+
+
+class ImageGenerationRequest(BaseModel):
+    """Request for image generation via vLLM-Omni"""
+
+    prompt: str
+    negative_prompt: Optional[str] = None
+    height: int = 1024
+    width: int = 1024
+    num_inference_steps: int = 50
+    guidance_scale: float = 4.0
+    seed: Optional[int] = None
+
+
+class ImageGenerationResponse(BaseModel):
+    """Response from image generation"""
+
+    success: bool
+    image_base64: Optional[str] = None
+    error: Optional[str] = None
+    generation_time: Optional[float] = None
+
+
+class VideoGenerationRequest(BaseModel):
+    """Request for video generation via vLLM-Omni"""
+
+    prompt: str
+    negative_prompt: Optional[str] = None
+    duration: int = 4  # Duration in seconds
+    fps: int = 24  # Frames per second
+    num_inference_steps: int = 50
+    guidance_scale: float = 4.0
+    seed: Optional[int] = None
+
+
+class VideoGenerationResponse(BaseModel):
+    """Response from video generation"""
+
+    success: bool
+    video_base64: Optional[str] = None
+    duration: Optional[float] = None
+    error: Optional[str] = None
+    generation_time: Optional[float] = None
+
+
+class AudioGenerationRequest(BaseModel):
+    """Request for audio/TTS generation via vLLM-Omni"""
+
+    text: str
+    voice: Optional[str] = None  # Voice ID for TTS
+    speed: float = 1.0  # Speech speed
+    seed: Optional[int] = None
+
+
+class AudioGenerationResponse(BaseModel):
+    """Response from audio generation"""
+
+    success: bool
+    audio_base64: Optional[str] = None
+    duration: Optional[float] = None
+    error: Optional[str] = None
+    generation_time: Optional[float] = None
+
+
+class OmniChatRequest(BaseModel):
+    """Chat request for Omni models (Qwen-Omni with text/audio)"""
+
+    messages: List[Dict[str, Any]]  # Simple dict format for chat messages
+    temperature: float = 0.7
+    max_tokens: int = 512
+    stream: bool = True
+
+
+class OmniServerStatus(BaseModel):
+    """vLLM-Omni server status"""
+
+    running: bool
+    model: Optional[str] = None
+    model_type: Optional[str] = None
+    port: Optional[int] = None
+    run_mode: Optional[str] = None
+    uptime: Optional[str] = None
 
 
 def detect_tool_call_parser(model_name: str) -> Optional[str]:
@@ -877,6 +1009,8 @@ async def get_features():
         "version": version,
         "vllm_installed": False,  # Whether vLLM is installed (for subprocess mode)
         "vllm_version": None,
+        "vllm_omni_installed": False,  # Whether vLLM-Omni is installed
+        "vllm_omni_version": None,
         "guidellm": False,
         "mcp": False,
         "modelscope_installed": False,  # Whether modelscope SDK is installed
@@ -918,6 +1052,32 @@ async def get_features():
         features["guidellm"] = True
     except ImportError:
         pass
+
+    # Check vLLM-Omni installation (for omni-modality generation)
+    try:
+        import vllm_omni
+
+        features["vllm_omni_installed"] = True
+
+        # Try to get vLLM-Omni version
+        omni_ver = getattr(vllm_omni, "__version__", None)
+        if omni_ver is None:
+            try:
+                from importlib.metadata import version
+
+                omni_ver = version("vllm-omni")
+            except Exception:
+                pass
+
+        features["vllm_omni_version"] = omni_ver
+
+        if omni_ver:
+            logger.info(f"vLLM-Omni v{omni_ver} detected")
+        else:
+            logger.info("vLLM-Omni installed (version unknown)")
+    except ImportError:
+        features["vllm_omni_installed"] = False
+        logger.debug("vLLM-Omni not installed")
 
     # Check modelscope SDK (required for ModelScope model source)
     try:
@@ -4496,6 +4656,807 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
         logger.error(f"GuideLLM benchmark error: {e}")
         await broadcast_log(f"[GUIDELLM] Error: {e}")
         benchmark_results = None
+
+
+# =============================================================================
+# vLLM-Omni API Endpoints
+# =============================================================================
+
+
+@app.get("/api/omni/status")
+async def get_omni_status() -> OmniServerStatus:
+    """Get vLLM-Omni server status"""
+    global omni_running, omni_config, omni_start_time, omni_run_mode
+
+    uptime = None
+    if omni_running and omni_start_time:
+        delta = datetime.now() - omni_start_time
+        hours, remainder = divmod(int(delta.total_seconds()), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        uptime = f"{hours}h {minutes}m {seconds}s"
+
+    return OmniServerStatus(
+        running=omni_running,
+        model=omni_config.model if omni_config else None,
+        model_type=omni_config.model_type if omni_config else None,
+        port=omni_config.port if omni_config else None,
+        run_mode=omni_run_mode,
+        uptime=uptime,
+    )
+
+
+@app.post("/api/omni/start")
+async def start_omni_server(config: OmniConfig):
+    """Start vLLM-Omni server with --omni flag"""
+    global omni_process, omni_container_id, omni_running, omni_config, omni_start_time, omni_run_mode
+
+    # Check if already running
+    if omni_running:
+        raise HTTPException(status_code=400, detail="vLLM-Omni server is already running")
+
+    try:
+        omni_run_mode = config.run_mode
+        omni_config = config
+
+        if config.run_mode == "subprocess":
+            # Build command for subprocess mode
+            if config.venv_path:
+                # Use custom venv
+                venv_python = Path(config.venv_path).expanduser() / "bin" / "python"
+                cmd = [
+                    str(venv_python),
+                    "-m",
+                    "vllm.entrypoints.openai.api_server",
+                    "--model",
+                    config.model,
+                    "--port",
+                    str(config.port),
+                    "--omni",
+                ]
+            else:
+                # Use system vllm
+                cmd = [
+                    "vllm",
+                    "serve",
+                    config.model,
+                    "--port",
+                    str(config.port),
+                    "--omni",
+                ]
+
+            # Add GPU settings
+            if config.tensor_parallel_size > 1:
+                cmd.extend(["--tensor-parallel-size", str(config.tensor_parallel_size)])
+            if config.gpu_memory_utilization != 0.9:
+                cmd.extend(["--gpu-memory-utilization", str(config.gpu_memory_utilization)])
+            if config.trust_remote_code:
+                cmd.append("--trust-remote-code")
+
+            # Set environment
+            env = os.environ.copy()
+            if config.gpu_device:
+                env["CUDA_VISIBLE_DEVICES"] = config.gpu_device
+            if config.hf_token:
+                env["HF_TOKEN"] = config.hf_token
+
+            logger.info(f"Starting vLLM-Omni subprocess: {' '.join(cmd)}")
+
+            omni_process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env=env,
+            )
+
+            omni_running = True
+            omni_start_time = datetime.now()
+
+            # Start log reader task
+            asyncio.create_task(read_omni_logs_subprocess())
+
+            return {
+                "status": "started",
+                "mode": "subprocess",
+                "model": config.model,
+                "port": config.port,
+                "pid": omni_process.pid,
+            }
+
+        elif config.run_mode == "container":
+            # Container mode - use container_manager
+            if not CONTAINER_MODE_AVAILABLE or not container_manager:
+                raise HTTPException(
+                    status_code=400, detail="Container mode is not available. No container runtime found."
+                )
+
+            # Build container config for omni
+            container_config = {
+                "model": config.model,
+                "port": config.port,
+                "enable_omni": True,
+                "accelerator": config.accelerator,
+                "tensor_parallel_size": config.tensor_parallel_size,
+                "gpu_memory_utilization": config.gpu_memory_utilization,
+                "trust_remote_code": config.trust_remote_code,
+                "hf_token": config.hf_token,
+            }
+
+            result = await container_manager.start_omni_container(container_config)
+            omni_container_id = result["id"]
+            omni_running = True
+            omni_start_time = datetime.now()
+
+            return {
+                "status": "started",
+                "mode": "container",
+                "model": config.model,
+                "port": config.port,
+                "container_id": omni_container_id[:12] if omni_container_id else None,
+            }
+
+    except Exception as e:
+        logger.error(f"Failed to start vLLM-Omni: {e}")
+        omni_running = False
+        omni_config = None
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/omni/stop")
+async def stop_omni_server():
+    """Stop vLLM-Omni server"""
+    global omni_process, omni_container_id, omni_running, omni_config, omni_start_time, omni_run_mode
+
+    if not omni_running:
+        raise HTTPException(status_code=400, detail="vLLM-Omni server is not running")
+
+    try:
+        if omni_run_mode == "subprocess" and omni_process:
+            # Terminate subprocess
+            omni_process.terminate()
+            try:
+                await asyncio.wait_for(omni_process.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                omni_process.kill()
+                await omni_process.wait()
+
+            omni_process = None
+            logger.info("vLLM-Omni subprocess stopped")
+
+        elif omni_run_mode == "container" and omni_container_id:
+            # Stop container
+            if container_manager:
+                await container_manager.stop_omni_container(omni_container_id)
+            omni_container_id = None
+            logger.info("vLLM-Omni container stopped")
+
+        omni_running = False
+        omni_config = None
+        omni_start_time = None
+        omni_run_mode = None
+
+        return {"status": "stopped"}
+
+    except Exception as e:
+        logger.error(f"Failed to stop vLLM-Omni: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/omni/generate")
+async def generate_omni_image(request: ImageGenerationRequest):
+    """Generate image using vLLM-Omni"""
+    global omni_running, omni_config
+
+    if not omni_running:
+        raise HTTPException(status_code=400, detail="vLLM-Omni server is not running")
+
+    if not omni_config:
+        raise HTTPException(status_code=400, detail="vLLM-Omni configuration not available")
+
+    try:
+        import time
+
+        start_time = time.time()
+
+        # Build request to vLLM-Omni's /v1/chat/completions endpoint
+        omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
+
+        payload = {
+            "model": omni_config.model,
+            "messages": [{"role": "user", "content": request.prompt}],
+            "extra_body": {
+                "height": request.height,
+                "width": request.width,
+                "num_inference_steps": request.num_inference_steps,
+                "guidance_scale": request.guidance_scale,
+            },
+        }
+
+        if request.seed is not None:
+            payload["extra_body"]["seed"] = request.seed
+
+        if request.negative_prompt:
+            payload["extra_body"]["negative_prompt"] = request.negative_prompt
+
+        logger.info(f"Sending image generation request to vLLM-Omni: {omni_url}")
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(omni_url, json=payload, timeout=aiohttp.ClientTimeout(total=300)) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"vLLM-Omni error: {error_text}")
+                    return ImageGenerationResponse(success=False, error=error_text)
+
+                result = await response.json()
+
+                # Extract base64 image from response
+                # vLLM-Omni returns: choices[0].message.content[0].image_url.url (data:image/png;base64,...)
+                try:
+                    content = result["choices"][0]["message"]["content"]
+                    if isinstance(content, list) and len(content) > 0:
+                        image_url = content[0].get("image_url", {}).get("url", "")
+                        if image_url.startswith("data:image"):
+                            # Extract base64 part after the comma
+                            base64_data = image_url.split(",", 1)[1] if "," in image_url else image_url
+                        else:
+                            base64_data = image_url
+                    else:
+                        # Fallback for different response formats
+                        base64_data = str(content)
+
+                    generation_time = time.time() - start_time
+                    logger.info(f"Image generated in {generation_time:.2f}s")
+
+                    return ImageGenerationResponse(
+                        success=True, image_base64=base64_data, generation_time=generation_time
+                    )
+
+                except (KeyError, IndexError, TypeError) as e:
+                    logger.error(f"Failed to parse vLLM-Omni response: {e}")
+                    logger.error(f"Response: {result}")
+                    return ImageGenerationResponse(success=False, error=f"Failed to parse response: {e}")
+
+    except aiohttp.ClientError as e:
+        logger.error(f"Connection error to vLLM-Omni: {e}")
+        return ImageGenerationResponse(success=False, error=f"Connection error: {e}")
+    except Exception as e:
+        logger.error(f"Image generation error: {e}")
+        return ImageGenerationResponse(success=False, error=str(e))
+
+
+@app.post("/api/omni/generate-video")
+async def generate_video(request: VideoGenerationRequest) -> VideoGenerationResponse:
+    """Generate a video using vLLM-Omni (Text-to-Video models like Wan2.2)"""
+    global omni_running, omni_config
+
+    if not omni_running:
+        return VideoGenerationResponse(success=False, error="vLLM-Omni server is not running")
+
+    if not omni_config:
+        return VideoGenerationResponse(success=False, error="vLLM-Omni configuration not available")
+
+    # Build request to vLLM-Omni's /v1/chat/completions endpoint
+    # Video models typically use a chat completions format with specific parameters
+    omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
+
+    # Calculate number of frames based on duration and fps
+    num_frames = request.duration * request.fps
+
+    # Build the message with video generation parameters
+    messages = [
+        {
+            "role": "user",
+            "content": request.prompt,
+        }
+    ]
+
+    payload = {
+        "model": omni_config.model,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 1024,
+        "extra_body": {
+            "modality": "video",
+            "num_frames": num_frames,
+            "fps": request.fps,
+            "num_inference_steps": request.num_inference_steps,
+            "guidance_scale": request.guidance_scale,
+        },
+    }
+
+    if request.seed is not None:
+        payload["extra_body"]["seed"] = request.seed
+
+    if request.negative_prompt:
+        payload["extra_body"]["negative_prompt"] = request.negative_prompt
+
+    logger.info(f"Generating video with vLLM-Omni: {request.prompt[:50]}... ({request.duration}s @ {request.fps}fps)")
+
+    start_time = time.time()
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=600)  # 10 minutes for video generation
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(omni_url, json=payload) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"vLLM-Omni error: {error_text}")
+                    return VideoGenerationResponse(success=False, error=f"vLLM-Omni error: {error_text}")
+
+                result = await response.json()
+
+                try:
+                    # Parse the response to extract video data
+                    choices = result.get("choices", [])
+                    if not choices:
+                        return VideoGenerationResponse(success=False, error="No choices in response")
+
+                    message = choices[0].get("message", {})
+                    content = message.get("content", [])
+
+                    # Handle different response formats
+                    base64_data = None
+                    if isinstance(content, list):
+                        for item in content:
+                            if item.get("type") == "video":
+                                video_url = item.get("video_url", {}).get("url", "")
+                                if video_url.startswith("data:video"):
+                                    base64_data = video_url.split(",", 1)[1] if "," in video_url else video_url
+                                else:
+                                    base64_data = video_url
+                                break
+                    elif isinstance(content, str):
+                        # Some models return base64 directly
+                        base64_data = content
+
+                    if not base64_data:
+                        return VideoGenerationResponse(success=False, error="No video data in response")
+
+                    generation_time = time.time() - start_time
+                    logger.info(f"Video generated in {generation_time:.2f}s")
+
+                    return VideoGenerationResponse(
+                        success=True,
+                        video_base64=base64_data,
+                        duration=request.duration,
+                        generation_time=generation_time,
+                    )
+
+                except (KeyError, IndexError, TypeError) as e:
+                    logger.error(f"Failed to parse vLLM-Omni video response: {e}")
+                    logger.error(f"Response: {result}")
+                    return VideoGenerationResponse(success=False, error=f"Failed to parse response: {e}")
+
+    except aiohttp.ClientError as e:
+        logger.error(f"Connection error to vLLM-Omni: {e}")
+        return VideoGenerationResponse(success=False, error=f"Connection error: {e}")
+    except Exception as e:
+        logger.error(f"Video generation error: {e}")
+        return VideoGenerationResponse(success=False, error=str(e))
+
+
+@app.post("/api/omni/generate-audio")
+async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResponse:
+    """Generate audio/speech using vLLM-Omni TTS models (Qwen3-TTS, Stable Audio)"""
+    global omni_running, omni_config
+
+    if not omni_running:
+        return AudioGenerationResponse(success=False, error="vLLM-Omni server is not running")
+
+    if not omni_config:
+        return AudioGenerationResponse(success=False, error="vLLM-Omni configuration not available")
+
+    # Build request to vLLM-Omni's /v1/chat/completions endpoint
+    omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
+
+    # Build the message for TTS
+    messages = [
+        {
+            "role": "user",
+            "content": request.text,
+        }
+    ]
+
+    payload = {
+        "model": omni_config.model,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 4096,
+        "extra_body": {
+            "modality": "audio",
+            "speed": request.speed,
+        },
+    }
+
+    if request.seed is not None:
+        payload["extra_body"]["seed"] = request.seed
+
+    if request.voice:
+        payload["extra_body"]["voice"] = request.voice
+
+    logger.info(f"Generating audio with vLLM-Omni: {request.text[:50]}...")
+
+    start_time = time.time()
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=120)  # 2 minutes for audio generation
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(omni_url, json=payload) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"vLLM-Omni error: {error_text}")
+                    return AudioGenerationResponse(success=False, error=f"vLLM-Omni error: {error_text}")
+
+                result = await response.json()
+
+                try:
+                    # Parse the response to extract audio data
+                    choices = result.get("choices", [])
+                    if not choices:
+                        return AudioGenerationResponse(success=False, error="No choices in response")
+
+                    message = choices[0].get("message", {})
+                    content = message.get("content", [])
+
+                    # Handle different response formats
+                    base64_data = None
+                    audio_duration = None
+
+                    if isinstance(content, list):
+                        for item in content:
+                            if item.get("type") == "audio":
+                                audio_url = item.get("audio_url", {}).get("url", "")
+                                if audio_url.startswith("data:audio"):
+                                    base64_data = audio_url.split(",", 1)[1] if "," in audio_url else audio_url
+                                else:
+                                    base64_data = audio_url
+                                # Try to get duration if provided
+                                audio_duration = item.get("duration")
+                                break
+                    elif isinstance(content, str):
+                        # Some models return base64 directly
+                        base64_data = content
+
+                    if not base64_data:
+                        return AudioGenerationResponse(success=False, error="No audio data in response")
+
+                    generation_time = time.time() - start_time
+                    logger.info(f"Audio generated in {generation_time:.2f}s")
+
+                    return AudioGenerationResponse(
+                        success=True,
+                        audio_base64=base64_data,
+                        duration=audio_duration,
+                        generation_time=generation_time,
+                    )
+
+                except (KeyError, IndexError, TypeError) as e:
+                    logger.error(f"Failed to parse vLLM-Omni audio response: {e}")
+                    logger.error(f"Response: {result}")
+                    return AudioGenerationResponse(success=False, error=f"Failed to parse response: {e}")
+
+    except aiohttp.ClientError as e:
+        logger.error(f"Connection error to vLLM-Omni: {e}")
+        return AudioGenerationResponse(success=False, error=f"Connection error: {e}")
+    except Exception as e:
+        logger.error(f"Audio generation error: {e}")
+        return AudioGenerationResponse(success=False, error=str(e))
+
+
+@app.post("/api/omni/chat")
+async def omni_chat(request: OmniChatRequest):
+    """Chat with vLLM-Omni models (Qwen-Omni) with streaming support"""
+    global omni_running, omni_config
+
+    if not omni_running:
+        raise HTTPException(status_code=400, detail="vLLM-Omni server is not running")
+
+    if not omni_config:
+        raise HTTPException(status_code=400, detail="vLLM-Omni configuration not available")
+
+    # Build request to vLLM-Omni's /v1/chat/completions endpoint
+    omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
+
+    payload = {
+        "model": omni_config.model,
+        "messages": request.messages,
+        "temperature": request.temperature,
+        "max_tokens": request.max_tokens,
+        "stream": request.stream,
+    }
+
+    logger.info(f"Sending chat request to vLLM-Omni: {omni_url}")
+
+    async def generate_stream():
+        """Generator for streaming responses"""
+        full_text = ""
+        audio_data = None
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=120)  # 2 minutes for audio generation
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(omni_url, json=payload) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"vLLM-Omni error: {error_text}")
+                        yield f"data: {json.dumps({'error': error_text})}\n\n"
+                        return
+
+                    if request.stream:
+                        # Stream the response
+                        async for line in response.content:
+                            line_text = line.decode("utf-8", errors="replace").strip()
+                            if not line_text:
+                                continue
+
+                            if line_text.startswith("data: "):
+                                data = line_text[6:]
+                                if data == "[DONE]":
+                                    yield "data: [DONE]\n\n"
+                                    continue
+
+                                try:
+                                    parsed = json.loads(data)
+                                    choices = parsed.get("choices", [])
+                                    if choices:
+                                        delta = choices[0].get("delta", {})
+                                        content = delta.get("content", "")
+
+                                        # Handle text content
+                                        if isinstance(content, str) and content:
+                                            full_text += content
+                                            yield f"data: {json.dumps({'text': content})}\n\n"
+
+                                        # Handle multimodal content (list format)
+                                        elif isinstance(content, list):
+                                            for item in content:
+                                                if item.get("type") == "text":
+                                                    text = item.get("text", "")
+                                                    full_text += text
+                                                    yield f"data: {json.dumps({'text': text})}\n\n"
+                                                elif item.get("type") == "audio":
+                                                    audio_url = item.get("audio_url", {}).get("url", "")
+                                                    if audio_url.startswith("data:audio"):
+                                                        audio_data = (
+                                                            audio_url.split(",", 1)[1]
+                                                            if "," in audio_url
+                                                            else audio_url
+                                                        )
+                                                        yield f"data: {json.dumps({'audio': audio_data})}\n\n"
+
+                                except json.JSONDecodeError:
+                                    continue
+
+                    else:
+                        # Non-streaming response
+                        result = await response.json()
+                        try:
+                            choices = result.get("choices", [])
+                            if choices:
+                                message = choices[0].get("message", {})
+                                content = message.get("content", "")
+
+                                # Handle string content
+                                if isinstance(content, str):
+                                    yield f"data: {json.dumps({'text': content})}\n\n"
+
+                                # Handle multimodal content (list format)
+                                elif isinstance(content, list):
+                                    for item in content:
+                                        if item.get("type") == "text":
+                                            yield f"data: {json.dumps({'text': item.get('text', '')})}\n\n"
+                                        elif item.get("type") == "audio":
+                                            audio_url = item.get("audio_url", {}).get("url", "")
+                                            if audio_url.startswith("data:audio"):
+                                                audio_data = (
+                                                    audio_url.split(",", 1)[1] if "," in audio_url else audio_url
+                                                )
+                                                yield f"data: {json.dumps({'audio': audio_data})}\n\n"
+
+                        except (KeyError, IndexError, TypeError) as e:
+                            logger.error(f"Failed to parse vLLM-Omni response: {e}")
+                            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+                        yield "data: [DONE]\n\n"
+
+        except aiohttp.ClientError as e:
+            logger.error(f"Connection error to vLLM-Omni: {e}")
+            yield f"data: {json.dumps({'error': f'Connection error: {e}'})}\n\n"
+        except Exception as e:
+            logger.error(f"Omni chat error: {e}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.get("/api/omni/models")
+async def list_omni_models():
+    """List all vLLM-Omni supported models by category (from official docs)
+
+    Source: https://docs.vllm.ai/projects/vllm-omni/en/latest/models/supported_models/
+    """
+    return {
+        "image": [
+            # Qwen Image Models
+            {
+                "id": "Qwen/Qwen-Image",
+                "name": "Qwen Image",
+                "vram": "24GB",
+                "description": "High quality text-to-image",
+            },
+            {
+                "id": "Qwen/Qwen-Image-2512",
+                "name": "Qwen Image 2512",
+                "vram": "24GB",
+                "description": "Higher resolution (2512px)",
+            },
+            {"id": "Qwen/Qwen-Image-Edit", "name": "Qwen Image Edit", "vram": "24GB", "description": "Image editing"},
+            {
+                "id": "Qwen/Qwen-Image-Edit-2509",
+                "name": "Qwen Image Edit 2509",
+                "vram": "24GB",
+                "description": "Advanced image editing",
+            },
+            {
+                "id": "Qwen/Qwen-Image-Layered",
+                "name": "Qwen Image Layered",
+                "vram": "24GB",
+                "description": "Layered image generation",
+            },
+            # Z-Image
+            {
+                "id": "Tongyi-MAI/Z-Image-Turbo",
+                "name": "Z-Image Turbo",
+                "vram": "16GB",
+                "description": "Fast image generation",
+            },
+            # BAGEL
+            {
+                "id": "ByteDance-Seed/BAGEL-7B-MoT",
+                "name": "BAGEL 7B MoT",
+                "vram": "16GB",
+                "description": "ByteDance DiT model",
+            },
+            # Ovis
+            {"id": "OvisAI/Ovis-Image", "name": "Ovis Image", "vram": "16GB", "description": "Ovis image generation"},
+            # LongCat
+            {
+                "id": "meituan-longcat/LongCat-Image",
+                "name": "LongCat Image",
+                "vram": "16GB",
+                "description": "Meituan image generation",
+            },
+            {
+                "id": "meituan-longcat/LongCat-Image-Edit",
+                "name": "LongCat Image Edit",
+                "vram": "16GB",
+                "description": "Meituan image editing",
+            },
+            # Stable Diffusion
+            {
+                "id": "stabilityai/stable-diffusion-3.5-medium",
+                "name": "Stable Diffusion 3.5",
+                "vram": "16GB",
+                "description": "SD3.5 medium model",
+            },
+            # FLUX
+            {
+                "id": "black-forest-labs/FLUX.2-klein-4B",
+                "name": "FLUX.2 Klein 4B",
+                "vram": "12GB",
+                "description": "Compact FLUX model",
+            },
+            {
+                "id": "black-forest-labs/FLUX.2-klein-9B",
+                "name": "FLUX.2 Klein 9B",
+                "vram": "24GB",
+                "description": "Larger FLUX model",
+            },
+        ],
+        "omni": [
+            # Qwen Omni Models (Text + Audio I/O)
+            {
+                "id": "Qwen/Qwen2.5-Omni-3B",
+                "name": "Qwen2.5 Omni 3B",
+                "vram": "8GB",
+                "description": "Lightweight text + audio",
+            },
+            {
+                "id": "Qwen/Qwen2.5-Omni-7B",
+                "name": "Qwen2.5 Omni 7B",
+                "vram": "16GB",
+                "description": "Text + Audio I/O",
+            },
+            {
+                "id": "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+                "name": "Qwen3 Omni 30B",
+                "vram": "48GB",
+                "description": "Advanced omni model (MoE)",
+            },
+        ],
+        "video": [
+            # Wan Video Models
+            {
+                "id": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+                "name": "Wan2.2 T2V 14B",
+                "vram": "24GB+",
+                "description": "Text-to-video generation",
+            },
+            {
+                "id": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+                "name": "Wan2.2 TI2V 5B",
+                "vram": "16GB",
+                "description": "Text+Image to video",
+            },
+            {
+                "id": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+                "name": "Wan2.2 I2V 14B",
+                "vram": "24GB+",
+                "description": "Image-to-video generation",
+            },
+        ],
+        "audio": [
+            # Stable Audio
+            {
+                "id": "stabilityai/stable-audio-open-1.0",
+                "name": "Stable Audio Open",
+                "vram": "8GB",
+                "description": "Audio generation",
+            },
+            # Qwen TTS Models
+            {
+                "id": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+                "name": "Qwen3 TTS Custom Voice",
+                "vram": "8GB",
+                "description": "TTS with custom voice cloning",
+            },
+            {
+                "id": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+                "name": "Qwen3 TTS Voice Design",
+                "vram": "8GB",
+                "description": "TTS with voice design",
+            },
+            {
+                "id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+                "name": "Qwen3 TTS Base",
+                "vram": "4GB",
+                "description": "Lightweight TTS model",
+            },
+        ],
+    }
+
+
+async def read_omni_logs_subprocess():
+    """Read logs from vLLM-Omni subprocess"""
+    global omni_process, omni_running
+
+    if not omni_process or not omni_process.stdout:
+        return
+
+    try:
+        while omni_running and omni_process:
+            line = await omni_process.stdout.readline()
+            if not line:
+                break
+
+            log_line = line.decode("utf-8", errors="replace").strip()
+            if log_line:
+                # Broadcast to websocket connections with [OMNI] prefix
+                await broadcast_log(f"[OMNI] {log_line}")
+
+    except Exception as e:
+        logger.error(f"Error reading omni logs: {e}")
+
+    # Check if process ended
+    if omni_process and omni_process.returncode is not None:
+        omni_running = False
+        await broadcast_log(f"[OMNI] Process ended with code {omni_process.returncode}")
 
 
 # ============================================

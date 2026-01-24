@@ -44,6 +44,7 @@ class VLLMContainerManager:
     """Manages vLLM container lifecycle using Podman CLI"""
 
     CONTAINER_NAME = "vllm-service"
+    OMNI_CONTAINER_NAME = "vllm-omni-service"  # Separate container name for vLLM-Omni
 
     # Default images for different platforms and accelerators (must use fully-qualified names for Podman)
     # GPU images by accelerator type
@@ -54,6 +55,10 @@ class VLLMContainerManager:
     # CPU images by platform
     DEFAULT_IMAGE_CPU_MACOS = "quay.io/rh_ee_micyang/vllm-mac:v0.11.0"  # CPU image for macOS (linux/arm64)
     DEFAULT_IMAGE_CPU_X86 = "quay.io/rh_ee_micyang/vllm-cpu:v0.11.0"  # CPU image for x86_64 Linux
+
+    # vLLM-Omni images (for omni-modality generation)
+    DEFAULT_IMAGE_OMNI_NVIDIA = "docker.io/vllm/vllm-omni:v0.14.0rc1"  # Official NVIDIA/CUDA image
+    DEFAULT_IMAGE_OMNI_AMD = "docker.io/vllm/vllm-omni-rocm:v0.14.0rc1"  # Official AMD/ROCm image
 
     def __init__(self, container_runtime: str = "podman", use_sudo: bool = None):
         """
@@ -939,6 +944,182 @@ class VLLMContainerManager:
         except Exception as e:
             logger.error(f"Error streaming logs: {e}")
             yield f"[ERROR] Failed to stream logs: {e}"
+
+    # =========================================================================
+    # vLLM-Omni Container Methods
+    # =========================================================================
+
+    def get_omni_image(self, accelerator: str = "nvidia") -> str:
+        """
+        Get vLLM-Omni container image based on accelerator type.
+
+        Args:
+            accelerator: GPU accelerator type ("nvidia" or "amd")
+
+        Returns:
+            Container image name
+        """
+        if accelerator == "amd":
+            return self.DEFAULT_IMAGE_OMNI_AMD
+        return self.DEFAULT_IMAGE_OMNI_NVIDIA
+
+    async def start_omni_container(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Start vLLM-Omni container for omni-modality generation.
+
+        Args:
+            config: Configuration dict with:
+                - model: Model name/path
+                - port: Port to expose (default 8091)
+                - accelerator: "nvidia" or "amd"
+                - tensor_parallel_size: Number of GPUs
+                - gpu_memory_utilization: GPU memory fraction
+                - trust_remote_code: Whether to trust remote code
+                - hf_token: HuggingFace token (optional)
+
+        Returns:
+            Dict with container info (id, name, image)
+        """
+        try:
+            # Stop existing omni container if running
+            await self.stop_omni_container()
+
+            # Get appropriate image
+            accelerator = config.get("accelerator", "nvidia")
+            image = self.get_omni_image(accelerator)
+
+            # Build container command
+            model = config.get("model", "Tongyi-MAI/Z-Image-Turbo")
+            port = config.get("port", 8091)
+
+            # vLLM-Omni command arguments
+            cmd_args = [
+                "--model",
+                model,
+                "--port",
+                str(port),
+                "--omni",  # Enable omni mode
+            ]
+
+            if config.get("tensor_parallel_size", 1) > 1:
+                cmd_args.extend(["--tensor-parallel-size", str(config["tensor_parallel_size"])])
+            if config.get("gpu_memory_utilization"):
+                cmd_args.extend(["--gpu-memory-utilization", str(config["gpu_memory_utilization"])])
+            if config.get("trust_remote_code"):
+                cmd_args.append("--trust-remote-code")
+
+            # Build container run command
+            container_cmd = [
+                self.runtime,
+                "run",
+                "-d",
+                "--name",
+                self.OMNI_CONTAINER_NAME,
+                "-p",
+                f"{port}:{port}",
+            ]
+
+            # Add GPU flags based on accelerator
+            if accelerator == "nvidia":
+                container_cmd.extend(["--gpus", "all"])
+            elif accelerator == "amd":
+                container_cmd.extend(["--device", "/dev/kfd", "--device", "/dev/dri"])
+
+            # Add environment variables
+            if config.get("hf_token"):
+                container_cmd.extend(["-e", f"HF_TOKEN={config['hf_token']}"])
+
+            # Add shared memory for multi-GPU
+            container_cmd.extend(["--shm-size", "16g"])
+
+            # Add image and command
+            container_cmd.append(image)
+            container_cmd.extend(cmd_args)
+
+            # Run with sudo if needed
+            if self._should_use_sudo():
+                container_cmd = ["sudo"] + container_cmd
+
+            logger.info(f"Starting vLLM-Omni container: {' '.join(container_cmd)}")
+
+            result = subprocess.run(container_cmd, capture_output=True, text=True)
+
+            if result.returncode != 0:
+                raise Exception(f"Failed to start container: {result.stderr}")
+
+            container_id = result.stdout.strip()
+
+            return {
+                "id": container_id,
+                "name": self.OMNI_CONTAINER_NAME,
+                "image": image,
+                "port": port,
+            }
+
+        except Exception as e:
+            logger.error(f"Error starting vLLM-Omni container: {e}")
+            raise
+
+    async def stop_omni_container(self, container_id: str = None):
+        """
+        Stop vLLM-Omni container.
+
+        Args:
+            container_id: Optional container ID (uses name if not provided)
+        """
+        try:
+            target = container_id or self.OMNI_CONTAINER_NAME
+
+            # Check if container exists
+            if self._should_use_sudo():
+                check_cmd = ["sudo", self.runtime, "ps", "-a", "-q", "-f", f"name={self.OMNI_CONTAINER_NAME}"]
+            else:
+                check_cmd = [self.runtime, "ps", "-a", "-q", "-f", f"name={self.OMNI_CONTAINER_NAME}"]
+
+            result = subprocess.run(check_cmd, capture_output=True, text=True)
+            if not result.stdout.strip():
+                logger.info("No vLLM-Omni container to stop")
+                return
+
+            # Stop and remove container
+            if self._should_use_sudo():
+                stop_cmd = ["sudo", self.runtime, "rm", "-f", target]
+            else:
+                stop_cmd = [self.runtime, "rm", "-f", target]
+
+            subprocess.run(stop_cmd, capture_output=True, text=True)
+            logger.info(f"Stopped vLLM-Omni container: {target}")
+
+        except Exception as e:
+            logger.error(f"Error stopping vLLM-Omni container: {e}")
+
+    async def get_omni_container_status(self) -> Dict[str, Any]:
+        """Get vLLM-Omni container status"""
+        try:
+            if self._should_use_sudo():
+                cmd = ["sudo", self.runtime, "inspect", self.OMNI_CONTAINER_NAME]
+            else:
+                cmd = [self.runtime, "inspect", self.OMNI_CONTAINER_NAME]
+
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            if result.returncode != 0:
+                return {"running": False, "status": "not_found"}
+
+            container_info = json.loads(result.stdout)
+            if container_info:
+                state = container_info[0].get("State", {})
+                return {
+                    "running": state.get("Running", False),
+                    "status": state.get("Status", "unknown"),
+                    "id": container_info[0].get("Id", "")[:12],
+                }
+
+            return {"running": False, "status": "not_found"}
+
+        except Exception as e:
+            logger.error(f"Error checking vLLM-Omni container status: {e}")
+            return {"running": False, "status": "error", "error": str(e)}
 
     def close(self):
         """Close any open connections (not needed for CLI-based approach)"""

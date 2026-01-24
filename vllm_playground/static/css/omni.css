@@ -1,0 +1,988 @@
+/* =============================================================================
+   vLLM-Omni Styles
+   Styles for omni-modality generation UI
+   ============================================================================= */
+
+/* =============================================================================
+   View Container
+   ============================================================================= */
+
+#vllm-omni-view {
+    padding: 20px;
+    height: 100%;
+    overflow-y: auto;
+}
+
+#vllm-omni-view.active {
+    display: block !important;
+}
+
+/* =============================================================================
+   Layout
+   ============================================================================= */
+
+.omni-layout {
+    display: flex;
+    gap: 0;
+    align-items: stretch;
+}
+
+.omni-content-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 100px);
+    gap: 0;
+    overflow: hidden;
+}
+
+.omni-content-wrapper .omni-layout {
+    flex: 1;
+    min-height: 0;
+    margin-bottom: 0;
+    overflow: hidden;
+}
+
+/* =============================================================================
+   Install Warning
+   ============================================================================= */
+
+.omni-install-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 24px;
+    padding: 32px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 0;
+    margin: 24px;
+}
+
+.omni-install-warning .warning-icon {
+    font-size: 2.5rem;
+    color: var(--warning-color);
+}
+
+.omni-install-warning .warning-content h3 {
+    margin: 0 0 8px 0;
+    color: var(--warning-color);
+}
+
+.omni-install-warning .install-instructions {
+    margin-top: 16px;
+}
+
+.omni-install-warning pre {
+    background: var(--bg-tertiary);
+    padding: 16px;
+    border-radius: 0;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    margin: 8px 0;
+    border: 1px solid var(--border-color);
+}
+
+.omni-install-warning code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+/* =============================================================================
+   Availability Status
+   ============================================================================= */
+
+.omni-availability-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--bg-tertiary);
+    border-radius: 0;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+    border: 1px solid var(--border-color);
+}
+
+.omni-availability-status .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+}
+
+.omni-availability-status .status-dot.online {
+    background: var(--success-color);
+}
+
+/* =============================================================================
+   Config Panel
+   ============================================================================= */
+
+#omni-config-panel {
+    position: relative;
+    background: var(--bg-secondary);
+    border-radius: 0;
+    padding: 16px 20px;
+    overflow-y: auto;
+    width: 420px;
+    min-width: 320px;
+    max-width: 600px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border-color);
+}
+
+#omni-config-panel h2 {
+    margin: 0 0 16px 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+/* =============================================================================
+   Config Sections with Dividers
+   ============================================================================= */
+
+.config-section {
+    margin-bottom: 20px;
+    padding: 16px;
+    background: var(--bg-primary);
+    border-radius: 0;
+    border: 1px solid var(--border-color);
+}
+
+.config-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.config-section-header .section-icon {
+    font-size: 1.1rem;
+}
+
+.config-section-header h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.config-section-content {
+    /* Content area */
+}
+
+.config-section-content .form-group:last-child {
+    margin-bottom: 0;
+}
+
+/* Model ID Display */
+.model-id-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin-top: 12px;
+}
+
+.model-id-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.model-id-value {
+    flex: 1;
+    font-size: 0.8rem;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    color: var(--text-primary);
+    background: transparent;
+    word-break: break-all;
+    padding: 0;
+}
+
+/* Server Controls Section (no header) */
+.server-controls-section {
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin-top: 24px;
+}
+
+/* Section title (deprecated, use config-section-header instead) */
+#omni-config-panel .section-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 16px 0 8px 0;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+.size-inputs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.size-inputs input {
+    width: 90px;
+}
+
+/* =============================================================================
+   Interaction Panel (Hybrid UI)
+   ============================================================================= */
+
+.interaction-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    border-radius: 0;
+    padding: 16px 20px;
+    min-width: 300px;
+}
+
+.panel-mode {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* =============================================================================
+   Form Elements
+   ============================================================================= */
+
+#omni-config-panel .form-group {
+    margin-bottom: 16px;
+}
+
+#omni-config-panel .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+#omni-config-panel .form-group select,
+#omni-config-panel .form-group input[type="text"],
+#omni-config-panel .form-group input[type="number"] {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+#omni-config-panel .form-group input[type="range"] {
+    width: 100%;
+}
+
+#omni-config-panel .help-text {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+#omni-config-panel .button-group {
+    display: flex;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+#omni-config-panel .status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border-radius: 0;
+    font-size: 0.9rem;
+    border: 1px solid var(--border-color);
+}
+
+#omni-config-panel .status-indicator .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+}
+
+#omni-config-panel .status-indicator .status-dot.online {
+    background: var(--success-color);
+}
+
+/* Run Mode Toggle - Uses standard mode-toggle-group from style.css */
+/* The mode-toggle-group, mode-toggle-buttons, and mode-button classes
+   are defined in the main style.css and reused here for consistency */
+
+/* =============================================================================
+   Image Upload Dropzone
+   ============================================================================= */
+
+.image-upload-section {
+    margin-bottom: 16px;
+}
+
+.dropzone {
+    border: 2px dashed var(--border-color);
+    border-radius: 0;
+    padding: 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--bg-tertiary);
+}
+
+.dropzone:hover,
+.dropzone.dragover {
+    border-color: var(--primary-color);
+    background: var(--bg-tertiary);
+}
+
+.dropzone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.dropzone-icon {
+    font-size: 2.5rem;
+    opacity: 0.6;
+}
+
+.dropzone-text {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.dropzone-hint {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.uploaded-preview {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    background: var(--bg-tertiary);
+    border-radius: 0;
+    border: 1px solid var(--border-color);
+}
+
+.uploaded-preview img {
+    max-width: 120px;
+    max-height: 120px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+
+/* =============================================================================
+   Prompt Section
+   ============================================================================= */
+
+.prompt-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.prompt-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.prompt-inputs textarea {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    resize: vertical;
+    min-height: 60px;
+    font-family: inherit;
+    transition: all 0.2s;
+}
+
+.prompt-inputs textarea:first-child {
+    min-height: 80px;
+}
+
+.prompt-inputs textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.prompt-inputs textarea::placeholder {
+    color: var(--text-secondary);
+}
+
+.prompt-actions {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+
+.seed-input-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+
+.seed-input-wrapper input[type="number"] {
+    width: 280px;
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    transition: all 0.2s;
+}
+
+.seed-input-wrapper input[type="number"]:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.seed-input-wrapper input[type="number"]::placeholder {
+    color: var(--text-secondary);
+}
+
+.seed-tip {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    line-height: 1.3;
+}
+
+#omni-generate-btn {
+    width: 50%;
+    max-width: 200px;
+    align-self: flex-start;
+}
+
+/* =============================================================================
+   Studio Header
+   ============================================================================= */
+
+.studio-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.studio-icon {
+    font-size: 1.4rem;
+}
+
+.studio-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* =============================================================================
+   Video Parameters
+   ============================================================================= */
+
+.video-params {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.video-params .param-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.video-params label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.video-params input[type="number"] {
+    width: 100px;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.video-params input[type="number"]:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.video-tip {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    flex-basis: 100%;
+}
+
+/* =============================================================================
+   Generation Gallery (Image/Video)
+   ============================================================================= */
+
+.generation-gallery {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+    overflow-y: auto;
+    padding: 16px;
+    background: var(--bg-primary);
+    border-radius: 0;
+    min-height: 200px;
+    border: 1px solid var(--border-color);
+}
+
+/* Keep .image-gallery for backwards compatibility */
+.image-gallery {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+    overflow-y: auto;
+    padding: 16px;
+    background: var(--bg-primary);
+    border-radius: 0;
+    min-height: 200px;
+    border: 1px solid var(--border-color);
+}
+
+.gallery-item {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-primary);
+    aspect-ratio: 1;
+}
+
+.gallery-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.gallery-item-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 8px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.gallery-item:hover .gallery-item-overlay {
+    opacity: 1;
+}
+
+.gallery-item-prompt {
+    font-size: 0.75rem;
+    color: white;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gallery-item-actions {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.gallery-item:hover .gallery-item-actions {
+    opacity: 1;
+}
+
+.gallery-item-actions button {
+    background: rgba(0,0,0,0.6);
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.gallery-item-actions button:hover {
+    background: rgba(0,0,0,0.8);
+}
+
+.gallery-item-actions button + button {
+    margin-left: 4px;
+}
+
+/* Video Gallery Item */
+.gallery-item-video {
+    aspect-ratio: 16/9;
+}
+
+.gallery-item-video video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.gallery-item-duration {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(0, 0, 0, 0.5);
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-top: 4px;
+    display: inline-block;
+}
+
+.gallery-play-btn {
+    font-size: 0.9rem;
+}
+
+/* Audio Gallery Item */
+.gallery-item-audio {
+    aspect-ratio: auto;
+    min-height: 120px;
+}
+
+.gallery-item-audio .audio-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    gap: 8px;
+    height: 100%;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+.gallery-item-audio .audio-icon {
+    font-size: 2rem;
+}
+
+.gallery-item-audio .audio-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-align: center;
+    line-height: 1.3;
+    max-height: 40px;
+    overflow: hidden;
+}
+
+.gallery-item-audio audio {
+    width: 100%;
+    height: 36px;
+    margin-top: 4px;
+}
+
+.gallery-item-audio .audio-duration {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+}
+
+.gallery-placeholder {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px;
+    color: var(--text-secondary);
+    text-align: center;
+    gap: 8px;
+}
+
+.gallery-placeholder .placeholder-icon {
+    font-size: 3rem;
+    opacity: 0.5;
+}
+
+.gallery-placeholder .placeholder-text {
+    font-size: 1.1rem;
+}
+
+.gallery-placeholder .placeholder-hint {
+    font-size: 0.85rem;
+    opacity: 0.7;
+}
+
+/* =============================================================================
+   Chat Panel (for Omni models) - Consistent with vLLM Server
+   ============================================================================= */
+
+#omni-chat-panel {
+    flex-direction: column;
+}
+
+/* Panel wrapper - matches vLLM Server .panel */
+#omni-chat-panel .omni-chat-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg-secondary);
+    border-radius: 0;
+    overflow: hidden;
+}
+
+/* Panel header - matches vLLM Server .panel-header */
+#omni-chat-panel .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+#omni-chat-panel .panel-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+#omni-chat-panel .chat-header-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Chat container - matches vLLM Server .chat-container */
+#omni-chat-panel .chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    background: var(--bg-primary);
+}
+
+/* Chat input area - matches vLLM Server .chat-input-area */
+#omni-chat-panel .chat-input-area {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+/* Input group - matches vLLM Server .input-group */
+#omni-chat-panel .input-group {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+#omni-chat-panel .input-group .chat-input {
+    flex: 1;
+    min-height: 44px;
+    max-height: 120px;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    resize: vertical;
+}
+
+#omni-chat-panel .input-group .chat-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+/* Media preview */
+.chat-media-preview {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--bg-tertiary);
+    border-radius: 0;
+    margin-bottom: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.chat-media-preview img {
+    max-width: 80px;
+    max-height: 80px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+
+/* Icon button */
+.btn-icon {
+    padding: 10px 14px;
+    font-size: 1.1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+    color: var(--text-primary);
+}
+
+.btn-icon:hover {
+    background: var(--bg-primary);
+}
+
+/* Inline media in chat messages */
+.chat-inline-image {
+    max-width: 300px;
+    max-height: 300px;
+    border-radius: 8px;
+    margin-top: 8px;
+    cursor: pointer;
+}
+
+.chat-inline-image:hover {
+    opacity: 0.9;
+}
+
+.chat-inline-audio {
+    margin-top: 8px;
+    width: 100%;
+    max-width: 300px;
+}
+
+/* =============================================================================
+   Logs Row (consistent with vLLM Server)
+   ============================================================================= */
+
+/* vLLM-Omni specific logs row adjustments */
+#omni-logs-row {
+    flex: 0 0 auto;
+    margin-top: 0;
+    border-radius: 0;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+}
+
+#omni-logs-row .logs-row-header {
+    border-radius: 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+#omni-logs-row.collapsed .logs-row-header {
+    border-radius: 0;
+    border-bottom: none;
+}
+
+#omni-logs-row .logs-row-content {
+    max-height: 200px;
+}
+
+#omni-logs-container {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.8rem;
+}
+
+#omni-logs-container .log-entry {
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+#omni-logs-container .log-timestamp {
+    color: var(--text-secondary);
+    margin-right: 8px;
+}
+
+/* =============================================================================
+   View Loading State
+   ============================================================================= */
+
+.view-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+    color: var(--text-secondary);
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.error-message {
+    text-align: center;
+    padding: 48px;
+    color: var(--text-secondary);
+}
+
+.error-message h3 {
+    color: var(--danger-color);
+    margin-bottom: 16px;
+}
+
+/* =============================================================================
+   Responsive Adjustments
+   ============================================================================= */
+
+@media (max-width: 1200px) {
+    #omni-config-panel {
+        width: 360px;
+        min-width: 320px;
+    }
+}
+
+@media (max-width: 900px) {
+    .omni-layout {
+        flex-direction: column;
+    }
+
+    #omni-config-panel {
+        width: 100%;
+        max-width: none;
+        max-height: none;
+    }
+
+    #omni-config-panel .resize-handle-vertical {
+        display: none;
+    }
+
+    .image-gallery,
+    .generation-gallery {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+}

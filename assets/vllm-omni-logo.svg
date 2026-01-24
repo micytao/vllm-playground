@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <!-- Conic-like gradient for the ring: blue -> purple -> magenta -> orange -> blue -->
+    <linearGradient id="grad1" gradientUnits="userSpaceOnUse" x1="32" y1="4" x2="60" y2="32">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+    <linearGradient id="grad2" gradientUnits="userSpaceOnUse" x1="60" y1="32" x2="32" y2="60">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#DB2777"/>
+    </linearGradient>
+    <linearGradient id="grad3" gradientUnits="userSpaceOnUse" x1="32" y1="60" x2="4" y2="32">
+      <stop offset="0%" stop-color="#DB2777"/>
+      <stop offset="100%" stop-color="#EA580C"/>
+    </linearGradient>
+    <linearGradient id="grad4" gradientUnits="userSpaceOnUse" x1="4" y1="32" x2="32" y2="4">
+      <stop offset="0%" stop-color="#EA580C"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Ring made of 4 arcs with gradients -->
+  <!-- Top-right arc -->
+  <path d="M 32 6 A 26 26 0 0 1 58 32" stroke="url(#grad1)" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <!-- Bottom-right arc -->
+  <path d="M 58 32 A 26 26 0 0 1 32 58" stroke="url(#grad2)" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <!-- Bottom-left arc -->
+  <path d="M 32 58 A 26 26 0 0 1 6 32" stroke="url(#grad3)" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <!-- Top-left arc -->
+  <path d="M 6 32 A 26 26 0 0 1 32 6" stroke="url(#grad4)" stroke-width="7" fill="none" stroke-linecap="round"/>
+</svg>

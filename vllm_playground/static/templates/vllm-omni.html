@@ -1,0 +1,342 @@
+<!-- vLLM-Omni View Template -->
+<!-- Loaded dynamically by omni.js -->
+
+<!-- Install Warning (shown when vLLM-Omni not installed) -->
+<div class="omni-install-warning" id="omni-install-warning" style="display: none;">
+    <div class="warning-icon">&#9888;</div>
+    <div class="warning-content">
+        <h3>vLLM-Omni Not Installed</h3>
+        <p>vLLM-Omni is required for multimodal generation (text-to-image, omni models).</p>
+        <div class="install-instructions">
+            <p>Install vLLM-Omni in a separate virtual environment:</p>
+            <pre><code># Create venv with Python 3.12
+uv venv --python 3.12 --seed ~/.venv-vllm-omni
+source ~/.venv-vllm-omni/bin/activate
+
+# Install vLLM base
+uv pip install vllm==0.12.0 --torch-backend=auto
+
+# Clone and install vLLM-Omni
+git clone https://github.com/vllm-project/vllm-omni.git
+cd vllm-omni && uv pip install -e .</code></pre>
+            <p>Then set the venv path in the configuration below.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Main Content Wrapper -->
+<div class="omni-content-wrapper" id="omni-content-wrapper">
+    <div class="main-content omni-layout">
+        <!-- Left: Config Panel -->
+        <div class="config-panel resizable" id="omni-config-panel">
+            <h2>&#127912; vLLM-Omni Configuration</h2>
+
+            <!-- Availability Status -->
+            <div class="omni-availability-status" id="omni-availability-status">
+                <span class="status-dot"></span>
+                <span class="status-text">Checking...</span>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Section: Model Selection -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="config-section">
+                <div class="config-section-header">
+                    <span class="section-icon">&#129302;</span>
+                    <h3>Model Selection</h3>
+                </div>
+                <div class="config-section-content">
+                    <!-- Model Source Toggle -->
+                    <div class="form-group mode-toggle-group">
+                        <label>Model Source</label>
+                        <div class="mode-toggle-buttons">
+                            <label class="mode-button active" id="omni-model-source-hub-label">
+                                <input type="radio" name="omni-model-source" id="omni-model-source-hub" value="hub" checked>
+                                <span class="mode-button-content"><span class="mode-icon">🤗</span><span class="mode-label">HuggingFace</span></span>
+                            </label>
+                            <label class="mode-button" id="omni-model-source-modelscope-label">
+                                <input type="radio" name="omni-model-source" id="omni-model-source-modelscope" value="modelscope">
+                                <span class="mode-button-content"><span class="mode-icon">🔮</span><span class="mode-label">ModelScope</span></span>
+                            </label>
+                        </div>
+                        <span class="help-text" id="omni-model-source-help">Download models from HuggingFace or ModelScope (China)</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Model Type</label>
+                        <select id="omni-model-type">
+                            <option value="image">Image Generation</option>
+                            <option value="video">Video Generation</option>
+                            <option value="audio">Audio Generation (TTS)</option>
+                            <option value="omni">Omni (Text + Audio Chat)</option>
+                        </select>
+                        <span class="help-text" id="omni-model-type-tip">Generate images from text prompts (Text-to-Image)</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Model</label>
+                        <select id="omni-model-select">
+                            <!-- Populated dynamically based on model type -->
+                            <option value="Tongyi-MAI/Z-Image-Turbo">Z-Image Turbo (Fast)</option>
+                            <option value="Qwen/Qwen-Image">Qwen Image</option>
+                        </select>
+                    </div>
+
+                    <div class="model-id-display" id="omni-model-id-display">
+                        <span class="model-id-label" id="omni-model-id-label">Model ID:</span>
+                        <code class="model-id-value" id="omni-model-id-value">Tongyi-MAI/Z-Image-Turbo</code>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Section: Server Configuration -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="config-section">
+                <div class="config-section-header">
+                    <span class="section-icon">&#9881;</span>
+                    <h3>Server Configuration</h3>
+                </div>
+                <div class="config-section-content">
+                    <div class="form-group mode-toggle-group">
+                        <label>Run Mode</label>
+                        <div class="mode-toggle-buttons" id="omni-run-mode-toggle">
+                            <label class="mode-button active" id="omni-run-mode-subprocess-label">
+                                <input type="radio" id="omni-run-mode-subprocess" name="omni-run-mode" value="subprocess" checked>
+                                <span>⚡ Subprocess</span>
+                            </label>
+                            <label class="mode-button" id="omni-run-mode-container-label">
+                                <input type="radio" id="omni-run-mode-container" name="omni-run-mode" value="container">
+                                <span>📦 Container</span>
+                            </label>
+                        </div>
+                        <small class="form-help" id="omni-run-mode-help">Subprocess requires local vLLM-Omni installation</small>
+                    </div>
+
+                    <div class="form-group" id="omni-venv-path-group">
+                        <label>vLLM-Omni Venv Path</label>
+                        <input type="text" id="omni-venv-path" placeholder="~/.venv-vllm-omni">
+                        <span class="help-text">Path to virtual environment with vLLM-Omni installed</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Port</label>
+                        <input type="number" id="omni-port" value="8091" min="1024" max="65535">
+                        <span class="help-text">Server port (default: 8091)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Section: GPU Settings -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="config-section">
+                <div class="config-section-header">
+                    <span class="section-icon">&#127918;</span>
+                    <h3>GPU Settings</h3>
+                </div>
+                <div class="config-section-content">
+                    <div class="form-group">
+                        <label>GPU Device</label>
+                        <input type="text" id="omni-gpu-device" placeholder="0 (or 0,1 for multi-GPU)">
+                        <span class="help-text">CUDA_VISIBLE_DEVICES setting</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Section: Generation Parameters (for image/video models) -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="config-section" id="omni-image-params">
+                <div class="config-section-header">
+                    <span class="section-icon">&#9881;</span>
+                    <h3>Generation Parameters</h3>
+                </div>
+                <div class="config-section-content">
+                    <div class="form-group">
+                        <label>Image Size</label>
+                        <div class="size-inputs">
+                            <input type="number" id="omni-width" value="1024" min="256" max="2048" step="64">
+                            <span>x</span>
+                            <input type="number" id="omni-height" value="1024" min="256" max="2048" step="64">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Inference Steps: <span id="omni-steps-value">50</span></label>
+                        <input type="range" id="omni-steps" min="10" max="100" value="50">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Guidance Scale: <span id="omni-guidance-value">4.0</span></label>
+                        <input type="range" id="omni-guidance" min="1" max="20" step="0.5" value="4">
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Command Preview -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="command-preview-section">
+                <div class="command-preview-header">
+                    <h3>Command Preview</h3>
+                    <button id="omni-copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command">Copy</button>
+                </div>
+                <textarea id="omni-command-text" class="command-preview-textarea" rows="6" spellcheck="false" readonly>vllm-omni serve Tongyi-MAI/Z-Image-Turbo --port 8091</textarea>
+                <small class="command-help">Equivalent vLLM-Omni command for this configuration</small>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Server Controls -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="config-section server-controls-section">
+                <div class="button-group">
+                    <button id="omni-start-btn" class="btn btn-primary">Start Server</button>
+                    <button id="omni-stop-btn" class="btn btn-danger" disabled>Stop Server</button>
+                </div>
+
+                <div class="status-indicator" id="omni-server-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Offline</span>
+                </div>
+            </div>
+
+            <!-- Resize Handle -->
+            <div class="resize-handle resize-handle-vertical" id="omni-config-resize-handle" data-direction="horizontal"></div>
+        </div>
+
+        <!-- Right: Hybrid Interaction Panel -->
+        <div class="interaction-panel" id="omni-interaction-panel">
+
+            <!-- === GENERATION STUDIO (for image/video models) === -->
+            <div id="omni-studio-panel" class="panel-mode">
+                <!-- Panel Header with dynamic title -->
+                <div class="studio-header">
+                    <span class="studio-icon" id="omni-studio-icon">&#127912;</span>
+                    <span class="studio-title" id="omni-studio-title">Image Generation</span>
+                </div>
+
+                <!-- Image Upload Dropzone (for image-to-image, hidden for video) -->
+                <div class="image-upload-section" id="omni-image-upload">
+                    <div class="dropzone" id="omni-dropzone">
+                        <div class="dropzone-content">
+                            <span class="dropzone-icon">&#128444;</span>
+                            <span class="dropzone-text">Drop image here for image-to-image</span>
+                            <span class="dropzone-hint">or click to browse (optional)</span>
+                        </div>
+                        <input type="file" id="omni-image-input" accept="image/*" hidden>
+                    </div>
+                    <div class="uploaded-preview" id="omni-uploaded-preview" style="display: none;">
+                        <img id="omni-uploaded-image" src="" alt="Uploaded">
+                        <button id="omni-clear-upload" class="btn btn-sm">Clear</button>
+                    </div>
+                </div>
+
+                <!-- Prompt Input -->
+                <div class="prompt-section">
+                    <div class="prompt-inputs">
+                        <textarea id="omni-prompt" placeholder="Describe the image you want to generate..." rows="3"></textarea>
+                        <textarea id="omni-negative-prompt" placeholder="Negative prompt (optional)..." rows="2"></textarea>
+                    </div>
+
+                    <!-- Video-specific parameters (hidden for image mode) -->
+                    <div class="video-params" id="omni-video-params" style="display: none;">
+                        <div class="param-group">
+                            <label for="omni-video-duration">Duration (sec)</label>
+                            <input type="number" id="omni-video-duration" value="4" min="1" max="30" step="1">
+                        </div>
+                        <div class="param-group">
+                            <label for="omni-video-fps">FPS</label>
+                            <input type="number" id="omni-video-fps" value="24" min="8" max="60" step="1">
+                        </div>
+                        <span class="help-text video-tip">Duration and frame rate for video generation</span>
+                    </div>
+
+                    <div class="prompt-actions">
+                        <div class="seed-input-wrapper">
+                            <input type="number" id="omni-seed" placeholder="Seed (optional)" min="0">
+                            <span class="help-text seed-tip">Random number for reproducibility. Same seed + prompt = same output.</span>
+                        </div>
+                        <button id="omni-generate-btn" class="btn btn-primary" disabled>
+                            <span id="omni-generate-btn-text">Generate Image</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Generated Content Gallery (dynamic based on mode) -->
+                <div class="generation-gallery" id="omni-gallery">
+                    <div class="gallery-placeholder" id="omni-gallery-placeholder">
+                        <span class="placeholder-icon" id="omni-gallery-icon">&#127912;</span>
+                        <span class="placeholder-text" id="omni-gallery-text">Generated images will appear here</span>
+                        <span class="placeholder-hint" id="omni-gallery-hint">Start the server and enter a prompt to generate</span>
+                    </div>
+                    <div class="gallery-content" id="omni-gallery-content" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- === CHAT INTERFACE (for Omni models) === -->
+            <div id="omni-chat-panel" class="panel-mode" style="display: none;">
+                <div class="panel omni-chat-wrapper">
+                    <!-- Panel Header (consistent with vLLM Server) -->
+                    <div class="panel-header">
+                        <h2>&#128172; Omni Chat</h2>
+                        <div class="chat-header-actions">
+                            <button id="omni-export-chat-btn" class="btn btn-secondary btn-sm">Export</button>
+                            <button id="omni-clear-chat-btn" class="btn btn-secondary btn-sm">Clear</button>
+                        </div>
+                    </div>
+
+                    <!-- Chat Container (reuse pattern from vLLM Server) -->
+                    <div class="chat-container" id="omni-chat-container">
+                        <div class="chat-message system">
+                            <div class="message-content">
+                                <span class="message-text">Chat with Qwen-Omni. Supports text, images, and audio input/output.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Input Area (consistent with vLLM Server) -->
+                    <div class="chat-input-area">
+                        <!-- Media Preview (for attached images) -->
+                        <div class="chat-media-preview" id="omni-chat-media-preview" style="display: none;">
+                            <img id="omni-chat-preview-image" src="" alt="Attached">
+                            <button id="omni-chat-clear-media" class="btn btn-sm btn-secondary">Remove</button>
+                        </div>
+
+                        <!-- Main Input Group -->
+                        <div class="input-group">
+                            <button id="omni-attach-image-btn" class="btn btn-secondary btn-icon" title="Attach image">&#128444;</button>
+                            <input type="file" id="omni-chat-image-input" accept="image/*" hidden>
+                            <textarea id="omni-chat-input" class="chat-input" placeholder="Type your message here..." rows="1"></textarea>
+                            <button id="omni-chat-send-btn" class="btn btn-primary" disabled>Send</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Bottom: Server Logs (collapsible, consistent with vLLM Server) -->
+    <div class="logs-row" id="omni-logs-row">
+        <div class="logs-row-header" id="omni-logs-row-toggle">
+            <div class="logs-row-title">
+                <span class="logs-toggle-icon">&#9660;</span>
+                <h2>&#128203; Server Logs</h2>
+            </div>
+            <div class="logs-row-controls">
+                <label class="auto-scroll-label">
+                    <input type="checkbox" id="omni-auto-scroll" checked>
+                    <span>Auto-scroll</span>
+                </label>
+                <button id="omni-save-logs-btn" class="btn btn-secondary btn-sm">Save</button>
+                <button id="omni-clear-logs-btn" class="btn btn-secondary btn-sm">Clear</button>
+            </div>
+        </div>
+        <div class="logs-row-content" id="omni-logs-row-content">
+            <div id="omni-logs-container" class="logs-container">
+                <div class="log-entry info">Waiting for vLLM-Omni server...</div>
+            </div>
+        </div>
+    </div>
+</div>
