@@ -676,7 +676,7 @@ export const OmniModule = {
             }
 
             command += ` \\\n  ${image}`;
-            command += ` \\\n  --model ${config.model}`;
+            command += ` \\\n  vllm serve ${config.model} --omni`;
             command += ` \\\n  --port ${config.port}`;
         } else {
             // Subprocess mode - vllm-omni CLI command

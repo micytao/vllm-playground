@@ -993,19 +993,16 @@ class VLLMContainerManager:
             model = config.get("model", "Tongyi-MAI/Z-Image-Turbo")
             port = config.get("port", 8091)
 
-            # vLLM-Omni command arguments
-            # Note: For NVIDIA image, entrypoint is already "vllm serve --omni"
-            # For AMD image, we need to pass --omni explicitly
+            # vLLM-Omni command - explicitly specify the full command
+            # The container may not have entrypoint set correctly
             cmd_args = [
-                "--model",
+                "vllm",
+                "serve",
                 model,
+                "--omni",
                 "--port",
                 str(port),
             ]
-
-            # AMD ROCm requires --omni flag (NVIDIA entrypoint already has it)
-            if accelerator == "amd":
-                cmd_args.append("--omni")
 
             if config.get("tensor_parallel_size", 1) > 1:
                 cmd_args.extend(["--tensor-parallel-size", str(config["tensor_parallel_size"])])
@@ -1026,10 +1023,13 @@ class VLLMContainerManager:
                 "--ipc=host",  # Required for PyTorch tensor parallel
             ]
 
-            # Mount HuggingFace cache directory
+            # Mount HuggingFace cache directory (create if it doesn't exist)
             import os
 
             hf_cache = os.path.expanduser("~/.cache/huggingface")
+            if not os.path.exists(hf_cache):
+                os.makedirs(hf_cache, exist_ok=True)
+                logger.info(f"Created HuggingFace cache directory: {hf_cache}")
             container_cmd.extend(["-v", f"{hf_cache}:/root/.cache/huggingface"])
 
             # Add GPU flags based on accelerator and runtime
