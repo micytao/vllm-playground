@@ -231,6 +231,9 @@ export const OmniModule = {
             document.getElementById('omni-port'),
             document.getElementById('omni-venv-path'),
             document.getElementById('omni-gpu-device'),
+            document.getElementById('omni-gpu-memory'),
+            document.getElementById('omni-cpu-offload'),
+            document.getElementById('omni-torch-compile'),
             document.getElementById('omni-height'),
             document.getElementById('omni-width'),
             document.getElementById('omni-steps'),
@@ -929,6 +932,7 @@ export const OmniModule = {
             gpu_device: document.getElementById('omni-gpu-device')?.value || null,
             gpu_memory_utilization: parseFloat(document.getElementById('omni-gpu-memory')?.value) || 0.9,
             enable_cpu_offload: document.getElementById('omni-cpu-offload')?.checked || false,
+            enable_torch_compile: document.getElementById('omni-torch-compile')?.checked || false,
             accelerator: 'nvidia',  // Default to NVIDIA, could add UI selector if needed
             default_height: parseInt(document.getElementById('omni-height')?.value) || 1024,
             default_width: parseInt(document.getElementById('omni-width')?.value) || 1024,
@@ -982,7 +986,9 @@ export const OmniModule = {
             command += ` \\\n  ${image}`;
             command += ` \\\n  vllm serve ${config.model} --omni`;
             command += ` \\\n  --port ${config.port}`;
-            command += ` \\\n  --enforce-eager`;  // Disable torch.compile for faster startup
+            if (!config.enable_torch_compile) {
+                command += ` \\\n  --enforce-eager`;  // Disable torch.compile for faster startup
+            }
         } else {
             // Subprocess mode - vllm-omni CLI command
             command = `# Subprocess mode\n`;
@@ -1002,7 +1008,9 @@ export const OmniModule = {
 
             command += `\nvllm-omni serve ${config.model}`;
             command += ` \\\n  --port ${config.port}`;
-            command += ` \\\n  --enforce-eager`;  // Disable torch.compile for faster startup
+            if (!config.enable_torch_compile) {
+                command += ` \\\n  --enforce-eager`;  // Disable torch.compile for faster startup
+            }
         }
 
         commandText.value = command;

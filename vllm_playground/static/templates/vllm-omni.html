@@ -161,6 +161,13 @@ cd vllm-omni && uv pip install -e .</code></pre>
                         </label>
                         <span class="help-text">Reduce GPU memory by offloading to CPU (slower but uses less VRAM)</span>
                     </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="omni-torch-compile">
+                            <span>Enable torch.compile</span>
+                        </label>
+                        <span class="help-text">Faster inference but slower startup (2-5 min compilation on first run)</span>
+                    </div>
                 </div>
             </div>
 

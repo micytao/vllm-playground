@@ -1144,9 +1144,12 @@ class VLLMContainerManager:
                 "--omni",
                 "--port",
                 str(port),
-                # Disable torch.compile to avoid long compilation times and shm broadcast issues
-                "--enforce-eager",
             ]
+
+            # Add --enforce-eager unless torch.compile is explicitly enabled
+            # This avoids long compilation times and shm broadcast timeout issues
+            if not config.get("enable_torch_compile", False):
+                cmd_args.append("--enforce-eager")
 
             if config.get("tensor_parallel_size", 1) > 1:
                 cmd_args.extend(["--tensor-parallel-size", str(config["tensor_parallel_size"])])
