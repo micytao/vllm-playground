@@ -319,6 +319,22 @@
     background: var(--success-color);
 }
 
+#omni-config-panel .status-indicator .status-dot.starting {
+    background: var(--warning-color, #f59e0b);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* Ready button state */
+#omni-generate-btn.btn-ready {
+    background: var(--success-color);
+    border-color: var(--success-color);
+}
+
 /* Run Mode Toggle - Uses standard mode-toggle-group from style.css */
 /* The mode-toggle-group, mode-toggle-buttons, and mode-button classes
    are defined in the main style.css and reused here for consistency */

@@ -911,19 +911,23 @@ class VLLMContainerManager:
             logger.error(f"Error checking container status: {type(e).__name__}: {e}")
             return {"running": False, "status": "error", "error": str(e)}
 
-    async def stream_logs(self) -> AsyncIterator[str]:
+    async def stream_logs(self, container_name: str = None) -> AsyncIterator[str]:
         """
         Stream container logs
+
+        Args:
+            container_name: Optional container name (defaults to CONTAINER_NAME)
 
         Yields:
             Log lines from container
         """
+        target_container = container_name or self.CONTAINER_NAME
         try:
             # Build command (with sudo if needed for GPU mode)
             if self._should_use_sudo():
-                cmd = ["sudo", self.runtime, "logs", "-f", self.CONTAINER_NAME]
+                cmd = ["sudo", self.runtime, "logs", "-f", target_container]
             else:
-                cmd = [self.runtime, "logs", "-f", self.CONTAINER_NAME]
+                cmd = [self.runtime, "logs", "-f", target_container]
 
             # Start streaming logs
             process = await asyncio.create_subprocess_exec(
@@ -1010,6 +1014,8 @@ class VLLMContainerManager:
                 cmd_args.extend(["--gpu-memory-utilization", str(config["gpu_memory_utilization"])])
             if config.get("trust_remote_code"):
                 cmd_args.append("--trust-remote-code")
+            if config.get("enable_cpu_offload"):
+                cmd_args.append("--enable-cpu-offload")
 
             # Build container run command
             container_cmd = [
@@ -1033,19 +1039,32 @@ class VLLMContainerManager:
             container_cmd.extend(["-v", f"{hf_cache}:/root/.cache/huggingface"])
 
             # Add GPU flags based on accelerator and runtime
+            gpu_device = config.get("gpu_device")  # e.g., "0", "1", "0,1"
             if accelerator == "nvidia":
                 if self.runtime == "docker":
                     # Docker uses --gpus flag
-                    container_cmd.extend(["--gpus", "all"])
+                    if gpu_device:
+                        # Specific GPU selection: --gpus '"device=0"' or '"device=0,1"'
+                        container_cmd.extend(["--gpus", f'"device={gpu_device}"'])
+                    else:
+                        container_cmd.extend(["--gpus", "all"])
                 else:
                     # Podman uses --device with CDI (Container Device Interface)
-                    container_cmd.extend(
-                        [
-                            "--device",
-                            "nvidia.com/gpu=all",
-                            "--security-opt=label=disable",
-                        ]
-                    )
+                    if gpu_device:
+                        # Specific GPU selection for Podman
+                        # For single GPU: nvidia.com/gpu=0
+                        # For multiple: need to add multiple --device flags
+                        for dev in gpu_device.split(","):
+                            container_cmd.extend(["--device", f"nvidia.com/gpu={dev.strip()}"])
+                        container_cmd.append("--security-opt=label=disable")
+                    else:
+                        container_cmd.extend(
+                            [
+                                "--device",
+                                "nvidia.com/gpu=all",
+                                "--security-opt=label=disable",
+                            ]
+                        )
             elif accelerator == "amd":
                 # AMD ROCm requires additional security flags
                 container_cmd.extend(

@@ -41,11 +41,14 @@ export const OmniModule = {
     available: false,
     version: null,
     serverRunning: false,
+    serverReady: false,  // True when API endpoint is actually responding
+    healthCheckInterval: null,
     templateLoaded: false,
     currentModelType: 'image',
     currentModelSource: 'hub',
     uploadedImage: null,
     chatHistory: [],
+    logWebSocket: null,  // WebSocket for log streaming
 
     // =========================================================================
     // Template Loading (Option B - Separate HTML)
@@ -118,9 +121,57 @@ export const OmniModule = {
             this.checkServerStatus();
             console.log('Omni init: updating command preview...');
             this.updateCommandPreview();
+            console.log('Omni init: connecting to log WebSocket...');
+            this.connectLogWebSocket();
             console.log('Omni init: complete');
         } catch (error) {
             console.error('Omni init error:', error);
+        }
+    },
+
+    connectLogWebSocket() {
+        // Connect to vLLM-Omni log streaming WebSocket
+        if (this.logWebSocket && this.logWebSocket.readyState === WebSocket.OPEN) {
+            return; // Already connected
+        }
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/omni/logs`;
+
+        try {
+            this.logWebSocket = new WebSocket(wsUrl);
+
+            this.logWebSocket.onopen = () => {
+                console.log('Omni log WebSocket connected');
+            };
+
+            this.logWebSocket.onmessage = (event) => {
+                const message = event.data;
+                if (message && message.trim()) {
+                    this.addLog(message);
+                }
+            };
+
+            this.logWebSocket.onerror = (error) => {
+                console.error('Omni log WebSocket error:', error);
+            };
+
+            this.logWebSocket.onclose = () => {
+                console.log('Omni log WebSocket closed');
+                // Attempt to reconnect after 5 seconds if server is still running
+                if (this.serverRunning) {
+                    setTimeout(() => this.connectLogWebSocket(), 5000);
+                }
+            };
+        } catch (error) {
+            console.error('Failed to connect omni log WebSocket:', error);
+        }
+    },
+
+    disconnectLogWebSocket() {
+        if (this.logWebSocket) {
+            this.logWebSocket.close();
+            this.logWebSocket = null;
         }
     },
 
@@ -556,10 +607,48 @@ export const OmniModule = {
             if (response.ok) {
                 const status = await response.json();
                 this.serverRunning = status.running;
-                this.updateServerStatus(status.running);
+                this.serverReady = status.ready;
+                this.updateServerStatus(status.running, status.ready);
+
+                // Start health polling if running but not ready
+                if (status.running && !status.ready && !this.healthCheckInterval) {
+                    this.startHealthCheckPolling();
+                }
             }
         } catch (error) {
             console.error('Failed to check omni server status:', error);
+        }
+    },
+
+    startHealthCheckPolling() {
+        // Poll health endpoint every 3 seconds until ready
+        if (this.healthCheckInterval) return;
+
+        this.addLog('Waiting for model to load...');
+
+        this.healthCheckInterval = setInterval(async () => {
+            try {
+                const response = await fetch('/api/omni/health');
+                if (response.ok) {
+                    const health = await response.json();
+                    if (health.ready) {
+                        this.serverReady = true;
+                        this.updateServerStatus(true, true);
+                        this.stopHealthCheckPolling();
+                        this.ui.showNotification('vLLM-Omni server is ready!', 'success');
+                        this.addLog('Server is ready to accept requests');
+                    }
+                }
+            } catch (error) {
+                // Server not ready yet, continue polling
+            }
+        }, 3000);
+    },
+
+    stopHealthCheckPolling() {
+        if (this.healthCheckInterval) {
+            clearInterval(this.healthCheckInterval);
+            this.healthCheckInterval = null;
         }
     },
 
@@ -584,9 +673,19 @@ export const OmniModule = {
 
             if (response.ok) {
                 this.serverRunning = true;
-                this.updateServerStatus(true);
-                this.ui.showNotification('vLLM-Omni server started', 'success');
+                this.serverReady = false;  // Not ready yet, still loading
+                this.updateServerStatus(true, false);
+                this.ui.showNotification('vLLM-Omni server started - loading model...', 'info');
                 this.addLog(`Server started in ${result.mode} mode on port ${result.port}`);
+                // Health check polling will be triggered by log messages (watching for "Uvicorn running")
+                // For container mode, also start polling after a delay as logs may be delayed
+                if (result.mode === 'container') {
+                    setTimeout(() => {
+                        if (this.serverRunning && !this.serverReady && !this.healthCheckInterval) {
+                            this.startHealthCheckPolling();
+                        }
+                    }, 10000);  // Start polling after 10 seconds if not triggered by logs
+                }
             } else {
                 this.ui.showNotification(`Failed to start: ${result.detail}`, 'error');
                 this.addLog(`ERROR: ${result.detail}`);
@@ -603,12 +702,16 @@ export const OmniModule = {
         this.ui.showNotification('Stopping vLLM-Omni server...', 'info');
         this.addLog('Stopping vLLM-Omni server...');
 
+        // Stop health check polling
+        this.stopHealthCheckPolling();
+
         try {
             const response = await fetch('/api/omni/stop', { method: 'POST' });
 
             if (response.ok) {
                 this.serverRunning = false;
-                this.updateServerStatus(false);
+                this.serverReady = false;
+                this.updateServerStatus(false, false);
                 this.ui.showNotification('vLLM-Omni server stopped', 'success');
                 this.addLog('Server stopped');
             } else {
@@ -631,6 +734,9 @@ export const OmniModule = {
             run_mode: runMode,
             venv_path: runMode === 'subprocess' ? document.getElementById('omni-venv-path')?.value : null,
             gpu_device: document.getElementById('omni-gpu-device')?.value || null,
+            gpu_memory_utilization: parseFloat(document.getElementById('omni-gpu-memory')?.value) || 0.9,
+            enable_cpu_offload: document.getElementById('omni-cpu-offload')?.checked || false,
+            accelerator: 'nvidia',  // Default to NVIDIA, could add UI selector if needed
             default_height: parseInt(document.getElementById('omni-height')?.value) || 1024,
             default_width: parseInt(document.getElementById('omni-width')?.value) || 1024,
             num_inference_steps: parseInt(document.getElementById('omni-steps')?.value) || 50,
@@ -659,11 +765,16 @@ export const OmniModule = {
             const runtime = 'podman';  // or 'docker'
             const image = 'vllm/vllm-omni:v0.14.0rc1';
 
+            // GPU device selection
+            const gpuFlag = config.gpu_device
+                ? `--device nvidia.com/gpu=${config.gpu_device}`
+                : '--device nvidia.com/gpu=all';
+
             // Note: Docker uses --gpus all, Podman uses --device nvidia.com/gpu=all
             command = `# Container mode\n`;
-            command += `# For Docker:  --gpus all\n`;
-            command += `# For Podman: --device nvidia.com/gpu=all\n`;
-            command += `${runtime} run --device nvidia.com/gpu=all \\
+            command += `# For Docker: --gpus all (or --gpus '"device=0"' for specific GPU)\n`;
+            command += `# For Podman: --device nvidia.com/gpu=all (or =0 for specific GPU)\n`;
+            command += `${runtime} run ${gpuFlag} \\
   --ipc=host \\
   -v ~/.cache/huggingface:/root/.cache/huggingface \\
   -p ${config.port}:${config.port}`;
@@ -729,7 +840,7 @@ export const OmniModule = {
         });
     },
 
-    updateServerStatus(running) {
+    updateServerStatus(running, ready = false) {
         const statusEl = document.getElementById('omni-server-status');
         const dot = statusEl?.querySelector('.status-dot');
         const text = statusEl?.querySelector('.status-text');
@@ -738,19 +849,41 @@ export const OmniModule = {
         const generateBtn = document.getElementById('omni-generate-btn');
         const chatSendBtn = document.getElementById('omni-chat-send-btn');
 
-        if (running) {
+        if (running && ready) {
+            // Server is running AND ready to accept requests
             dot?.classList.add('online');
-            if (text) text.textContent = 'Running';
+            dot?.classList.remove('starting');
+            if (text) text.textContent = 'Ready';
             if (startBtn) startBtn.disabled = true;
             if (stopBtn) stopBtn.disabled = false;
-            if (generateBtn) generateBtn.disabled = false;
+            if (generateBtn) {
+                generateBtn.disabled = false;
+                generateBtn.classList.add('btn-ready');
+            }
             if (chatSendBtn) chatSendBtn.disabled = false;
-        } else {
+        } else if (running && !ready) {
+            // Server is running but still loading model
             dot?.classList.remove('online');
+            dot?.classList.add('starting');
+            if (text) text.textContent = 'Starting...';
+            if (startBtn) startBtn.disabled = true;
+            if (stopBtn) stopBtn.disabled = false;
+            if (generateBtn) {
+                generateBtn.disabled = true;
+                generateBtn.classList.remove('btn-ready');
+            }
+            if (chatSendBtn) chatSendBtn.disabled = true;
+        } else {
+            // Server is not running
+            dot?.classList.remove('online');
+            dot?.classList.remove('starting');
             if (text) text.textContent = 'Offline';
             if (startBtn) startBtn.disabled = false;
             if (stopBtn) stopBtn.disabled = true;
-            if (generateBtn) generateBtn.disabled = true;
+            if (generateBtn) {
+                generateBtn.disabled = true;
+                generateBtn.classList.remove('btn-ready');
+            }
             if (chatSendBtn) chatSendBtn.disabled = true;
         }
     },
@@ -760,6 +893,16 @@ export const OmniModule = {
     // =========================================================================
 
     async generateImage() {
+        // Check if server is ready
+        if (!this.serverReady) {
+            if (this.serverRunning) {
+                this.ui.showNotification('Server is still loading, please wait...', 'warning');
+            } else {
+                this.ui.showNotification('Please start the server first', 'warning');
+            }
+            return;
+        }
+
         const prompt = document.getElementById('omni-prompt')?.value?.trim();
         if (!prompt) {
             this.ui.showNotification('Please enter a prompt', 'warning');
@@ -811,6 +954,16 @@ export const OmniModule = {
     },
 
     async generateVideo() {
+        // Check if server is ready
+        if (!this.serverReady) {
+            if (this.serverRunning) {
+                this.ui.showNotification('Server is still loading, please wait...', 'warning');
+            } else {
+                this.ui.showNotification('Please start the server first', 'warning');
+            }
+            return;
+        }
+
         const prompt = document.getElementById('omni-prompt')?.value?.trim();
         if (!prompt) {
             this.ui.showNotification('Please enter a prompt', 'warning');
@@ -862,6 +1015,16 @@ export const OmniModule = {
     },
 
     async generateAudio() {
+        // Check if server is ready
+        if (!this.serverReady) {
+            if (this.serverRunning) {
+                this.ui.showNotification('Server is still loading, please wait...', 'warning');
+            } else {
+                this.ui.showNotification('Please start the server first', 'warning');
+            }
+            return;
+        }
+
         const prompt = document.getElementById('omni-prompt')?.value?.trim();
         if (!prompt) {
             this.ui.showNotification('Please enter text to synthesize', 'warning');
@@ -1091,9 +1254,13 @@ export const OmniModule = {
 
         if (!message) return;
 
-        // Check if server is running
-        if (!this.serverRunning) {
-            this.ui.showNotification('Please start the vLLM-Omni server first', 'warning');
+        // Check if server is ready
+        if (!this.serverReady) {
+            if (this.serverRunning) {
+                this.ui.showNotification('Server is still loading, please wait...', 'warning');
+            } else {
+                this.ui.showNotification('Please start the vLLM-Omni server first', 'warning');
+            }
             return;
         }
 
@@ -1302,8 +1469,32 @@ export const OmniModule = {
         const container = document.getElementById('omni-logs-container');
         if (!container) return;
 
+        // Check for startup completion messages to trigger health check polling
+        // vLLM-Omni shows "Uvicorn running" or "Application startup complete" when server is starting
+        if (message && this.serverRunning && !this.serverReady && !this.healthCheckInterval) {
+            if (message.includes('Uvicorn running') ||
+                message.includes('Application startup complete') ||
+                message.includes('Started server process')) {
+                console.log('🔄 vLLM-Omni server starting, beginning health check polling...');
+                this.startHealthCheckPolling();
+            }
+        }
+
+        // Auto-detect log type for styling
+        let logType = 'info';
+        if (message) {
+            const lowerMsg = message.toLowerCase();
+            if (lowerMsg.includes('error') || lowerMsg.includes('failed') || lowerMsg.includes('exception')) {
+                logType = 'error';
+            } else if (lowerMsg.includes('warning') || lowerMsg.includes('warn')) {
+                logType = 'warning';
+            } else if (lowerMsg.includes('success') || lowerMsg.includes('ready') || lowerMsg.includes('complete')) {
+                logType = 'success';
+            }
+        }
+
         const logEntry = document.createElement('div');
-        logEntry.className = 'log-entry';
+        logEntry.className = `log-entry ${logType}`;
 
         const timestamp = new Date().toLocaleTimeString();
         logEntry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> ${this.escapeHtml(message)}`;
@@ -1314,6 +1505,13 @@ export const OmniModule = {
         const autoScroll = document.getElementById('omni-auto-scroll');
         if (autoScroll?.checked) {
             container.scrollTop = container.scrollHeight;
+        }
+
+        // Limit log entries to prevent memory issues
+        const maxLogs = 500;
+        const logs = container.querySelectorAll('.log-entry');
+        if (logs.length > maxLogs) {
+            logs[0].remove();
         }
     },
 

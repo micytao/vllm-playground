@@ -91,6 +91,7 @@ omni_run_mode: Optional[str] = None
 omni_config: Optional["OmniConfig"] = None
 omni_start_time: Optional[datetime] = None
 omni_log_queue: asyncio.Queue = asyncio.Queue()
+omni_websocket_connections: List[WebSocket] = []
 
 
 def get_model_name_for_api() -> Optional[str]:
@@ -197,6 +198,10 @@ class OmniConfig(BaseModel):
     gpu_device: Optional[str] = None
     accelerator: Literal["nvidia", "amd"] = "nvidia"  # GPU accelerator type
 
+    # Memory optimization
+    # Enable CPU offloading to reduce GPU memory usage (increases latency)
+    enable_cpu_offload: bool = False
+
     # Run mode: subprocess (CLI) or container (same as vLLM Server)
     run_mode: Literal["subprocess", "container"] = "subprocess"
     venv_path: Optional[str] = None  # Path to vLLM-Omni venv (for subprocess mode)
@@ -288,6 +293,7 @@ class OmniServerStatus(BaseModel):
     """vLLM-Omni server status"""
 
     running: bool
+    ready: bool = False  # True when API endpoint is actually responding
     model: Optional[str] = None
     model_type: Optional[str] = None
     port: Optional[int] = None
@@ -2591,6 +2597,90 @@ async def websocket_logs(websocket: WebSocket):
             websocket_connections.remove(websocket)
 
 
+# =============================================================================
+# vLLM-Omni WebSocket and Log Streaming
+# =============================================================================
+
+
+async def broadcast_omni_log(message: str):
+    """Broadcast log message to all connected omni websockets"""
+    global omni_websocket_connections
+
+    if not message:
+        return
+
+    disconnected = []
+    for ws in omni_websocket_connections:
+        try:
+            await ws.send_text(message)
+        except Exception as e:
+            logger.error(f"Error sending to omni websocket: {e}")
+            disconnected.append(ws)
+
+    # Remove disconnected websockets
+    for ws in disconnected:
+        omni_websocket_connections.remove(ws)
+
+
+@app.websocket("/ws/omni/logs")
+async def websocket_omni_logs(websocket: WebSocket):
+    """WebSocket endpoint for streaming vLLM-Omni logs"""
+    await websocket.accept()
+    omni_websocket_connections.append(websocket)
+
+    try:
+        await websocket.send_text("[OMNI] Connected to vLLM-Omni log stream")
+
+        # Keep connection alive
+        while True:
+            try:
+                # Wait for messages (ping/pong)
+                await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                # Send ping to keep connection alive
+                await websocket.send_text("")
+
+    except WebSocketDisconnect:
+        logger.info("Omni WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Omni WebSocket error: {e}")
+    finally:
+        if websocket in omni_websocket_connections:
+            omni_websocket_connections.remove(websocket)
+
+
+async def read_omni_logs_container():
+    """Read logs from vLLM-Omni container"""
+    global omni_running, omni_container_id
+
+    if not container_manager:
+        logger.error("read_omni_logs_container called but container_manager is not available")
+        return
+
+    try:
+        await broadcast_omni_log("[OMNI] Starting log stream from container...")
+
+        # Stream logs from container using container_manager
+        # We need to use the omni container name
+        async for log_line in container_manager.stream_logs(container_name="vllm-omni-service"):
+            if log_line:
+                line = log_line.strip()
+                if line:  # Only send non-empty lines
+                    await broadcast_omni_log(line)
+
+            # Check if container is still running
+            if not omni_running:
+                break
+
+            await asyncio.sleep(0.01)  # Small delay to prevent busy loop
+
+        await broadcast_omni_log("[OMNI] Container log stream ended")
+
+    except Exception as e:
+        logger.error(f"Error reading omni container logs: {e}")
+        await broadcast_omni_log(f"[OMNI] Error reading logs: {e}")
+
+
 class ToolChoice(BaseModel):
     """Specific tool choice when tool_choice is an object"""
 
@@ -4663,20 +4753,53 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
 # =============================================================================
 
 
+@app.get("/api/omni/health")
+async def check_omni_health():
+    """Check if the vLLM-Omni server is healthy and ready to serve requests"""
+    global omni_running, omni_config
+
+    if not omni_running or not omni_config:
+        return {"success": False, "ready": False, "error": "Server not running"}
+
+    # Try to call vLLM-Omni's health endpoint
+    try:
+        import aiohttp
+
+        base_url = f"http://localhost:{omni_config.port}"
+        health_url = f"{base_url}/health"
+
+        timeout = aiohttp.ClientTimeout(total=3)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(health_url) as response:
+                if response.status == 200:
+                    return {"success": True, "ready": True, "message": "Server is healthy"}
+                else:
+                    return {"success": False, "ready": False, "error": f"Health check returned {response.status}"}
+    except Exception as e:
+        return {"success": False, "ready": False, "error": str(e)}
+
+
 @app.get("/api/omni/status")
 async def get_omni_status() -> OmniServerStatus:
     """Get vLLM-Omni server status"""
     global omni_running, omni_config, omni_start_time, omni_run_mode
 
     uptime = None
+    ready = False
+
     if omni_running and omni_start_time:
         delta = datetime.now() - omni_start_time
         hours, remainder = divmod(int(delta.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
         uptime = f"{hours}h {minutes}m {seconds}s"
 
+        # Check if server is actually ready
+        health_result = await check_omni_health()
+        ready = health_result.get("ready", False)
+
     return OmniServerStatus(
         running=omni_running,
+        ready=ready,
         model=omni_config.model if omni_config else None,
         model_type=omni_config.model_type if omni_config else None,
         port=omni_config.port if omni_config else None,
@@ -4731,6 +4854,8 @@ async def start_omni_server(config: OmniConfig):
                 cmd.extend(["--gpu-memory-utilization", str(config.gpu_memory_utilization)])
             if config.trust_remote_code:
                 cmd.append("--trust-remote-code")
+            if config.enable_cpu_offload:
+                cmd.append("--enable-cpu-offload")
 
             # Set environment
             env = os.environ.copy()
@@ -4777,6 +4902,8 @@ async def start_omni_server(config: OmniConfig):
                 "accelerator": config.accelerator,
                 "tensor_parallel_size": config.tensor_parallel_size,
                 "gpu_memory_utilization": config.gpu_memory_utilization,
+                "gpu_device": config.gpu_device,
+                "enable_cpu_offload": config.enable_cpu_offload,
                 "trust_remote_code": config.trust_remote_code,
                 "hf_token": config.hf_token,
             }
@@ -4785,6 +4912,15 @@ async def start_omni_server(config: OmniConfig):
             omni_container_id = result["id"]
             omni_running = True
             omni_start_time = datetime.now()
+
+            # Start log reader task for container
+            asyncio.create_task(read_omni_logs_container())
+
+            # Broadcast initial status
+            await broadcast_omni_log(f"[OMNI] Container started: {omni_container_id[:12]}")
+            await broadcast_omni_log(f"[OMNI] Model: {config.model}")
+            await broadcast_omni_log(f"[OMNI] Port: {config.port}")
+            await broadcast_omni_log(f"[OMNI] Waiting for model to load...")
 
             return {
                 "status": "started",
