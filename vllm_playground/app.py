@@ -2658,6 +2658,9 @@ async def read_omni_logs_container():
         return
 
     try:
+        # Wait a moment for container to be fully started before streaming logs
+        await asyncio.sleep(1)
+
         await broadcast_omni_log("[OMNI] Starting log stream from container...")
 
         # Stream logs from container using container_manager
@@ -5043,8 +5046,11 @@ async def start_omni_server(config: OmniConfig):
             omni_running = True
             omni_start_time = datetime.now()
 
-            # Start log reader task for container
-            asyncio.create_task(read_omni_logs_container())
+            # Start log reader task for container (with exception handling)
+            task = asyncio.create_task(read_omni_logs_container())
+            task.add_done_callback(
+                lambda t: logger.error(f"Omni log task failed: {t.exception()}") if t.exception() else None
+            )
 
             # Broadcast initial status
             await broadcast_omni_log(f"[OMNI] Container started: {omni_container_id[:12]}")

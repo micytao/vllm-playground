@@ -16,10 +16,18 @@ export function initOmniModule(ui) {
     OmniModule.available = ui.omniAvailable || false;
     OmniModule.version = ui.omniVersion || null;
 
+    // Pass through ModelScope availability from main app (already detected on startup)
+    OmniModule.modelscopeInstalled = ui.modelscopeInstalled || false;
+    OmniModule.modelscopeVersion = ui.modelscopeVersion || null;
+
+    // Pass through container mode availability from main app
+    OmniModule.containerModeAvailable = ui.containerModeAvailable || false;
+
     // Make OmniModule globally accessible for retry button
     window.OmniModule = OmniModule;
 
     console.log('vLLM-Omni module initialized, available:', OmniModule.available);
+    console.log('vLLM-Omni: ModelScope installed:', OmniModule.modelscopeInstalled);
 }
 
 /**
@@ -115,6 +123,8 @@ export const OmniModule = {
             this.setupEventListeners();
             console.log('Omni init: updating availability status...');
             this.updateAvailabilityStatus();
+            console.log('Omni init: updating ModelScope availability...');
+            this.updateModelscopeAvailability();
             console.log('Omni init: loading model list...');
             this.loadModelList();
             console.log('Omni init: checking server status...');
@@ -158,9 +168,9 @@ export const OmniModule = {
 
             this.logWebSocket.onclose = () => {
                 console.log('Omni log WebSocket closed');
-                // Attempt to reconnect after 5 seconds if server is still running
+                // Attempt to reconnect after 1 second if server is still running (faster reconnect)
                 if (this.serverRunning) {
-                    setTimeout(() => this.connectLogWebSocket(), 5000);
+                    setTimeout(() => this.connectLogWebSocket(), 1000);
                 }
             };
         } catch (error) {
@@ -475,6 +485,44 @@ export const OmniModule = {
     },
 
     // =========================================================================
+    // ModelScope Availability (passed from main vLLM Server)
+    // =========================================================================
+
+    updateModelscopeAvailability() {
+        // Use ModelScope availability from main app (already detected on startup)
+        const modelscopeLabel = document.getElementById('omni-model-source-modelscope-label');
+        const modelscopeRadio = document.getElementById('omni-model-source-modelscope');
+
+        if (!this.modelscopeInstalled) {
+            // ModelScope not installed - disable the option
+            if (modelscopeLabel) {
+                modelscopeLabel.classList.add('mode-unavailable');
+                modelscopeLabel.title = 'ModelScope SDK not installed. Run: pip install modelscope>=1.18.1';
+            }
+            if (modelscopeRadio) {
+                modelscopeRadio.disabled = true;
+                // If ModelScope was selected, switch to HuggingFace
+                if (modelscopeRadio.checked) {
+                    modelscopeRadio.checked = false;
+                    const hubRadio = document.getElementById('omni-model-source-hub');
+                    if (hubRadio) hubRadio.checked = true;
+                    this.toggleModelSource();
+                }
+            }
+        } else {
+            // ModelScope installed - enable the option
+            if (modelscopeLabel) {
+                modelscopeLabel.classList.remove('mode-unavailable');
+                const versionText = this.modelscopeVersion ? `v${this.modelscopeVersion}` : '';
+                modelscopeLabel.title = versionText ? `ModelScope SDK ${versionText}` : 'ModelScope SDK installed';
+            }
+            if (modelscopeRadio) {
+                modelscopeRadio.disabled = false;
+            }
+        }
+    },
+
+    // =========================================================================
     // Venv Version Check (following main vLLM Server pattern)
     // =========================================================================
 
@@ -779,6 +827,27 @@ export const OmniModule = {
     async startServer() {
         const config = this.buildConfig();
 
+        // Check run mode requirements (like main vLLM Server)
+        if (config.run_mode === 'subprocess' && !this.available) {
+            this.ui.showNotification('Cannot use Subprocess mode: vLLM-Omni is not installed. Use Container mode or install vLLM-Omni.', 'error');
+            this.addLog('ERROR: Subprocess mode requires vLLM-Omni to be installed.', 'error');
+            return;
+        }
+
+        // Check ModelScope SDK requirement (passed from main app)
+        if (config.use_modelscope && !this.modelscopeInstalled) {
+            this.ui.showNotification('Cannot use ModelScope: modelscope SDK is not installed. Run: pip install modelscope>=1.18.1', 'error');
+            this.addLog('ERROR: ModelScope requires the modelscope SDK. Run: pip install modelscope>=1.18.1', 'error');
+            return;
+        }
+
+        // Check container mode availability (passed from main app)
+        if (config.run_mode === 'container' && !this.containerModeAvailable) {
+            this.ui.showNotification('Cannot use Container mode: No container runtime (podman/docker) found.', 'error');
+            this.addLog('ERROR: Container mode requires podman or docker to be installed.', 'error');
+            return;
+        }
+
         this.ui.showNotification('Starting vLLM-Omni server...', 'info');
         this.addLog('Starting vLLM-Omni server...');
 
@@ -863,8 +932,8 @@ export const OmniModule = {
             accelerator: 'nvidia',  // Default to NVIDIA, could add UI selector if needed
             default_height: parseInt(document.getElementById('omni-height')?.value) || 1024,
             default_width: parseInt(document.getElementById('omni-width')?.value) || 1024,
-            num_inference_steps: parseInt(document.getElementById('omni-steps')?.value) || 50,
-            guidance_scale: parseFloat(document.getElementById('omni-guidance')?.value) || 4.0,
+            num_inference_steps: parseInt(document.getElementById('omni-steps')?.value) || 6,
+            guidance_scale: parseFloat(document.getElementById('omni-guidance')?.value) || 1.0,
             // Model source - if true, download from ModelScope instead of HuggingFace
             use_modelscope: useModelscope,
         };
@@ -913,6 +982,7 @@ export const OmniModule = {
             command += ` \\\n  ${image}`;
             command += ` \\\n  vllm serve ${config.model} --omni`;
             command += ` \\\n  --port ${config.port}`;
+            command += ` \\\n  --enforce-eager`;  // Disable torch.compile for faster startup
         } else {
             // Subprocess mode - vllm-omni CLI command
             command = `# Subprocess mode\n`;
@@ -932,6 +1002,7 @@ export const OmniModule = {
 
             command += `\nvllm-omni serve ${config.model}`;
             command += ` \\\n  --port ${config.port}`;
+            command += ` \\\n  --enforce-eager`;  // Disable torch.compile for faster startup
         }
 
         commandText.value = command;
@@ -1038,8 +1109,8 @@ export const OmniModule = {
             negative_prompt: document.getElementById('omni-negative-prompt')?.value || null,
             width: parseInt(document.getElementById('omni-width')?.value) || 1024,
             height: parseInt(document.getElementById('omni-height')?.value) || 1024,
-            num_inference_steps: parseInt(document.getElementById('omni-steps')?.value) || 50,
-            guidance_scale: parseFloat(document.getElementById('omni-guidance')?.value) || 4.0,
+            num_inference_steps: parseInt(document.getElementById('omni-steps')?.value) || 6,
+            guidance_scale: parseFloat(document.getElementById('omni-guidance')?.value) || 1.0,
             seed: document.getElementById('omni-seed')?.value ? parseInt(document.getElementById('omni-seed').value) : null,
         };
 
@@ -1099,8 +1170,8 @@ export const OmniModule = {
             negative_prompt: document.getElementById('omni-negative-prompt')?.value || null,
             duration: parseInt(document.getElementById('omni-video-duration')?.value) || 4,
             fps: parseInt(document.getElementById('omni-video-fps')?.value) || 24,
-            num_inference_steps: parseInt(document.getElementById('omni-steps')?.value) || 50,
-            guidance_scale: parseFloat(document.getElementById('omni-guidance')?.value) || 4.0,
+            num_inference_steps: parseInt(document.getElementById('omni-steps')?.value) || 6,
+            guidance_scale: parseFloat(document.getElementById('omni-guidance')?.value) || 1.0,
             seed: document.getElementById('omni-seed')?.value ? parseInt(document.getElementById('omni-seed').value) : null,
         };
 
