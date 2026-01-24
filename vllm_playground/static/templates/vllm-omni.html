@@ -1,14 +1,22 @@
 <!-- vLLM-Omni View Template -->
 <!-- Loaded dynamically by omni.js -->
 
-<!-- Install Warning (shown when vLLM-Omni not installed) -->
-<div class="omni-install-warning" id="omni-install-warning" style="display: none;">
-    <div class="warning-icon">&#9888;</div>
-    <div class="warning-content">
-        <h3>vLLM-Omni Not Installed</h3>
-        <p>vLLM-Omni is required for multimodal generation (text-to-image, omni models).</p>
+<!-- vLLM-Omni Installation Section (collapsible, like Server Logs) -->
+<div class="omni-install-section" id="omni-install-section" style="display: none;">
+    <div class="omni-install-header" id="omni-install-toggle">
+        <div class="omni-install-title">
+            <span class="toggle-icon">&#9660;</span>
+            <h3>vLLM-Omni Installation</h3>
+        </div>
+        <span class="install-status-badge not-installed" id="omni-install-badge">Not Installed</span>
+    </div>
+    <div class="omni-install-content" id="omni-install-content">
+        <div class="install-warning-message">
+            <p>vLLM-Omni is required for multimodal generation (text-to-image, omni models).</p>
+            <p>You can still use <strong>Container mode</strong> without local installation.</p>
+        </div>
         <div class="install-instructions">
-            <p>Install vLLM-Omni in a separate virtual environment:</p>
+            <p>To use <strong>Subprocess mode</strong>, install vLLM-Omni in a separate virtual environment:</p>
             <pre><code># Create venv with Python 3.12
 uv venv --python 3.12 --seed ~/.venv-vllm-omni
 source ~/.venv-vllm-omni/bin/activate
@@ -19,7 +27,7 @@ uv pip install vllm==0.12.0 --torch-backend=auto
 # Clone and install vLLM-Omni
 git clone https://github.com/vllm-project/vllm-omni.git
 cd vllm-omni && uv pip install -e .</code></pre>
-            <p>Then set the venv path in the configuration below.</p>
+            <p>Then set the venv path in the Run Mode configuration below.</p>
         </div>
     </div>
 </div>

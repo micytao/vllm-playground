@@ -4808,6 +4808,136 @@ async def get_omni_status() -> OmniServerStatus:
     )
 
 
+@app.post("/api/omni/check-venv")
+async def check_omni_venv(request: dict):
+    """Check if vLLM-Omni is installed in the specified virtual environment.
+
+    Uses multiple detection methods (like main vLLM Server):
+    1. Python import
+    2. pip list
+    3. uv pip list (for vllm-metal style installations)
+    """
+    venv_path = request.get("venv_path")
+
+    if not venv_path:
+        return {"vllm_omni_installed": False, "vllm_omni_version": None, "error": "No venv path provided"}
+
+    try:
+        # Expand and resolve path
+        venv_path = Path(venv_path).expanduser().resolve(strict=False)
+
+        if not venv_path.exists():
+            return {
+                "vllm_omni_installed": False,
+                "vllm_omni_version": None,
+                "error": f"Path does not exist: {venv_path}",
+            }
+
+        if not venv_path.is_dir():
+            return {
+                "vllm_omni_installed": False,
+                "vllm_omni_version": None,
+                "error": f"Path is not a directory: {venv_path}",
+            }
+
+        # Find Python executable
+        import platform
+
+        if platform.system() == "Windows":
+            python_path = venv_path / "Scripts" / "python.exe"
+        else:
+            python_path = venv_path / "bin" / "python"
+
+        if not python_path.exists():
+            return {
+                "vllm_omni_installed": False,
+                "vllm_omni_version": None,
+                "error": f"Python executable not found: {python_path}",
+            }
+
+        omni_found = False
+        omni_version = None
+        detection_method = None
+
+        # Method 1: Try direct Python import
+        try:
+            result = subprocess.run(
+                [str(python_path), "-c", "import vllm_omni; print(getattr(vllm_omni, '__version__', 'unknown'))"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                omni_found = True
+                version_output = result.stdout.strip()
+                if version_output and version_output != "unknown":
+                    omni_version = version_output
+                detection_method = "python import"
+        except Exception:
+            pass
+
+        # Method 2: Try pip list
+        if not omni_found:
+            try:
+                result = subprocess.run(
+                    [str(python_path), "-m", "pip", "list", "--format=freeze"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split("\n"):
+                        if line.lower().startswith("vllm-omni==") or line.lower().startswith("vllm_omni=="):
+                            omni_found = True
+                            parts = line.split("==")
+                            if len(parts) >= 2:
+                                omni_version = parts[1]
+                            detection_method = "pip list"
+                            break
+            except Exception:
+                pass
+
+        # Method 3: Try uv pip list (for vllm-metal style installations)
+        if not omni_found:
+            try:
+                result = subprocess.run(
+                    ["uv", "pip", "list", "--python", str(python_path)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split("\n"):
+                        lower_line = line.lower()
+                        if "vllm-omni" in lower_line or "vllm_omni" in lower_line:
+                            omni_found = True
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                omni_version = parts[1]
+                            detection_method = "uv pip list"
+                            break
+            except FileNotFoundError:
+                # uv not installed, skip
+                pass
+            except Exception:
+                pass
+
+        if omni_found:
+            logger.info(f"vLLM-Omni detected via {detection_method}: v{omni_version}")
+        else:
+            logger.debug(f"vLLM-Omni not found in venv: {venv_path}")
+
+        return {
+            "vllm_omni_installed": omni_found,
+            "vllm_omni_version": omni_version,
+            "detection_method": detection_method,
+        }
+
+    except Exception as e:
+        logger.error(f"Error checking vLLM-Omni in venv: {e}")
+        return {"vllm_omni_installed": False, "vllm_omni_version": None, "error": str(e)}
+
+
 @app.post("/api/omni/start")
 async def start_omni_server(config: OmniConfig):
     """Start vLLM-Omni server with --omni flag"""

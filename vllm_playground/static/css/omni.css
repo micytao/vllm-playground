@@ -86,6 +86,131 @@
 }
 
 /* =============================================================================
+   Installation Section (Foldable)
+   ============================================================================= */
+
+.omni-install-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    margin: 0 0 16px 0;
+}
+
+.omni-install-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    cursor: pointer;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+    user-select: none;
+}
+
+.omni-install-header:hover {
+    background: var(--bg-hover);
+}
+
+.omni-install-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.omni-install-title .toggle-icon {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    transition: transform 0.3s ease;
+}
+
+.omni-install-title h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.install-status-badge {
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.install-status-badge.not-installed {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--warning-color);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.install-status-badge.installed {
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--success-color);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.omni-install-content {
+    padding: 20px;
+}
+
+.omni-install-section.collapsed .omni-install-content {
+    display: none;
+}
+
+.omni-install-section.collapsed .toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.install-warning-message {
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    background: rgba(245, 158, 11, 0.08);
+    border-left: 3px solid var(--warning-color);
+}
+
+.install-warning-message p {
+    margin: 0 0 8px 0;
+    color: var(--text-primary);
+}
+
+.install-warning-message p:last-child {
+    margin-bottom: 0;
+}
+
+.omni-install-content .install-instructions {
+    margin-top: 16px;
+}
+
+.omni-install-content .install-instructions p {
+    margin: 0 0 12px 0;
+    color: var(--text-secondary);
+}
+
+.omni-install-content pre {
+    background: var(--bg-tertiary);
+    padding: 16px;
+    border-radius: 0;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    margin: 8px 0 16px 0;
+    border: 1px solid var(--border-color);
+}
+
+.omni-install-content code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+/* Mode unavailable styling (for disabled subprocess mode) */
+.mode-toggle-group label.mode-unavailable {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.mode-toggle-group label.mode-unavailable input {
+    cursor: not-allowed;
+}
+
+/* =============================================================================
    Availability Status
    ============================================================================= */
 

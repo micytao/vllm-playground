@@ -290,6 +290,16 @@ export const OmniModule = {
             if (e.target.closest('.logs-row-controls')) return;
             this.toggleLogsRow();
         });
+
+        // Install section toggle (collapsible)
+        document.getElementById('omni-install-toggle')?.addEventListener('click', () => {
+            this.toggleInstallSection();
+        });
+
+        // Venv path validation (check vLLM-Omni version when path changes)
+        document.getElementById('omni-venv-path')?.addEventListener('blur', () => {
+            this.checkOmniVenvVersion();
+        });
     },
 
     setupDropzone() {
@@ -375,34 +385,140 @@ export const OmniModule = {
 
     updateAvailabilityStatus() {
         const statusEl = document.getElementById('omni-availability-status');
-        const warningEl = document.getElementById('omni-install-warning');
+        const installSection = document.getElementById('omni-install-section');
+        const installBadge = document.getElementById('omni-install-badge');
         const contentEl = document.getElementById('omni-content-wrapper');
 
         console.log('updateAvailabilityStatus: available =', this.available);
-        console.log('updateAvailabilityStatus: elements found:', {
-            statusEl: !!statusEl,
-            warningEl: !!warningEl,
-            contentEl: !!contentEl
-        });
 
         if (this.available) {
+            // vLLM-Omni is installed
             if (statusEl) {
                 statusEl.querySelector('.status-dot')?.classList.add('online');
                 const textEl = statusEl.querySelector('.status-text');
                 if (textEl) textEl.textContent = this.version ? `v${this.version}` : 'Available';
             }
-            if (warningEl) warningEl.style.display = 'none';
+            // Update install section badge to show version
+            if (installSection) {
+                installSection.style.display = 'block';
+                installSection.classList.add('collapsed'); // Collapse when installed
+            }
+            if (installBadge) {
+                installBadge.textContent = this.version ? `v${this.version}` : 'Installed';
+                installBadge.classList.remove('not-installed');
+                installBadge.classList.add('installed');
+            }
             if (contentEl) contentEl.style.display = 'flex';
         } else {
-            // vLLM-Omni not installed - show warning but also show content for container mode
+            // vLLM-Omni not installed - show installation section expanded
             if (statusEl) {
                 statusEl.querySelector('.status-dot')?.classList.remove('online');
                 const textEl = statusEl.querySelector('.status-text');
                 if (textEl) textEl.textContent = 'Not Installed (use Container mode)';
             }
-            // Show both warning and content - user can still use container mode
-            if (warningEl) warningEl.style.display = 'block';
+            // Show install section expanded when not installed
+            if (installSection) {
+                installSection.style.display = 'block';
+                installSection.classList.remove('collapsed'); // Expand to show instructions
+            }
+            if (installBadge) {
+                installBadge.textContent = 'Not Installed';
+                installBadge.classList.add('not-installed');
+                installBadge.classList.remove('installed');
+            }
+            // Show content - user can still use container mode
             if (contentEl) contentEl.style.display = 'flex';
+        }
+
+        // Update run mode availability based on installation status
+        this.updateRunModeAvailability();
+    },
+
+    // =========================================================================
+    // Run Mode Availability (following main vLLM Server pattern)
+    // =========================================================================
+
+    updateRunModeAvailability() {
+        const subprocessLabel = document.getElementById('omni-run-mode-subprocess-label');
+        const subprocessRadio = document.getElementById('omni-run-mode-subprocess');
+        const containerRadio = document.getElementById('omni-run-mode-container');
+        const helpText = document.getElementById('omni-run-mode-help');
+
+        if (!this.available) {
+            // vLLM-Omni not installed - disable subprocess mode
+            if (subprocessLabel) {
+                subprocessLabel.classList.add('mode-unavailable');
+                subprocessLabel.title = 'vLLM-Omni not installed. Install it or use Container mode.';
+            }
+            if (subprocessRadio) {
+                subprocessRadio.disabled = true;
+                // If subprocess was selected, switch to container mode
+                if (subprocessRadio.checked) {
+                    subprocessRadio.checked = false;
+                    if (containerRadio) containerRadio.checked = true;
+                    this.onRunModeChange('container');
+                }
+            }
+            if (helpText && subprocessRadio?.checked !== true) {
+                helpText.innerHTML = '<span style="color: var(--warning-color);">Subprocess requires vLLM-Omni installation</span>';
+            }
+        } else {
+            // vLLM-Omni installed - enable subprocess mode
+            if (subprocessLabel) {
+                subprocessLabel.classList.remove('mode-unavailable');
+                subprocessLabel.title = '';
+            }
+            if (subprocessRadio) {
+                subprocessRadio.disabled = false;
+            }
+        }
+    },
+
+    // =========================================================================
+    // Venv Version Check (following main vLLM Server pattern)
+    // =========================================================================
+
+    async checkOmniVenvVersion() {
+        const venvPath = document.getElementById('omni-venv-path')?.value?.trim();
+
+        if (!venvPath) {
+            // Reset to system check - don't change availability
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/omni/check-venv', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ venv_path: venvPath })
+            });
+
+            const result = await response.json();
+
+            if (result.vllm_omni_installed) {
+                this.available = true;
+                this.version = result.vllm_omni_version;
+                this.ui?.showNotification(`vLLM-Omni v${this.version} found in custom venv`, 'success');
+            } else {
+                // Venv doesn't have vLLM-Omni - show warning
+                this.ui?.showNotification('vLLM-Omni not found in specified venv path', 'warning');
+            }
+
+            // Update UI with new availability info
+            this.updateAvailabilityStatus();
+
+        } catch (error) {
+            console.error('Error checking venv vLLM-Omni version:', error);
+            // Don't change status on error - keep previous state
+        }
+    },
+
+    toggleInstallSection() {
+        const installSection = document.getElementById('omni-install-section');
+        if (installSection) {
+            installSection.classList.toggle('collapsed');
         }
     },
 
@@ -584,10 +700,18 @@ export const OmniModule = {
 
         if (mode === 'subprocess') {
             if (venvGroup) venvGroup.style.display = 'block';
-            if (helpText) helpText.textContent = 'Subprocess requires local vLLM-Omni installation';
             // Toggle active class on mode buttons
             if (subprocessLabel) subprocessLabel.classList.add('active');
             if (containerLabel) containerLabel.classList.remove('active');
+
+            // Update help text based on availability (like main vLLM Server)
+            if (!this.available) {
+                if (helpText) helpText.innerHTML = '<span style="color: var(--error-color);">vLLM-Omni not installed. Specify venv path below or use Container mode.</span>';
+            } else if (!this.version) {
+                if (helpText) helpText.innerHTML = '<span style="color: var(--warning-color);">vLLM-Omni installed but version unknown. Specify venv path for better detection.</span>';
+            } else {
+                if (helpText) helpText.textContent = `Subprocess: Direct execution using vLLM-Omni v${this.version}`;
+            }
         } else {
             if (venvGroup) venvGroup.style.display = 'none';
             if (helpText) helpText.textContent = 'Container mode uses official vLLM-Omni Docker image';
