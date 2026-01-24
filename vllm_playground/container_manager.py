@@ -57,6 +57,7 @@ class VLLMContainerManager:
     DEFAULT_IMAGE_CPU_X86 = "quay.io/rh_ee_micyang/vllm-cpu:v0.11.0"  # CPU image for x86_64 Linux
 
     # vLLM-Omni images (for omni-modality generation)
+    # Check Docker Hub for latest: https://hub.docker.com/r/vllm/vllm-omni/tags
     DEFAULT_IMAGE_OMNI_NVIDIA = "docker.io/vllm/vllm-omni:v0.14.0rc1"  # Official NVIDIA/CUDA image
     DEFAULT_IMAGE_OMNI_AMD = "docker.io/vllm/vllm-omni-rocm:v0.14.0rc1"  # Official AMD/ROCm image
 
@@ -993,13 +994,18 @@ class VLLMContainerManager:
             port = config.get("port", 8091)
 
             # vLLM-Omni command arguments
+            # Note: For NVIDIA image, entrypoint is already "vllm serve --omni"
+            # For AMD image, we need to pass --omni explicitly
             cmd_args = [
                 "--model",
                 model,
                 "--port",
                 str(port),
-                "--omni",  # Enable omni mode
             ]
+
+            # AMD ROCm requires --omni flag (NVIDIA entrypoint already has it)
+            if accelerator == "amd":
+                cmd_args.append("--omni")
 
             if config.get("tensor_parallel_size", 1) > 1:
                 cmd_args.extend(["--tensor-parallel-size", str(config["tensor_parallel_size"])])
@@ -1017,20 +1023,47 @@ class VLLMContainerManager:
                 self.OMNI_CONTAINER_NAME,
                 "-p",
                 f"{port}:{port}",
+                "--ipc=host",  # Required for PyTorch tensor parallel
             ]
 
-            # Add GPU flags based on accelerator
+            # Mount HuggingFace cache directory
+            import os
+
+            hf_cache = os.path.expanduser("~/.cache/huggingface")
+            container_cmd.extend(["-v", f"{hf_cache}:/root/.cache/huggingface"])
+
+            # Add GPU flags based on accelerator and runtime
             if accelerator == "nvidia":
-                container_cmd.extend(["--gpus", "all"])
+                if self.runtime == "docker":
+                    # Docker uses --gpus flag
+                    container_cmd.extend(["--gpus", "all"])
+                else:
+                    # Podman uses --device with CDI (Container Device Interface)
+                    container_cmd.extend(
+                        [
+                            "--device",
+                            "nvidia.com/gpu=all",
+                            "--security-opt=label=disable",
+                        ]
+                    )
             elif accelerator == "amd":
-                container_cmd.extend(["--device", "/dev/kfd", "--device", "/dev/dri"])
+                # AMD ROCm requires additional security flags
+                container_cmd.extend(
+                    [
+                        "--group-add=video",
+                        "--cap-add=SYS_PTRACE",
+                        "--security-opt",
+                        "seccomp=unconfined",
+                        "--device",
+                        "/dev/kfd",
+                        "--device",
+                        "/dev/dri",
+                    ]
+                )
 
             # Add environment variables
             if config.get("hf_token"):
                 container_cmd.extend(["-e", f"HF_TOKEN={config['hf_token']}"])
-
-            # Add shared memory for multi-GPU
-            container_cmd.extend(["--shm-size", "16g"])
 
             # Add image and command
             container_cmd.append(image)

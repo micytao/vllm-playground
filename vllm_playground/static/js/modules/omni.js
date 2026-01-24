@@ -656,12 +656,21 @@ export const OmniModule = {
         if (runMode === 'container') {
             // Container mode - podman/docker command
             // Note: Actual runtime (podman/docker) is auto-detected at startup
-            const runtime = 'podman';  // or 'docker' - both use same syntax
+            const runtime = 'podman';  // or 'docker'
             const image = 'vllm/vllm-omni:v0.14.0rc1';
 
-            command = `# Container mode (podman or docker)\n`;
-            command += `${runtime} run --gpus all -p ${config.port}:${config.port}`;
+            // Note: Docker uses --gpus all, Podman uses --device nvidia.com/gpu=all
+            command = `# Container mode\n`;
+            command += `# For Docker:  --gpus all\n`;
+            command += `# For Podman: --device nvidia.com/gpu=all\n`;
+            command += `${runtime} run --device nvidia.com/gpu=all \\
+  --ipc=host \\
+  -v ~/.cache/huggingface:/root/.cache/huggingface \\
+  -p ${config.port}:${config.port}`;
 
+            if (config.hf_token) {
+                command += ` \\\n  -e HF_TOKEN=$HF_TOKEN`;
+            }
             if (config.use_modelscope) {
                 command += ` \\\n  -e VLLM_USE_MODELSCOPE=True`;
             }
