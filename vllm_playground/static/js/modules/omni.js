@@ -452,8 +452,9 @@ export const OmniModule = {
             torch_compile: false
         },
         // Video Generation Recipes (Wan2.2 models)
+        // Memory usage depends on: model size + resolution + duration + fps
         'video-small-fast': {
-            name: 'Video 5B Fast (16GB)',
+            name: 'Video 5B Minimal (16GB)',
             model: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
             model_type: 'video',
             steps: 20,
@@ -461,13 +462,26 @@ export const OmniModule = {
             gpu_memory: 0.9,
             cpu_offload: false,
             torch_compile: false,
+            duration: 2,
+            fps: 16,
+            resolution: '320x512'  // Minimal resolution for 16GB GPUs
+        },
+        'video-l4-optimized': {
+            name: 'Video 5B for L4 (24GB)',
+            model: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
+            model_type: 'video',
+            steps: 25,
+            guidance: 4.0,
+            gpu_memory: 0.85,
+            cpu_offload: false,
+            torch_compile: false,
             duration: 4,
             fps: 16,
-            resolution: '480x640'  // Low resolution for lower memory
+            resolution: '480x640'  // Safe resolution for L4 24GB
         },
         'video-medium-balanced': {
-            name: 'Video 14B Balanced (24GB+)',
-            model: 'Wan-AI/Wan2.2-T2V-A14B-Diffusers',
+            name: 'Video 5B Quality (32GB+)',
+            model: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
             model_type: 'video',
             steps: 30,
             guidance: 4.0,
@@ -476,7 +490,7 @@ export const OmniModule = {
             torch_compile: false,
             duration: 4,
             fps: 16,
-            resolution: '480x640'  // Start with low resolution
+            resolution: '480x848'  // 16:9 aspect for 32GB+ GPUs
         },
         'video-large-quality': {
             name: 'Video 14B HQ (48GB+)',
@@ -489,10 +503,10 @@ export const OmniModule = {
             torch_compile: false,
             duration: 4,
             fps: 24,
-            resolution: '720x1280'  // HD only for large GPUs
+            resolution: '720x1280'  // HD only for 48GB+ GPUs (A40, A100)
         },
         'video-cpu-offload': {
-            name: 'Video 5B CPU Offload',
+            name: 'Video 5B CPU Offload (8GB+)',
             model: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
             model_type: 'video',
             steps: 20,
@@ -870,6 +884,9 @@ export const OmniModule = {
         document.getElementById('omni-clear-chat-btn')?.addEventListener('click', () => this.clearChat());
         document.getElementById('omni-export-chat-btn')?.addEventListener('click', () => this.exportChat());
 
+        // Gallery clear button
+        document.getElementById('omni-clear-gallery-btn')?.addEventListener('click', () => this.clearGallery());
+
         // Logs controls
         document.getElementById('omni-clear-logs-btn')?.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -971,7 +988,8 @@ export const OmniModule = {
         const fileInput = document.getElementById('omni-image-input');
 
         if (preview) preview.style.display = 'none';
-        if (dropzone) dropzone.style.display = 'flex';
+        // Restore default block display (not 'flex' which was causing left-alignment issue)
+        if (dropzone) dropzone.style.display = '';
         if (fileInput) fileInput.value = '';
     },
 
@@ -1164,8 +1182,11 @@ export const OmniModule = {
 
         const studioPanel = document.getElementById('omni-studio-panel');
         const chatPanel = document.getElementById('omni-chat-panel');
-        const imageParams = document.getElementById('omni-image-params');
-        const videoParams = document.getElementById('omni-video-params');
+        const generationParams = document.getElementById('omni-generation-params');
+        const imageSizeGroup = document.getElementById('omni-image-size-group');
+        const videoParamsGroup = document.getElementById('omni-video-params-group');
+        const stepsGroup = document.getElementById('omni-steps-group');
+        const guidanceGroup = document.getElementById('omni-guidance-group');
         const imageUpload = document.getElementById('omni-image-upload');
         const tipEl = document.getElementById('omni-model-type-tip');
 
@@ -1187,12 +1208,28 @@ export const OmniModule = {
             // Show chat interface for Omni models
             if (studioPanel) studioPanel.style.display = 'none';
             if (chatPanel) chatPanel.style.display = 'flex';
-            if (imageParams) imageParams.style.display = 'none';
+            if (generationParams) generationParams.style.display = 'none';
         } else {
             // Show generation studio for image/video models
             if (studioPanel) studioPanel.style.display = 'flex';
             if (chatPanel) chatPanel.style.display = 'none';
-            if (imageParams) imageParams.style.display = 'block';
+
+            // Show/hide generation parameters based on model type:
+            // - Image: Show image size, steps, guidance
+            // - Video: Show video params (resolution, duration, fps), steps, guidance
+            // - Audio: Hide all (TTS doesn't use these diffusion parameters)
+            if (modelType === 'audio') {
+                if (generationParams) generationParams.style.display = 'none';
+            } else {
+                if (generationParams) generationParams.style.display = 'block';
+                // Image Size only for image generation
+                if (imageSizeGroup) imageSizeGroup.style.display = modelType === 'image' ? 'block' : 'none';
+                // Video params (resolution, duration, fps) only for video generation
+                if (videoParamsGroup) videoParamsGroup.style.display = modelType === 'video' ? 'block' : 'none';
+                // Inference Steps and Guidance Scale for both image and video
+                if (stepsGroup) stepsGroup.style.display = 'block';
+                if (guidanceGroup) guidanceGroup.style.display = 'block';
+            }
         }
 
         // Update model dropdown options
@@ -1468,11 +1505,10 @@ export const OmniModule = {
     },
 
     updateStudioUI(modelType) {
-        // UI element references
+        // UI element references for the right interaction panel
         const studioIcon = document.getElementById('omni-studio-icon');
         const studioTitle = document.getElementById('omni-studio-title');
         const imageUpload = document.getElementById('omni-image-upload');
-        const videoParams = document.getElementById('omni-video-params');
         const generateBtnText = document.getElementById('omni-generate-btn-text');
         const promptTextarea = document.getElementById('omni-prompt');
         const galleryIcon = document.getElementById('omni-gallery-icon');
@@ -1481,6 +1517,8 @@ export const OmniModule = {
         const negativePrompt = document.getElementById('omni-negative-prompt');
 
         // Mode-specific configurations
+        // Note: Video/Image params visibility is handled in onModelTypeChange (left config panel)
+        // Note: Gallery header is static since gallery is shared across all types
         const modeConfig = {
             'image': {
                 icon: '🎨',
@@ -1491,7 +1529,6 @@ export const OmniModule = {
                 galleryText: 'Generated images will appear here',
                 galleryHint: 'Start the server and enter a prompt to generate',
                 showImageUpload: true,
-                showVideoParams: false,
                 showNegativePrompt: true
             },
             'video': {
@@ -1503,7 +1540,6 @@ export const OmniModule = {
                 galleryText: 'Generated videos will appear here',
                 galleryHint: 'Start the server and enter a prompt to generate',
                 showImageUpload: false,
-                showVideoParams: true,
                 showNegativePrompt: true
             },
             'audio': {
@@ -1515,7 +1551,6 @@ export const OmniModule = {
                 galleryText: 'Generated audio will appear here',
                 galleryHint: 'Start the server and enter text to synthesize',
                 showImageUpload: false,
-                showVideoParams: false,
                 showNegativePrompt: false
             }
         };
@@ -1531,9 +1566,8 @@ export const OmniModule = {
         if (galleryText) galleryText.textContent = config.galleryText;
         if (galleryHint) galleryHint.textContent = config.galleryHint;
 
-        // Show/hide mode-specific sections
+        // Show/hide mode-specific sections in the interaction panel
         if (imageUpload) imageUpload.style.display = config.showImageUpload ? 'block' : 'none';
-        if (videoParams) videoParams.style.display = config.showVideoParams ? 'flex' : 'none';
         if (negativePrompt) negativePrompt.style.display = config.showNegativePrompt ? 'block' : 'none';
     },
 
@@ -2040,10 +2074,14 @@ export const OmniModule = {
             num_inference_steps: parseInt(document.getElementById('omni-steps')?.value) || 6,
             guidance_scale: parseFloat(document.getElementById('omni-guidance')?.value) || 1.0,
             seed: document.getElementById('omni-seed')?.value ? parseInt(document.getElementById('omni-seed').value) : null,
+            // Include uploaded image for image-to-image generation (if any)
+            input_image: this.uploadedImage || null,
         };
 
-        this.ui.showNotification('Generating image...', 'info');
-        this.addLog(`Generating image: "${prompt.substring(0, 50)}..."`);
+        const isImg2Img = !!this.uploadedImage;
+        const modeText = isImg2Img ? 'image-to-image' : 'text-to-image';
+        this.ui.showNotification(`Generating ${modeText}...`, 'info');
+        this.addLog(`Generating ${modeText}: "${prompt.substring(0, 50)}..."`);
 
         const generateBtn = document.getElementById('omni-generate-btn');
         const generateBtnText = document.getElementById('omni-generate-btn-text');
@@ -2258,6 +2296,7 @@ export const OmniModule = {
 
         // Prepend to gallery
         gallery.prepend(item);
+        this.updateGalleryCount();
     },
 
     addVideoToGallery(base64Video, prompt, duration) {
@@ -2359,6 +2398,7 @@ export const OmniModule = {
 
         // Prepend to gallery
         gallery.prepend(item);
+        this.updateGalleryCount();
     },
 
     downloadVideo(item) {
@@ -2432,6 +2472,7 @@ export const OmniModule = {
 
         // Prepend to gallery
         gallery.prepend(item);
+        this.updateGalleryCount();
     },
 
     downloadAudio(item) {
@@ -2466,20 +2507,63 @@ export const OmniModule = {
 
         setTimeout(() => {
             item.remove();
+            this.updateGalleryCount();
 
             // Show placeholder if gallery is empty
             const gallery = document.getElementById('omni-gallery');
             if (gallery && gallery.querySelectorAll('.gallery-item').length === 0) {
                 gallery.innerHTML = `
-                    <div class="gallery-placeholder">
-                        <span class="placeholder-icon">🖼️</span>
-                        <span>Generated content will appear here</span>
+                    <div class="gallery-placeholder" id="omni-gallery-placeholder">
+                        <span class="placeholder-icon" id="omni-gallery-icon">🖼️</span>
+                        <span class="placeholder-text" id="omni-gallery-text">Generated content will appear here</span>
+                        <span class="placeholder-hint" id="omni-gallery-hint">Start the server and enter a prompt to generate</span>
                     </div>
                 `;
             }
 
             this.ui.showNotification('Item deleted', 'info');
         }, 300);
+    },
+
+    clearGallery() {
+        const gallery = document.getElementById('omni-gallery');
+        if (!gallery) return;
+
+        const items = gallery.querySelectorAll('.gallery-item');
+        if (items.length === 0) {
+            this.ui.showNotification('Gallery is already empty', 'info');
+            return;
+        }
+
+        // Confirm before clearing
+        if (!confirm(`Clear all ${items.length} item(s) from the gallery?`)) {
+            return;
+        }
+
+        // Remove all items
+        items.forEach(item => item.remove());
+
+        // Show placeholder
+        gallery.innerHTML = `
+            <div class="gallery-placeholder" id="omni-gallery-placeholder">
+                <span class="placeholder-icon" id="omni-gallery-icon">🖼️</span>
+                <span class="placeholder-text" id="omni-gallery-text">Generated content will appear here</span>
+                <span class="placeholder-hint" id="omni-gallery-hint">Start the server and enter a prompt to generate</span>
+            </div>
+        `;
+
+        this.updateGalleryCount();
+        this.ui.showNotification('Gallery cleared', 'success');
+    },
+
+    updateGalleryCount() {
+        const gallery = document.getElementById('omni-gallery');
+        const countEl = document.getElementById('omni-gallery-count');
+        if (!gallery || !countEl) return;
+
+        const count = gallery.querySelectorAll('.gallery-item').length;
+        const itemText = count === 1 ? 'item' : 'items';
+        countEl.textContent = `${count} ${itemText}`;
     },
 
     // =========================================================================

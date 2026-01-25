@@ -188,13 +188,14 @@ uv pip install onnxruntime</code></pre>
             <!-- ═══════════════════════════════════════════════════════════════ -->
             <!-- Section: Generation Parameters (for image/video models) -->
             <!-- ═══════════════════════════════════════════════════════════════ -->
-            <div class="config-section" id="omni-image-params">
+            <div class="config-section" id="omni-generation-params">
                 <div class="config-section-header">
                     <span class="section-icon">&#9881;</span>
                     <h3>Generation Parameters</h3>
                 </div>
                 <div class="config-section-content">
-                    <div class="form-group">
+                    <!-- Image Size: Only for image generation -->
+                    <div class="form-group" id="omni-image-size-group">
                         <label>Image Size</label>
                         <div class="size-inputs">
                             <input type="number" id="omni-width" value="1024" min="256" max="2048" step="64">
@@ -203,12 +204,40 @@ uv pip install onnxruntime</code></pre>
                         </div>
                     </div>
 
-                    <div class="form-group">
+                    <!-- Video Parameters: Only for video generation -->
+                    <div id="omni-video-params-group" style="display: none;">
+                        <div class="form-group">
+                            <label>Video Resolution</label>
+                            <select id="omni-video-resolution" class="form-select">
+                                <option value="320x512">320x512 (Minimal - 16GB)</option>
+                                <option value="480x640" selected>480x640 (Low - 24GB)</option>
+                                <option value="480x848">480x848 (16:9 - 32GB)</option>
+                                <option value="720x1280">720x1280 (HD - 48GB+)</option>
+                            </select>
+                        </div>
+                        <div class="form-group video-duration-fps">
+                            <div class="duration-fps-row">
+                                <div class="duration-input">
+                                    <label for="omni-video-duration">Duration (sec)</label>
+                                    <input type="number" id="omni-video-duration" value="4" min="1" max="16" step="1">
+                                </div>
+                                <div class="fps-input">
+                                    <label for="omni-video-fps">FPS</label>
+                                    <input type="number" id="omni-video-fps" value="16" min="8" max="30" step="1">
+                                </div>
+                            </div>
+                            <span class="help-text">Lower resolution & shorter duration use less GPU memory. For L4 (24GB): use 480x640, 4s, 16fps. For OOM errors, try 320x512.</span>
+                        </div>
+                    </div>
+
+                    <!-- Inference Steps: For image and video generation -->
+                    <div class="form-group" id="omni-steps-group">
                         <label>Inference Steps: <span id="omni-steps-value">6</span></label>
                         <input type="range" id="omni-steps" min="1" max="100" value="6">
                     </div>
 
-                    <div class="form-group">
+                    <!-- Guidance Scale: For image and video generation -->
+                    <div class="form-group" id="omni-guidance-group">
                         <label>Guidance Scale: <span id="omni-guidance-value">1.0</span></label>
                         <input type="range" id="omni-guidance" min="0" max="20" step="0.5" value="1">
                     </div>
@@ -283,27 +312,6 @@ uv pip install onnxruntime</code></pre>
                         <textarea id="omni-negative-prompt" placeholder="Negative prompt (optional)..." rows="2"></textarea>
                     </div>
 
-                    <!-- Video-specific parameters (hidden for image mode) -->
-                    <div class="video-params" id="omni-video-params" style="display: none;">
-                        <div class="param-group">
-                            <label for="omni-video-duration">Duration (sec)</label>
-                            <input type="number" id="omni-video-duration" value="4" min="1" max="16" step="1">
-                        </div>
-                        <div class="param-group">
-                            <label for="omni-video-fps">FPS</label>
-                            <input type="number" id="omni-video-fps" value="16" min="8" max="30" step="1">
-                        </div>
-                        <div class="param-group">
-                            <label for="omni-video-resolution">Resolution</label>
-                            <select id="omni-video-resolution">
-                                <option value="480x640">480x640 (Low Memory)</option>
-                                <option value="480x848">480x848 (16:9 Low)</option>
-                                <option value="720x1280" selected>720x1280 (HD)</option>
-                            </select>
-                        </div>
-                        <span class="help-text video-tip">Lower resolution uses less GPU memory. Start with 480x640 if you get OOM errors.</span>
-                    </div>
-
                     <div class="prompt-actions">
                         <div class="seed-input-wrapper">
                             <input type="number" id="omni-seed" placeholder="Seed (optional)" min="0">
@@ -323,13 +331,24 @@ uv pip install onnxruntime</code></pre>
                 </div>
 
                 <!-- Generated Content Gallery (dynamic based on mode) -->
-                <div class="generation-gallery" id="omni-gallery">
-                    <div class="gallery-placeholder" id="omni-gallery-placeholder">
-                        <span class="placeholder-icon" id="omni-gallery-icon">&#127912;</span>
-                        <span class="placeholder-text" id="omni-gallery-text">Generated images will appear here</span>
-                        <span class="placeholder-hint" id="omni-gallery-hint">Start the server and enter a prompt to generate</span>
+                <div class="generation-gallery-wrapper">
+                    <div class="gallery-header" id="omni-gallery-header">
+                        <div class="gallery-header-title">
+                            <h3>Gallery</h3>
+                        </div>
+                        <div class="gallery-header-actions">
+                            <span class="gallery-count" id="omni-gallery-count">0 items</span>
+                            <button id="omni-clear-gallery-btn" class="btn btn-secondary btn-sm" title="Clear gallery">Clear</button>
+                        </div>
                     </div>
-                    <div class="gallery-content" id="omni-gallery-content" style="display: none;"></div>
+                    <div class="generation-gallery" id="omni-gallery">
+                        <div class="gallery-placeholder" id="omni-gallery-placeholder">
+                            <span class="placeholder-icon" id="omni-gallery-icon">&#127912;</span>
+                            <span class="placeholder-text" id="omni-gallery-text">Generated images will appear here</span>
+                            <span class="placeholder-hint" id="omni-gallery-hint">Start the server and enter a prompt to generate</span>
+                        </div>
+                        <div class="gallery-content" id="omni-gallery-content" style="display: none;"></div>
+                    </div>
                 </div>
             </div>
 
@@ -523,26 +542,39 @@ uv pip install onnxruntime</code></pre>
                     <div class="omni-recipes-grid" id="omni-recipes-grid-video">
                         <div class="omni-recipe-card" data-recipe="video-small-fast">
                             <div class="recipe-badge recipe-badge-video">Video</div>
-                            <h3>🎬 Video 5B Fast (16GB)</h3>
-                            <p>Quick video generation with the 5B dense model</p>
+                            <h3>🎬 Video 5B Minimal (16GB)</h3>
+                            <p>Smallest config for GPUs with limited VRAM</p>
                             <div class="recipe-specs">
                                 <span>Model: Wan2.2-TI2V-5B</span>
+                                <span>320x512</span>
+                                <span>2s @ 16fps</span>
                                 <span>Steps: 20</span>
-                                <span>4s @ 16fps</span>
-                                <span>Memory: 90%</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-small-fast')">Apply Recipe</button>
                         </div>
 
+                        <div class="omni-recipe-card" data-recipe="video-l4-optimized">
+                            <div class="recipe-badge recipe-badge-video">Video</div>
+                            <h3>🎬 Video 5B for L4 (24GB)</h3>
+                            <p>Optimized for NVIDIA L4 GPUs (24GB VRAM)</p>
+                            <div class="recipe-specs">
+                                <span>Model: Wan2.2-TI2V-5B</span>
+                                <span>480x640</span>
+                                <span>4s @ 16fps</span>
+                                <span>Steps: 25</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-l4-optimized')">Apply Recipe</button>
+                        </div>
+
                         <div class="omni-recipe-card" data-recipe="video-medium-balanced">
                             <div class="recipe-badge recipe-badge-video">Video</div>
-                            <h3>🎬 Video 14B Balanced (24GB+)</h3>
-                            <p>Balanced quality with 14B MoE architecture</p>
+                            <h3>🎬 Video 5B Quality (32GB+)</h3>
+                            <p>Better quality with 16:9 aspect ratio</p>
                             <div class="recipe-specs">
-                                <span>Model: Wan2.2-T2V-A14B</span>
+                                <span>Model: Wan2.2-TI2V-5B</span>
+                                <span>480x848</span>
+                                <span>4s @ 16fps</span>
                                 <span>Steps: 30</span>
-                                <span>6s @ 24fps</span>
-                                <span>Memory: 85%</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-medium-balanced')">Apply Recipe</button>
                         </div>
@@ -550,23 +582,23 @@ uv pip install onnxruntime</code></pre>
                         <div class="omni-recipe-card" data-recipe="video-large-quality">
                             <div class="recipe-badge recipe-badge-video">Video</div>
                             <h3>🎬 Video 14B HQ (48GB+)</h3>
-                            <p>High quality video with torch.compile optimization</p>
+                            <p>High quality HD video for A40/A100 GPUs</p>
                             <div class="recipe-specs">
                                 <span>Model: Wan2.2-T2V-A14B</span>
-                                <span>Steps: 50</span>
-                                <span>8s @ 24fps</span>
-                                <span>torch.compile: On</span>
+                                <span>720x1280</span>
+                                <span>4s @ 24fps</span>
+                                <span>Steps: 40</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-large-quality')">Apply Recipe</button>
                         </div>
 
                         <div class="omni-recipe-card" data-recipe="video-cpu-offload">
                             <div class="recipe-badge recipe-badge-video">Video</div>
-                            <h3>🎬 Video 5B CPU Offload</h3>
-                            <p>Video generation with CPU offloading for limited VRAM</p>
+                            <h3>🎬 Video 5B CPU Offload (8GB+)</h3>
+                            <p>For very limited VRAM, uses CPU offloading</p>
                             <div class="recipe-specs">
                                 <span>Model: Wan2.2-TI2V-5B</span>
-                                <span>Steps: 20</span>
+                                <span>480x640</span>
                                 <span>4s @ 16fps</span>
                                 <span>CPU Offload: On</span>
                             </div>

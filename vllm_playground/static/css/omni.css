@@ -644,54 +644,128 @@
 }
 
 /* =============================================================================
-   Video Parameters
+   Video Parameters (in Config Panel)
    ============================================================================= */
 
-.video-params {
-    display: flex;
-    gap: 16px;
-    align-items: flex-end;
-    flex-wrap: wrap;
+#omni-video-params-group {
+    margin-bottom: 8px;
+}
+
+#omni-video-params-group .form-group {
     margin-bottom: 12px;
 }
 
-.video-params .param-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+/* Video Resolution dropdown - consistent with other form selects */
+#omni-video-resolution {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 0.9rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
 }
 
-.video-params label {
+#omni-video-resolution:hover {
+    border-color: var(--primary-color);
+}
+
+#omni-video-resolution:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+}
+
+/* Duration and FPS row */
+.video-duration-fps .duration-fps-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 8px;
+}
+
+.video-duration-fps .duration-input,
+.video-duration-fps .fps-input {
+    flex: 1;
+}
+
+.video-duration-fps label {
+    display: block;
     font-size: 0.85rem;
     color: var(--text-secondary);
-    font-weight: 500;
+    margin-bottom: 4px;
 }
 
-.video-params input[type="number"] {
-    width: 100px;
+.video-duration-fps input[type="number"] {
+    width: 100%;
     padding: 8px 12px;
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: 4px;
     color: var(--text-primary);
-    font-size: 0.95rem;
+    font-size: 0.9rem;
 }
 
-.video-params input[type="number"]:focus {
+.video-duration-fps input[type="number"]:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-}
-
-.video-tip {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    flex-basis: 100%;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
 }
 
 /* =============================================================================
-   Generation Gallery (Image/Video)
+   Generation Gallery (Image/Video/Audio)
    ============================================================================= */
+
+.generation-gallery-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.gallery-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.gallery-header-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.gallery-header-icon {
+    font-size: 1.3rem;
+}
+
+.gallery-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.gallery-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.gallery-count {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+}
 
 .generation-gallery {
     flex: 1;
@@ -703,7 +777,7 @@
     background: var(--bg-primary);
     border-radius: 0;
     min-height: 200px;
-    max-height: 400px;
+    max-height: 350px;
     border: 1px solid var(--border-color);
     align-content: start;
 }

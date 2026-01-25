@@ -229,6 +229,7 @@ class ImageGenerationRequest(BaseModel):
     num_inference_steps: int = 50
     guidance_scale: float = 4.0
     seed: Optional[int] = None
+    input_image: Optional[str] = None  # Base64 image for image-to-image generation
 
 
 class ImageGenerationResponse(BaseModel):
@@ -5135,9 +5136,27 @@ async def generate_omni_image(request: ImageGenerationRequest):
         # Build request to vLLM-Omni's /v1/chat/completions endpoint
         omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
 
+        # Build message content - supports both text-to-image and image-to-image
+        if request.input_image:
+            # Image-to-image: multimodal message with image + text
+            # Handle both data URL format and raw base64
+            if request.input_image.startswith("data:"):
+                image_url = request.input_image
+            else:
+                image_url = f"data:image/png;base64,{request.input_image}"
+
+            message_content = [
+                {"type": "image_url", "image_url": {"url": image_url}},
+                {"type": "text", "text": request.prompt},
+            ]
+            logger.info("Using image-to-image mode with uploaded image")
+        else:
+            # Text-to-image: simple text message
+            message_content = request.prompt
+
         payload = {
             "model": omni_config.model,
-            "messages": [{"role": "user", "content": request.prompt}],
+            "messages": [{"role": "user", "content": message_content}],
             "extra_body": {
                 "height": request.height,
                 "width": request.width,
