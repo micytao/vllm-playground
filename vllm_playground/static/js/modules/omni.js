@@ -57,6 +57,7 @@ export const OmniModule = {
     serverRunning: false,
     serverReady: false,  // True when API endpoint is actually responding
     healthCheckInterval: null,
+    statusPollInterval: null,  // Status polling interval (same as main vLLM Server)
     templateLoaded: false,
     currentModelType: 'image',
     currentModelSource: 'hub',
@@ -575,7 +576,10 @@ export const OmniModule = {
         console.log('Loading vLLM-Omni template...');
 
         try {
-            const response = await fetch('/static/templates/vllm-omni.html');
+            // Add cache-busting to prevent stale template issues
+            const response = await fetch('/static/templates/vllm-omni.html', {
+                cache: 'no-cache'
+            });
             console.log('Fetch response status:', response.status);
 
             if (!response.ok) throw new Error(`Failed to load template: ${response.status}`);
@@ -605,12 +609,14 @@ export const OmniModule = {
         }
     },
 
-    onViewActivated() {
+    async onViewActivated() {
         if (!this.templateLoaded) {
-            this.loadTemplate();
+            await this.loadTemplate();
         } else {
             // Refresh status when returning to view
             this.checkServerStatus();
+            // Reconnect WebSocket if disconnected
+            this.connectLogWebSocket();
         }
     },
 
@@ -632,6 +638,8 @@ export const OmniModule = {
             this.updatePromptTemplates(this.currentModelType || 'image');
             console.log('Omni init: checking server status...');
             this.checkServerStatus();
+            console.log('Omni init: starting status polling...');
+            this.startStatusPolling();
             console.log('Omni init: updating command preview...');
             this.updateCommandPreview();
             console.log('Omni init: connecting to log WebSocket...');
@@ -639,6 +647,57 @@ export const OmniModule = {
             console.log('Omni init: complete');
         } catch (error) {
             console.error('Omni init error:', error);
+        }
+    },
+
+    // Start continuous status polling (same pattern as main vLLM Server)
+    startStatusPolling() {
+        // Stop any existing polling
+        this.stopStatusPolling();
+
+        // Poll every 2 seconds (slightly slower than main vLLM Server's 1 second)
+        this.statusPollInterval = setInterval(() => {
+            this.pollStatus();
+        }, 2000);
+    },
+
+    stopStatusPolling() {
+        if (this.statusPollInterval) {
+            clearInterval(this.statusPollInterval);
+            this.statusPollInterval = null;
+        }
+    },
+
+    // Poll server status (same pattern as main vLLM Server's pollStatus)
+    async pollStatus() {
+        try {
+            const response = await fetch('/api/omni/status');
+            if (response.ok) {
+                const data = await response.json();
+
+                const wasRunning = this.serverRunning;
+                const wasReady = this.serverReady;
+
+                this.serverRunning = data.running;
+                this.serverReady = data.ready;
+
+                // Update UI if state changed
+                if (wasRunning !== data.running || wasReady !== data.ready) {
+                    this.updateServerStatus(data.running, data.ready);
+
+                    // If server just stopped, reset health check
+                    if (wasRunning && !data.running) {
+                        this.stopHealthCheckPolling();
+                    }
+
+                    // If server is running but not ready, start health polling
+                    if (data.running && !data.ready && !this.healthCheckInterval) {
+                        this.startHealthCheckPolling();
+                    }
+                }
+            }
+        } catch (error) {
+            // Silent fail for polling - don't spam console
         }
     },
 
@@ -1022,34 +1081,28 @@ export const OmniModule = {
 
     updateModelscopeAvailability() {
         // Use ModelScope availability from main app (already detected on startup)
+        // Follow same pattern as main vLLM Server - visual indication only, don't disable
         const modelscopeLabel = document.getElementById('omni-model-source-modelscope-label');
         const modelscopeRadio = document.getElementById('omni-model-source-modelscope');
 
         if (!this.modelscopeInstalled) {
-            // ModelScope not installed - disable the option
+            // ModelScope not installed - add visual indication (same as main vLLM Server)
             if (modelscopeLabel) {
                 modelscopeLabel.classList.add('mode-unavailable');
                 modelscopeLabel.title = 'ModelScope SDK not installed. Run: pip install modelscope>=1.18.1';
             }
-            if (modelscopeRadio) {
-                modelscopeRadio.disabled = true;
-                // If ModelScope was selected, switch to HuggingFace
-                if (modelscopeRadio.checked) {
-                    modelscopeRadio.checked = false;
-                    const hubRadio = document.getElementById('omni-model-source-hub');
-                    if (hubRadio) hubRadio.checked = true;
-                    this.toggleModelSource();
-                }
+            // If ModelScope was selected, switch to HuggingFace (same as main vLLM Server)
+            if (modelscopeRadio?.checked) {
+                const hubRadio = document.getElementById('omni-model-source-hub');
+                if (hubRadio) hubRadio.checked = true;
+                this.toggleModelSource();
             }
         } else {
-            // ModelScope installed - enable the option
+            // ModelScope installed - remove visual indication
             if (modelscopeLabel) {
                 modelscopeLabel.classList.remove('mode-unavailable');
                 const versionText = this.modelscopeVersion ? `v${this.modelscopeVersion}` : '';
-                modelscopeLabel.title = versionText ? `ModelScope SDK ${versionText}` : 'ModelScope SDK installed';
-            }
-            if (modelscopeRadio) {
-                modelscopeRadio.disabled = false;
+                modelscopeLabel.title = `ModelScope SDK ${versionText} installed`;
             }
         }
     },
@@ -1694,12 +1747,15 @@ export const OmniModule = {
             }
         }
 
-        this.ui.showNotification('Starting vLLM-Omni server...', 'info');
-        this.addLog('Starting vLLM-Omni server...');
-
-        // Disable start button
+        // Disable start button and show "Starting..." (same pattern as main vLLM Server)
         const startBtn = document.getElementById('omni-start-btn');
-        if (startBtn) startBtn.disabled = true;
+        if (startBtn) {
+            startBtn.disabled = true;
+            startBtn.textContent = 'Starting...';
+        }
+
+        this.ui.showNotification('Starting vLLM-Omni server...', 'info');
+        this.addLog('🚀 Starting vLLM-Omni server...');
 
         try {
             const response = await fetch('/api/omni/start', {
@@ -1715,7 +1771,7 @@ export const OmniModule = {
                 this.serverReady = false;  // Not ready yet, still loading
                 this.updateServerStatus(true, false);
                 this.ui.showNotification('vLLM-Omni server started - loading model...', 'info');
-                this.addLog(`Server started in ${result.mode} mode on port ${result.port}`);
+                this.addLog(`✅ Server started in ${result.mode} mode on port ${result.port}`);
                 // Health check polling will be triggered by log messages (watching for "Uvicorn running")
                 // For container mode, also start polling after a delay as logs may be delayed
                 if (result.mode === 'container') {
@@ -1726,18 +1782,27 @@ export const OmniModule = {
                     }, 10000);  // Start polling after 10 seconds if not triggered by logs
                 }
             } else {
-                this.ui.showNotification(`Failed to start: ${result.detail}`, 'error');
-                this.addLog(`ERROR: ${result.detail}`);
-                if (startBtn) startBtn.disabled = false;
+                throw new Error(result.detail || 'Failed to start server');
             }
         } catch (error) {
-            this.ui.showNotification(`Error: ${error.message}`, 'error');
-            this.addLog(`ERROR: ${error.message}`);
+            this.addLog(`❌ Failed to start server: ${error.message}`, 'error');
+            this.ui.showNotification(`Failed to start: ${error.message}`, 'error');
+            // Re-enable start button on error (same pattern as main vLLM Server)
             if (startBtn) startBtn.disabled = false;
+        } finally {
+            // Always reset button text (same pattern as main vLLM Server)
+            if (startBtn) startBtn.textContent = 'Start Server';
         }
     },
 
     async stopServer() {
+        // Disable stop button and show "Stopping..." (same pattern as main vLLM Server)
+        const stopBtn = document.getElementById('omni-stop-btn');
+        if (stopBtn) {
+            stopBtn.disabled = true;
+            stopBtn.textContent = 'Stopping...';
+        }
+
         this.ui.showNotification('Stopping vLLM-Omni server...', 'info');
         this.addLog('Stopping vLLM-Omni server...');
 
@@ -1752,13 +1817,19 @@ export const OmniModule = {
                 this.serverReady = false;
                 this.updateServerStatus(false, false);
                 this.ui.showNotification('vLLM-Omni server stopped', 'success');
-                this.addLog('Server stopped');
+                this.addLog('✅ Server stopped');
             } else {
                 const result = await response.json();
-                this.ui.showNotification(`Failed to stop: ${result.detail}`, 'error');
+                throw new Error(result.detail || 'Failed to stop server');
             }
         } catch (error) {
-            this.ui.showNotification(`Error: ${error.message}`, 'error');
+            this.addLog(`❌ Failed to stop server: ${error.message}`, 'error');
+            this.ui.showNotification(`Failed to stop: ${error.message}`, 'error');
+            // Re-enable stop button on error (same pattern as main vLLM Server)
+            if (stopBtn) stopBtn.disabled = false;
+        } finally {
+            // Always reset button text (same pattern as main vLLM Server)
+            if (stopBtn) stopBtn.textContent = 'Stop Server';
         }
     },
 
