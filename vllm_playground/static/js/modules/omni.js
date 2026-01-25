@@ -34,6 +34,7 @@ export function initOmniModule(ui) {
  * Inject vLLM-Omni methods into the UI class
  */
 function injectMethods(ui) {
+    console.log('[Omni] Injecting methods into ui...');
     ui.startOmniServer = OmniModule.startServer.bind(OmniModule);
     ui.stopOmniServer = OmniModule.stopServer.bind(OmniModule);
     ui.generateOmniImage = OmniModule.generateImage.bind(OmniModule);
@@ -43,6 +44,7 @@ function injectMethods(ui) {
     ui.openOmniRecipesModal = OmniModule.openRecipesModal.bind(OmniModule);
     ui.closeOmniRecipesModal = OmniModule.closeRecipesModal.bind(OmniModule);
     ui.applyOmniRecipe = OmniModule.applyRecipe.bind(OmniModule);
+    console.log('[Omni] Methods injected. applyOmniRecipe:', typeof ui.applyOmniRecipe);
 }
 
 /**
@@ -357,6 +359,7 @@ export const OmniModule = {
 
         // Model selection change - update model ID display
         document.getElementById('omni-model-select')?.addEventListener('change', (e) => {
+            console.log('[Omni] Model select change event fired, value:', e.target.value);
             this.updateModelIdDisplay(e.target.value);
         });
 
@@ -829,14 +832,35 @@ export const OmniModule = {
     },
 
     applyRecipe(recipeId) {
-        const recipe = this.omniRecipes[recipeId];
-        if (!recipe) {
-            this.ui.showNotification('Recipe not found', 'error');
-            return;
+        try {
+            console.log('[Omni] applyRecipe called with:', recipeId);
+            console.log('[Omni] this:', this);
+            console.log('[Omni] this.omniRecipes:', this.omniRecipes);
+
+            const recipe = this.omniRecipes[recipeId];
+            console.log('[Omni] Found recipe:', recipe);
+
+            if (!recipe) {
+                console.error('[Omni] Recipe not found for ID:', recipeId);
+                if (this.ui) {
+                    this.ui.showNotification('Recipe not found', 'error');
+                } else {
+                    alert('Recipe not found: ' + recipeId);
+                }
+                return;
+            }
+
+        // Apply model type FIRST (this rebuilds the model dropdown)
+        const modelTypeSelect = document.getElementById('omni-model-type');
+        if (modelTypeSelect && recipe.model_type) {
+            modelTypeSelect.value = recipe.model_type;
+            modelTypeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            this.onModelTypeChange(recipe.model_type);
         }
 
-        // Apply model
+        // Apply model AFTER model type change (so it doesn't get overwritten)
         const modelSelect = document.getElementById('omni-model-select');
+        console.log('[Omni] modelSelect element:', modelSelect);
         if (modelSelect) {
             // Check if model exists in options
             const option = Array.from(modelSelect.options).find(opt => opt.value === recipe.model);
@@ -850,34 +874,31 @@ export const OmniModule = {
                 modelSelect.appendChild(newOption);
                 modelSelect.value = recipe.model;
             }
+            console.log('[Omni] Model set to:', modelSelect.value);
             modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
             this.updateModelIdDisplay(recipe.model);
-        }
-
-        // Apply model type
-        const modelTypeSelect = document.getElementById('omni-model-type');
-        if (modelTypeSelect && recipe.model_type) {
-            modelTypeSelect.value = recipe.model_type;
-            modelTypeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-            this.onModelTypeChange(recipe.model_type);
         }
 
         // Apply inference steps
         const stepsInput = document.getElementById('omni-steps');
         const stepsValue = document.getElementById('omni-steps-value');
+        console.log('[Omni] stepsInput element:', stepsInput, 'setting to:', recipe.steps);
         if (stepsInput && recipe.steps !== undefined) {
             stepsInput.value = recipe.steps;
             if (stepsValue) stepsValue.textContent = recipe.steps;
             stepsInput.dispatchEvent(new Event('input', { bubbles: true }));
+            console.log('[Omni] Steps set to:', stepsInput.value);
         }
 
         // Apply guidance scale
         const guidanceInput = document.getElementById('omni-guidance');
         const guidanceValue = document.getElementById('omni-guidance-value');
+        console.log('[Omni] guidanceInput element:', guidanceInput, 'setting to:', recipe.guidance);
         if (guidanceInput && recipe.guidance !== undefined) {
             guidanceInput.value = recipe.guidance;
             if (guidanceValue) guidanceValue.textContent = recipe.guidance.toFixed(1);
             guidanceInput.dispatchEvent(new Event('input', { bubbles: true }));
+            console.log('[Omni] Guidance set to:', guidanceInput.value);
         }
 
         // Apply GPU memory utilization
@@ -885,6 +906,7 @@ export const OmniModule = {
         if (gpuMemoryInput && recipe.gpu_memory !== undefined) {
             gpuMemoryInput.value = recipe.gpu_memory;
             gpuMemoryInput.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log('[Omni] GPU memory set to:', gpuMemoryInput.value);
         }
 
         // Apply CPU offload
@@ -892,6 +914,7 @@ export const OmniModule = {
         if (cpuOffloadCheckbox && recipe.cpu_offload !== undefined) {
             cpuOffloadCheckbox.checked = recipe.cpu_offload;
             cpuOffloadCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log('[Omni] CPU offload set to:', cpuOffloadCheckbox.checked);
         }
 
         // Apply torch.compile
@@ -899,6 +922,7 @@ export const OmniModule = {
         if (torchCompileCheckbox && recipe.torch_compile !== undefined) {
             torchCompileCheckbox.checked = recipe.torch_compile;
             torchCompileCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log('[Omni] Torch compile set to:', torchCompileCheckbox.checked);
         }
 
         // Update command preview
@@ -907,7 +931,12 @@ export const OmniModule = {
 
         // Close modal and show notification
         this.closeRecipesModal();
+        console.log('[Omni] Recipe applied successfully:', recipe.name);
         this.ui.showNotification(`✅ Loaded: ${recipe.name}`, 'success');
+        } catch (error) {
+            console.error('[Omni] Error applying recipe:', error);
+            alert('Error applying recipe: ' + error.message);
+        }
     },
 
     updateStudioUI(modelType) {
@@ -1008,9 +1037,14 @@ export const OmniModule = {
     },
 
     updateModelIdDisplay(modelId) {
+        console.log('[Omni] updateModelIdDisplay called with:', modelId);
         const modelIdValue = document.getElementById('omni-model-id-value');
+        console.log('[Omni] modelIdValue element:', modelIdValue);
         if (modelIdValue) {
             modelIdValue.textContent = modelId;
+            console.log('[Omni] Model ID display updated to:', modelIdValue.textContent);
+        } else {
+            console.warn('[Omni] omni-model-id-value element not found!');
         }
     },
 
