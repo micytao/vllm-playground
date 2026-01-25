@@ -203,6 +203,10 @@ class OmniConfig(BaseModel):
     # Enable CPU offloading to reduce GPU memory usage (increases latency)
     enable_cpu_offload: bool = False
 
+    # Enable torch.compile for faster inference (but slower startup and more memory)
+    # When False, uses --enforce-eager mode which is faster to start and uses less memory
+    enable_torch_compile: bool = False
+
     # Run mode: subprocess (CLI) or container (same as vLLM Server)
     run_mode: Literal["subprocess", "container"] = "subprocess"
     venv_path: Optional[str] = None  # Path to vLLM-Omni venv (for subprocess mode)
@@ -4993,6 +4997,9 @@ async def start_omni_server(config: OmniConfig):
                 cmd.append("--trust-remote-code")
             if config.enable_cpu_offload:
                 cmd.append("--enable-cpu-offload")
+            if not config.enable_torch_compile:
+                # Disable torch.compile for faster startup and lower memory usage
+                cmd.append("--enforce-eager")
 
             # Set environment
             env = os.environ.copy()

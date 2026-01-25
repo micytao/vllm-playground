@@ -472,12 +472,12 @@ export const OmniModule = {
             model_type: 'video',
             steps: 25,
             guidance: 4.0,
-            gpu_memory: 0.85,
+            gpu_memory: 0.7,  // Lower to leave headroom for generation
             cpu_offload: false,
-            torch_compile: false,
-            duration: 4,
+            torch_compile: false,  // CRITICAL: disable torch.compile
+            duration: 2,  // Shorter duration for L4
             fps: 16,
-            resolution: '480x640'  // Safe resolution for L4 24GB
+            resolution: '320x512'  // Start with minimal resolution on L4
         },
         'video-medium-balanced': {
             name: 'Video 5B Quality (32GB+)',
@@ -506,17 +506,17 @@ export const OmniModule = {
             resolution: '720x1280'  // HD only for 48GB+ GPUs (A40, A100)
         },
         'video-cpu-offload': {
-            name: 'Video 5B CPU Offload (8GB+)',
+            name: 'Video 5B CPU Offload (16GB+)',
             model: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
             model_type: 'video',
             steps: 20,
             guidance: 4.0,
-            gpu_memory: 0.7,
+            gpu_memory: 0.5,  // Very low GPU memory - offload more to CPU
             cpu_offload: true,
-            torch_compile: false,
-            duration: 4,
+            torch_compile: false,  // CRITICAL: disable torch.compile to reduce memory
+            duration: 2,
             fps: 16,
-            resolution: '480x640'  // Low resolution with CPU offload
+            resolution: '320x512'  // Minimal resolution with CPU offload
         },
         // Audio Generation Recipes
         // Note: Stable Audio requires HF token (gated model)

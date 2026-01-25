@@ -556,12 +556,12 @@ uv pip install onnxruntime</code></pre>
                         <div class="omni-recipe-card" data-recipe="video-l4-optimized">
                             <div class="recipe-badge recipe-badge-video">Video</div>
                             <h3>🎬 Video 5B for L4 (24GB)</h3>
-                            <p>Optimized for NVIDIA L4 GPUs (24GB VRAM)</p>
+                            <p>Conservative settings for L4 GPUs</p>
                             <div class="recipe-specs">
                                 <span>Model: Wan2.2-TI2V-5B</span>
-                                <span>480x640</span>
-                                <span>4s @ 16fps</span>
-                                <span>Steps: 25</span>
+                                <span>320x512</span>
+                                <span>2s @ 16fps</span>
+                                <span>GPU: 70%</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-l4-optimized')">Apply Recipe</button>
                         </div>
@@ -594,13 +594,13 @@ uv pip install onnxruntime</code></pre>
 
                         <div class="omni-recipe-card" data-recipe="video-cpu-offload">
                             <div class="recipe-badge recipe-badge-video">Video</div>
-                            <h3>🎬 Video 5B CPU Offload (8GB+)</h3>
-                            <p>For very limited VRAM, uses CPU offloading</p>
+                            <h3>🎬 Video 5B CPU Offload (16GB+)</h3>
+                            <p>Aggressive CPU offload, needs 32GB+ system RAM</p>
                             <div class="recipe-specs">
                                 <span>Model: Wan2.2-TI2V-5B</span>
-                                <span>480x640</span>
-                                <span>4s @ 16fps</span>
-                                <span>CPU Offload: On</span>
+                                <span>320x512</span>
+                                <span>2s @ 16fps</span>
+                                <span>GPU: 50% + CPU</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-cpu-offload')">Apply Recipe</button>
                         </div>
