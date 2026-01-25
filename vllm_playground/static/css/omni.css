@@ -1127,3 +1127,191 @@
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     }
 }
+
+/* =============================================================================
+   Command Preview Buttons
+   ============================================================================= */
+
+.command-preview-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.command-preview-buttons .btn {
+    padding: 4px 12px;
+    font-size: 0.8rem;
+}
+
+/* Indicate editable state */
+#omni-command-text:not([readonly]) {
+    cursor: text;
+}
+
+#omni-command-text:not([readonly]):focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+}
+
+/* =============================================================================
+   Prompt Template Selector
+   ============================================================================= */
+
+.template-select-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.template-select-wrapper label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+#omni-prompt-template {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 0.9rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    max-width: 250px;
+}
+
+#omni-prompt-template:hover {
+    border-color: var(--primary-color);
+}
+
+#omni-prompt-template:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+}
+
+#omni-prompt-template optgroup {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+#omni-prompt-template option {
+    padding: 8px;
+}
+
+/* =============================================================================
+   Lightbox Modal
+   ============================================================================= */
+
+.omni-lightbox {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10000;
+}
+
+.omni-lightbox.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.lightbox-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    cursor: pointer;
+}
+
+.lightbox-content {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 1;
+}
+
+.lightbox-close {
+    position: absolute;
+    top: -40px;
+    right: 0;
+    background: none;
+    border: none;
+    color: white;
+    font-size: 32px;
+    cursor: pointer;
+    padding: 5px 10px;
+    line-height: 1;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+
+.lightbox-close:hover {
+    opacity: 1;
+}
+
+#omni-lightbox-image {
+    max-width: 100%;
+    max-height: calc(90vh - 100px);
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.lightbox-info {
+    margin-top: 20px;
+    text-align: center;
+    max-width: 600px;
+}
+
+.lightbox-prompt {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+    margin-bottom: 15px;
+    line-height: 1.5;
+    max-height: 60px;
+    overflow-y: auto;
+}
+
+#omni-lightbox-download {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+}
+
+#omni-lightbox-download svg {
+    flex-shrink: 0;
+}
+
+/* Gallery item cursor for clickable images */
+.gallery-item img {
+    cursor: zoom-in;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.gallery-item img:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Download button SVG styling */
+.gallery-download-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px !important;
+}
+
+.gallery-download-btn svg {
+    display: block;
+}

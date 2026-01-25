@@ -57,6 +57,72 @@ export const OmniModule = {
     uploadedImage: null,
     chatHistory: [],
     logWebSocket: null,  // WebSocket for log streaming
+    commandManuallyEdited: false,  // Track if user manually edited command preview
+
+    // Prompt templates for quick generation
+    promptTemplates: {
+        // Landscape
+        'landscape-sunset': {
+            prompt: 'Beautiful sunset over ocean waves, vibrant orange and purple sky, golden hour lighting, photorealistic, 4k, detailed clouds, calm waters reflecting the sky',
+            negative: 'blurry, low quality, artifacts, oversaturated, cartoon, painting'
+        },
+        'landscape-mountain': {
+            prompt: 'Majestic snow-capped mountain peaks at golden hour, crystal clear alpine lake reflection, dramatic clouds, professional nature photography, 8k resolution',
+            negative: 'blurry, artificial, cartoon, drawing, oversaturated, people'
+        },
+        'landscape-forest': {
+            prompt: 'Enchanted misty forest with sunbeams filtering through ancient trees, moss-covered ground, magical atmosphere, ethereal lighting, fantasy landscape',
+            negative: 'blurry, dark, muddy colors, artificial, low quality'
+        },
+        // Portrait
+        'portrait-professional': {
+            prompt: 'Professional business headshot, confident expression, soft studio lighting, shallow depth of field, clean background, high-end corporate photography',
+            negative: 'blurry, distorted face, extra fingers, deformed, amateur, harsh lighting'
+        },
+        'portrait-artistic': {
+            prompt: 'Artistic portrait with dramatic lighting, Rembrandt style, emotional expression, fine art photography, rich shadows and highlights, cinematic mood',
+            negative: 'blurry, flat lighting, distorted features, low quality, amateur'
+        },
+        'portrait-fantasy': {
+            prompt: 'Fantasy character portrait, elven features, ethereal beauty, flowing silver hair, glowing eyes, ornate jewelry, magical aura, detailed fantasy art',
+            negative: 'blurry, bad anatomy, extra limbs, distorted face, low quality'
+        },
+        // Art & Abstract
+        'art-abstract': {
+            prompt: 'Abstract fluid art, vibrant swirling colors, dynamic composition, modern art style, blue and gold palette, high contrast, artistic masterpiece',
+            negative: 'blurry, muddy colors, low contrast, boring, simple'
+        },
+        'art-surreal': {
+            prompt: 'Surrealist dreamscape, floating objects, impossible architecture, Salvador Dali inspired, melting clocks, desert landscape, thought-provoking imagery',
+            negative: 'realistic, boring, simple, low quality, blurry'
+        },
+        'art-cyberpunk': {
+            prompt: 'Cyberpunk cityscape at night, neon lights reflecting on wet streets, towering skyscrapers, holographic advertisements, flying vehicles, futuristic atmosphere',
+            negative: 'blurry, daytime, rural, nature, low quality, simple'
+        },
+        // Nature & Animals
+        'nature-wildlife': {
+            prompt: 'Majestic lion in African savanna, golden hour lighting, detailed fur texture, powerful stance, wildlife photography, National Geographic style',
+            negative: 'blurry, cartoon, zoo, cage, low quality, bad anatomy'
+        },
+        'nature-flowers': {
+            prompt: 'Beautiful garden of blooming roses and peonies, morning dew drops, soft natural lighting, macro photography style, vibrant colors, bokeh background',
+            negative: 'wilted, dead, artificial, plastic, blurry, oversaturated'
+        },
+        'nature-underwater': {
+            prompt: 'Vibrant coral reef underwater scene, tropical fish, crystal clear water, sunlight rays penetrating, marine life, underwater photography, vivid colors',
+            negative: 'murky water, pollution, dark, blurry, artificial'
+        },
+        // Product & Object
+        'product-tech': {
+            prompt: 'Sleek modern smartphone on marble surface, minimalist composition, studio lighting, product photography, sharp reflections, premium feel',
+            negative: 'blurry, text, watermark, logo, cluttered, low quality'
+        },
+        'product-food': {
+            prompt: 'Gourmet dish beautifully plated, professional food photography, appetizing presentation, fresh ingredients, soft natural lighting, shallow depth of field',
+            negative: 'blurry, unappetizing, messy, low quality, artificial'
+        }
+    },
 
     // =========================================================================
     // Template Loading (Option B - Separate HTML)
@@ -206,6 +272,11 @@ export const OmniModule = {
             this.onModelTypeChange(e.target.value);
         });
 
+        // Prompt template selection
+        document.getElementById('omni-prompt-template')?.addEventListener('change', (e) => {
+            this.applyPromptTemplate(e.target.value);
+        });
+
         // Model selection change - update model ID display
         document.getElementById('omni-model-select')?.addEventListener('change', (e) => {
             this.updateModelIdDisplay(e.target.value);
@@ -223,6 +294,18 @@ export const OmniModule = {
 
         // Copy command button
         document.getElementById('omni-copy-command-btn')?.addEventListener('click', () => this.copyCommand());
+
+        // Reset command button - restore auto-generated command
+        document.getElementById('omni-reset-command-btn')?.addEventListener('click', () => {
+            this.commandManuallyEdited = false;
+            this.updateCommandPreview();
+            this.ui.showNotification('Command reset to auto-generated', 'info');
+        });
+
+        // Track manual edits to command preview
+        document.getElementById('omni-command-text')?.addEventListener('input', () => {
+            this.commandManuallyEdited = true;
+        });
 
         // Update command preview on config changes
         const configElements = [
@@ -617,6 +700,33 @@ export const OmniModule = {
         this.updateModelOptions(modelType);
     },
 
+    applyPromptTemplate(templateId) {
+        if (!templateId || !this.promptTemplates[templateId]) {
+            return;
+        }
+
+        const template = this.promptTemplates[templateId];
+        const promptEl = document.getElementById('omni-prompt');
+        const negativeEl = document.getElementById('omni-negative-prompt');
+
+        if (promptEl && template.prompt) {
+            promptEl.value = template.prompt;
+        }
+        if (negativeEl && template.negative) {
+            negativeEl.value = template.negative;
+        }
+
+        // Reset the dropdown to placeholder after applying
+        const selectEl = document.getElementById('omni-prompt-template');
+        if (selectEl) {
+            setTimeout(() => {
+                selectEl.value = '';
+            }, 100);
+        }
+
+        this.ui.showNotification('Template applied! Customize as needed.', 'info');
+    },
+
     updateStudioUI(modelType) {
         // UI element references
         const studioIcon = document.getElementById('omni-studio-icon');
@@ -950,6 +1060,9 @@ export const OmniModule = {
     updateCommandPreview() {
         const commandText = document.getElementById('omni-command-text');
         if (!commandText) return;
+
+        // Skip auto-update if user has manually edited the command
+        if (this.commandManuallyEdited) return;
 
         const config = this.buildConfig();
         const runMode = document.querySelector('input[name="omni-run-mode"]:checked')?.value || 'subprocess';
@@ -1290,7 +1403,13 @@ export const OmniModule = {
                 <span class="gallery-item-prompt">${this.escapeHtml(prompt.substring(0, 50))}...</span>
             </div>
             <div class="gallery-item-actions">
-                <button class="btn btn-sm" title="Download">&#8595;</button>
+                <button class="btn btn-sm gallery-download-btn" title="Download">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                </button>
             </div>
         `;
 
@@ -1298,8 +1417,13 @@ export const OmniModule = {
         item.dataset.base64 = base64Image;
         item.dataset.prompt = prompt;
 
+        // Click on image to open lightbox
+        item.querySelector('img')?.addEventListener('click', () => {
+            this.openLightbox(base64Image, prompt);
+        });
+
         // Download click handler
-        item.querySelector('.gallery-item-actions button')?.addEventListener('click', (e) => {
+        item.querySelector('.gallery-download-btn')?.addEventListener('click', (e) => {
             e.stopPropagation();
             this.downloadImage(item);
         });
@@ -1330,7 +1454,13 @@ export const OmniModule = {
             </div>
             <div class="gallery-item-actions">
                 <button class="btn btn-sm gallery-play-btn" title="Play/Pause">&#9658;</button>
-                <button class="btn btn-sm gallery-download-btn" title="Download">&#8595;</button>
+                <button class="btn btn-sm gallery-download-btn" title="Download">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                </button>
             </div>
         `;
 
@@ -1403,7 +1533,13 @@ export const OmniModule = {
                 ${duration ? `<span class="audio-duration">${duration.toFixed(1)}s</span>` : ''}
             </div>
             <div class="gallery-item-actions">
-                <button class="btn btn-sm gallery-download-btn" title="Download">&#8595;</button>
+                <button class="btn btn-sm gallery-download-btn" title="Download">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                </button>
             </div>
         `;
 
@@ -1444,6 +1580,72 @@ export const OmniModule = {
         link.click();
 
         this.ui.showNotification('Image downloaded', 'success');
+    },
+
+    // =========================================================================
+    // Lightbox
+    // =========================================================================
+
+    openLightbox(base64Image, prompt) {
+        const lightbox = document.getElementById('omni-lightbox');
+        const lightboxImage = document.getElementById('omni-lightbox-image');
+        const lightboxPrompt = document.getElementById('omni-lightbox-prompt');
+        const downloadBtn = document.getElementById('omni-lightbox-download');
+
+        if (!lightbox || !lightboxImage) return;
+
+        // Set image and prompt
+        lightboxImage.src = `data:image/png;base64,${base64Image}`;
+        if (lightboxPrompt) lightboxPrompt.textContent = prompt;
+
+        // Store base64 for download
+        lightbox.dataset.base64 = base64Image;
+
+        // Show lightbox
+        lightbox.classList.add('active');
+        document.body.style.overflow = 'hidden';
+
+        // Close handlers (only add once)
+        if (!lightbox.dataset.listenersAdded) {
+            // Close on backdrop click
+            lightbox.querySelector('.lightbox-backdrop')?.addEventListener('click', () => {
+                this.closeLightbox();
+            });
+
+            // Close on X button click
+            lightbox.querySelector('.lightbox-close')?.addEventListener('click', () => {
+                this.closeLightbox();
+            });
+
+            // Close on Escape key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && lightbox.classList.contains('active')) {
+                    this.closeLightbox();
+                }
+            });
+
+            // Download button
+            downloadBtn?.addEventListener('click', () => {
+                const base64 = lightbox.dataset.base64;
+                if (base64) {
+                    const link = document.createElement('a');
+                    link.href = `data:image/png;base64,${base64}`;
+                    link.download = `vllm-omni-${Date.now()}.png`;
+                    link.click();
+                    this.ui.showNotification('Image downloaded', 'success');
+                }
+            });
+
+            lightbox.dataset.listenersAdded = 'true';
+        }
+    },
+
+    closeLightbox() {
+        const lightbox = document.getElementById('omni-lightbox');
+        if (lightbox) {
+            lightbox.classList.remove('active');
+            document.body.style.overflow = '';
+        }
     },
 
     // =========================================================================

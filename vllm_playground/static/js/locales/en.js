@@ -81,7 +81,7 @@ const en = {
         commandPreview: {
             title: 'Command Preview',
             copy: 'Copy',
-            help: 'Edit the command directly or use the form above. Your edits will be used when starting the server.'
+            help: 'Editable for customization. Copy to run manually. "Start Server" uses settings above.'
         },
         runMode: {
             label: 'Run Mode',

@@ -207,10 +207,13 @@ cd vllm-omni && uv pip install -e .</code></pre>
             <div class="command-preview-section">
                 <div class="command-preview-header">
                     <h3>Command Preview</h3>
-                    <button id="omni-copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command">Copy</button>
+                    <div class="command-preview-buttons">
+                        <button id="omni-reset-command-btn" class="btn btn-secondary btn-sm" title="Reset to auto-generated command">Reset</button>
+                        <button id="omni-copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command">Copy</button>
+                    </div>
                 </div>
-                <textarea id="omni-command-text" class="command-preview-textarea" rows="6" spellcheck="false" readonly>vllm-omni serve Tongyi-MAI/Z-Image-Turbo --port 8091</textarea>
-                <small class="command-help">Equivalent vLLM-Omni command for this configuration</small>
+                <textarea id="omni-command-text" class="command-preview-textarea" rows="6" spellcheck="false">vllm-omni serve Tongyi-MAI/Z-Image-Turbo --port 8091</textarea>
+                <small class="command-help">Editable for customization. Copy to run manually. "Start Server" uses settings above. Click "Reset" to restore.</small>
             </div>
 
             <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -283,6 +286,36 @@ cd vllm-omni && uv pip install -e .</code></pre>
                         <div class="seed-input-wrapper">
                             <input type="number" id="omni-seed" placeholder="Seed (optional)" min="0">
                             <span class="help-text seed-tip">Random number for reproducibility. Same seed + prompt = same output.</span>
+                        </div>
+                        <div class="template-select-wrapper">
+                            <label for="omni-prompt-template">Quick Template:</label>
+                            <select id="omni-prompt-template">
+                                <option value="">-- Select a template --</option>
+                                <optgroup label="Landscape">
+                                    <option value="landscape-sunset">Sunset Beach</option>
+                                    <option value="landscape-mountain">Mountain Vista</option>
+                                    <option value="landscape-forest">Enchanted Forest</option>
+                                </optgroup>
+                                <optgroup label="Portrait">
+                                    <option value="portrait-professional">Professional Headshot</option>
+                                    <option value="portrait-artistic">Artistic Portrait</option>
+                                    <option value="portrait-fantasy">Fantasy Character</option>
+                                </optgroup>
+                                <optgroup label="Art & Abstract">
+                                    <option value="art-abstract">Abstract Art</option>
+                                    <option value="art-surreal">Surrealist Dream</option>
+                                    <option value="art-cyberpunk">Cyberpunk City</option>
+                                </optgroup>
+                                <optgroup label="Nature & Animals">
+                                    <option value="nature-wildlife">Wildlife Scene</option>
+                                    <option value="nature-flowers">Flower Garden</option>
+                                    <option value="nature-underwater">Underwater World</option>
+                                </optgroup>
+                                <optgroup label="Product & Object">
+                                    <option value="product-tech">Tech Product</option>
+                                    <option value="product-food">Food Photography</option>
+                                </optgroup>
+                            </select>
                         </div>
                         <button id="omni-generate-btn" class="btn btn-primary" disabled>
                             <span id="omni-generate-btn-text">Generate Image</span>
@@ -364,6 +397,26 @@ cd vllm-omni && uv pip install -e .</code></pre>
             <div id="omni-logs-container" class="logs-container">
                 <div class="log-entry info">Waiting for vLLM-Omni server...</div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Image Lightbox Modal -->
+<div id="omni-lightbox" class="omni-lightbox">
+    <div class="lightbox-backdrop"></div>
+    <div class="lightbox-content">
+        <button class="lightbox-close" title="Close">&times;</button>
+        <img id="omni-lightbox-image" src="" alt="Generated image">
+        <div class="lightbox-info">
+            <p id="omni-lightbox-prompt" class="lightbox-prompt"></p>
+            <button id="omni-lightbox-download" class="btn btn-primary btn-sm">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download
+            </button>
         </div>
     </div>
 </div>
