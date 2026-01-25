@@ -21,13 +21,16 @@
 uv venv --python 3.12 --seed ~/.venv-vllm-omni
 source ~/.venv-vllm-omni/bin/activate
 
-# Install vLLM base
-uv pip install vllm==0.12.0 --torch-backend=auto
+# Install vLLM base (CUDA)
+uv pip install vllm==0.14.0 --torch-backend=auto
 
 # Clone and install vLLM-Omni
 git clone https://github.com/vllm-project/vllm-omni.git
-cd vllm-omni && uv pip install -e .</code></pre>
-            <p>Then set the venv path in the Run Mode configuration below.</p>
+cd vllm-omni && uv pip install -e .
+
+# For Qwen3-TTS models, also install:
+uv pip install onnxruntime</code></pre>
+            <p>Then set the venv path (<code>~/.venv-vllm-omni</code>) in the Run Mode configuration below.</p>
         </div>
     </div>
 </div>
@@ -575,7 +578,7 @@ cd vllm-omni && uv pip install -e .</code></pre>
                 <!-- Audio Generation Section -->
                 <div class="recipe-section">
                     <h3 class="recipe-section-header">🔊 Audio Generation</h3>
-                    <p class="recipe-section-note">⚠️ Qwen3 TTS models may not work in container mode (missing onnxruntime). Use Stable Audio instead.</p>
+                    <p class="recipe-section-note">⚠️ <strong>Stable Audio</strong>: Requires HF token AND accepting license at <a href="https://huggingface.co/stabilityai/stable-audio-open-1.0" target="_blank">huggingface.co</a>.<br>⚠️ <strong>Qwen3 TTS</strong>: Open model (Apache-2.0), but container image missing onnxruntime. Use <strong>Subprocess mode</strong> with local vLLM-Omni install, or wait for container fix.</p>
                     <div class="omni-recipes-grid" id="omni-recipes-grid-audio">
                         <div class="omni-recipe-card" data-recipe="audio-generation">
                             <div class="recipe-badge recipe-badge-audio">Audio</div>
@@ -584,7 +587,7 @@ cd vllm-omni && uv pip install -e .</code></pre>
                             <div class="recipe-specs">
                                 <span>Model: Stable Audio Open</span>
                                 <span>VRAM: 8GB</span>
-                                <span>🔑 HF Token Required</span>
+                                <span>🔑 HF Token + License</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-generation')">Apply Recipe</button>
                         </div>
@@ -596,43 +599,43 @@ cd vllm-omni && uv pip install -e .</code></pre>
                             <div class="recipe-specs">
                                 <span>Model: Stable Audio Open</span>
                                 <span>CPU Offload: On</span>
-                                <span>🔑 HF Token Required</span>
+                                <span>🔑 HF Token + License</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-generation-offload')">Apply Recipe</button>
                         </div>
 
                         <div class="omni-recipe-card" data-recipe="audio-tts-light">
-                            <div class="recipe-badge recipe-badge-audio">TTS*</div>
-                            <h3>🔊 Qwen3 TTS Base (4GB)*</h3>
-                            <p>Lightweight TTS (may require onnxruntime)</p>
+                            <div class="recipe-badge recipe-badge-audio">TTS</div>
+                            <h3>🔊 Qwen3 TTS Base (4GB)</h3>
+                            <p>Lightweight multilingual text-to-speech</p>
                             <div class="recipe-specs">
-                                <span>Model: Qwen3 TTS Base</span>
+                                <span>Model: Qwen3 TTS 0.6B</span>
                                 <span>VRAM: 4GB</span>
-                                <span>⚠️ May not work in container</span>
+                                <span>📦 Subprocess mode only</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-tts-light')">Apply Recipe</button>
                         </div>
 
                         <div class="omni-recipe-card" data-recipe="audio-tts-quality">
-                            <div class="recipe-badge recipe-badge-audio">TTS*</div>
-                            <h3>🔊 Qwen3 Voice Design (8GB)*</h3>
-                            <p>High quality TTS (may require onnxruntime)</p>
+                            <div class="recipe-badge recipe-badge-audio">TTS</div>
+                            <h3>🔊 Qwen3 Voice Design (8GB)</h3>
+                            <p>High quality TTS with voice design</p>
                             <div class="recipe-specs">
-                                <span>Model: Qwen3 Voice Design</span>
+                                <span>Model: Qwen3 TTS 1.7B</span>
                                 <span>VRAM: 8GB</span>
-                                <span>⚠️ May not work in container</span>
+                                <span>📦 Subprocess mode only</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-tts-quality')">Apply Recipe</button>
                         </div>
 
                         <div class="omni-recipe-card" data-recipe="audio-tts-custom">
-                            <div class="recipe-badge recipe-badge-audio">TTS*</div>
-                            <h3>🎤 Qwen3 Custom Voice (8GB)*</h3>
-                            <p>TTS with voice cloning (may require onnxruntime)</p>
+                            <div class="recipe-badge recipe-badge-audio">TTS</div>
+                            <h3>🎤 Qwen3 Custom Voice (8GB)</h3>
+                            <p>TTS with voice cloning capabilities</p>
                             <div class="recipe-specs">
-                                <span>Model: Qwen3 Custom Voice</span>
+                                <span>Model: Qwen3 TTS 1.7B</span>
                                 <span>VRAM: 8GB</span>
-                                <span>⚠️ May not work in container</span>
+                                <span>📦 Subprocess mode only</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-tts-custom')">Apply Recipe</button>
                         </div>

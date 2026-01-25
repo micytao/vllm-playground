@@ -1232,8 +1232,10 @@ class VLLMContainerManager:
                 )
 
             # Add environment variables
+            # HuggingFace token for gated models (same pattern as main vLLM container)
             if config.get("hf_token"):
                 container_cmd.extend(["-e", f"HF_TOKEN={config['hf_token']}"])
+                container_cmd.extend(["-e", f"HUGGING_FACE_HUB_TOKEN={config['hf_token']}"])
 
             # Add image and command
             container_cmd.append(image)

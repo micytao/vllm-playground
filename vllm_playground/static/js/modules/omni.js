@@ -524,33 +524,38 @@ export const OmniModule = {
             torch_compile: false,
             requires_hf_token: true
         },
-        // Qwen3 TTS recipes (may require onnxruntime - might not work in container)
+        // Qwen3 TTS recipes - Apache-2.0 licensed, no HF token required
+        // Note: Container mode may not work due to missing onnxruntime in vLLM-Omni image
+        // Use subprocess mode with local vLLM-Omni install that includes onnxruntime
         'audio-tts-light': {
-            name: 'Qwen3 TTS Base (4GB)*',
+            name: 'Qwen3 TTS Base (4GB)',
             model: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base',
             model_type: 'audio',
             gpu_memory: 0.9,
             cpu_offload: false,
             torch_compile: false,
-            speed: 1.0
+            speed: 1.0,
+            container_limitation: 'onnxruntime'  // Flag for container mode warning
         },
         'audio-tts-quality': {
-            name: 'Qwen3 TTS Voice Design (8GB)*',
+            name: 'Qwen3 TTS Voice Design (8GB)',
             model: 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign',
             model_type: 'audio',
             gpu_memory: 0.85,
             cpu_offload: false,
             torch_compile: false,
-            speed: 1.0
+            speed: 1.0,
+            container_limitation: 'onnxruntime'
         },
         'audio-tts-custom': {
-            name: 'Qwen3 TTS Custom Voice (8GB)*',
+            name: 'Qwen3 TTS Custom Voice (8GB)',
             model: 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',
             model_type: 'audio',
             gpu_memory: 0.85,
             cpu_offload: false,
             torch_compile: false,
-            speed: 1.0
+            speed: 1.0,
+            container_limitation: 'onnxruntime'
         }
     },
 
@@ -942,11 +947,12 @@ export const OmniModule = {
             }
             if (contentEl) contentEl.style.display = 'flex';
         } else {
-            // vLLM-Omni not installed - show installation section expanded
+            // vLLM-Omni not installed system-wide - show installation section expanded
+            // But user may have it in a custom venv, so don't force container mode
             if (statusEl) {
                 statusEl.querySelector('.status-dot')?.classList.remove('online');
                 const textEl = statusEl.querySelector('.status-text');
-                if (textEl) textEl.textContent = 'Not Installed (use Container mode)';
+                if (textEl) textEl.textContent = 'Not in system (specify venv path or use Container)';
             }
             // Show install section expanded when not installed
             if (installSection) {
@@ -971,39 +977,43 @@ export const OmniModule = {
     // =========================================================================
 
     updateRunModeAvailability() {
+        // Follow the same pattern as main vLLM Server
         const subprocessLabel = document.getElementById('omni-run-mode-subprocess-label');
-        const subprocessRadio = document.getElementById('omni-run-mode-subprocess');
-        const containerRadio = document.getElementById('omni-run-mode-container');
-        const helpText = document.getElementById('omni-run-mode-help');
+        const containerLabel = document.getElementById('omni-run-mode-container-label');
 
+        // Add visual indication for unavailable modes (same as main vLLM Server)
         if (!this.available) {
-            // vLLM-Omni not installed - disable subprocess mode
             if (subprocessLabel) {
                 subprocessLabel.classList.add('mode-unavailable');
-                subprocessLabel.title = 'vLLM-Omni not installed. Install it or use Container mode.';
+                subprocessLabel.title = 'vLLM-Omni not installed. Specify venv path below.';
             }
-            if (subprocessRadio) {
-                subprocessRadio.disabled = true;
-                // If subprocess was selected, switch to container mode
-                if (subprocessRadio.checked) {
-                    subprocessRadio.checked = false;
-                    if (containerRadio) containerRadio.checked = true;
-                    this.onRunModeChange('container');
-                }
-            }
-            if (helpText && subprocessRadio?.checked !== true) {
-                helpText.innerHTML = '<span style="color: var(--warning-color);">Subprocess requires vLLM-Omni installation</span>';
-            }
-        } else {
-            // vLLM-Omni installed - enable subprocess mode
+        } else if (!this.version) {
             if (subprocessLabel) {
                 subprocessLabel.classList.remove('mode-unavailable');
-                subprocessLabel.title = '';
+                subprocessLabel.title = 'vLLM-Omni installed but version unknown. Specify venv path for better detection.';
             }
-            if (subprocessRadio) {
-                subprocessRadio.disabled = false;
+        } else {
+            if (subprocessLabel) {
+                subprocessLabel.classList.remove('mode-unavailable');
+                subprocessLabel.title = `vLLM-Omni v${this.version} installed`;
             }
         }
+
+        if (!this.containerModeAvailable) {
+            if (containerLabel) {
+                containerLabel.classList.add('mode-unavailable');
+                containerLabel.title = 'No container runtime (podman/docker) found';
+            }
+        } else {
+            if (containerLabel) {
+                containerLabel.classList.remove('mode-unavailable');
+                containerLabel.title = 'Container mode available';
+            }
+        }
+
+        // Trigger onRunModeChange to update help text and venv visibility
+        const currentMode = document.querySelector('input[name="omni-run-mode"]:checked')?.value || 'subprocess';
+        this.onRunModeChange(currentMode);
     },
 
     // =========================================================================
@@ -1367,17 +1377,35 @@ export const OmniModule = {
         this.ui.showNotification(`✅ Loaded: ${recipe.name}`, 'success');
 
         // Warn if recipe requires HF token (same pattern as main vLLM Server)
+        // Only Stability AI models require this - Qwen models are open (Apache-2.0)
         if (recipe.requires_hf_token) {
             const hfTokenInput = document.getElementById('omni-hf-token');
             const hasToken = hfTokenInput?.value?.trim();
+            const modelUrl = recipe.model ? `https://huggingface.co/${recipe.model}` : 'https://huggingface.co/stabilityai/stable-audio-open-1.0';
             if (!hasToken) {
                 // Focus on HF token input (same as main vLLM Server)
                 if (hfTokenInput) {
                     hfTokenInput.focus();
                 }
-                this.ui.showNotification('⚠️ This model requires a HuggingFace token', 'warning');
-                this.addLog('WARNING: This model is gated and requires a HuggingFace token.', 'warning');
-                this.addLog('Get your token from: https://huggingface.co/settings/tokens', 'info');
+                this.ui.showNotification('⚠️ This model requires a HuggingFace token AND accepting the license', 'warning');
+                this.addLog('WARNING: This model is gated and requires:', 'warning');
+                this.addLog('  1. A HuggingFace token: https://huggingface.co/settings/tokens', 'info');
+                this.addLog(`  2. Accept license at: ${modelUrl}`, 'info');
+            } else {
+                // Token is set, but remind about license
+                this.addLog(`NOTE: Make sure you have accepted the model license at: ${modelUrl}`, 'info');
+            }
+        }
+
+        // Warn if recipe has container mode limitations (e.g., missing dependencies)
+        if (recipe.container_limitation) {
+            const runMode = document.querySelector('input[name="omni-run-mode"]:checked')?.value;
+            if (runMode === 'container') {
+                this.ui.showNotification(`⚠️ This model may not work in Container mode (missing ${recipe.container_limitation}). Use Subprocess mode instead.`, 'warning');
+                this.addLog(`WARNING: ${recipe.name} may not work in Container mode.`, 'warning');
+                this.addLog(`  The vLLM-Omni container image is missing: ${recipe.container_limitation}`, 'info');
+                this.addLog('  Solution: Use Subprocess mode with local vLLM-Omni install that includes onnxruntime', 'info');
+                this.addLog('  Install: pip install onnxruntime', 'info');
             }
         }
         } catch (error) {
@@ -1525,32 +1553,46 @@ export const OmniModule = {
     },
 
     onRunModeChange(mode) {
+        // Follow the same pattern as main vLLM Server's toggleRunMode
         const venvGroup = document.getElementById('omni-venv-path-group');
         const helpText = document.getElementById('omni-run-mode-help');
         const subprocessLabel = document.getElementById('omni-run-mode-subprocess-label');
         const containerLabel = document.getElementById('omni-run-mode-container-label');
 
         if (mode === 'subprocess') {
-            if (venvGroup) venvGroup.style.display = 'block';
             // Toggle active class on mode buttons
             if (subprocessLabel) subprocessLabel.classList.add('active');
             if (containerLabel) containerLabel.classList.remove('active');
 
-            // Update help text based on availability (like main vLLM Server)
+            // Show venv path option only in subprocess mode (same as main vLLM Server)
+            if (venvGroup) venvGroup.style.display = 'block';
+
+            // Update help text based on availability (same pattern as main vLLM Server)
             if (!this.available) {
-                if (helpText) helpText.innerHTML = '<span style="color: var(--error-color);">vLLM-Omni not installed. Specify venv path below or use Container mode.</span>';
+                if (helpText) helpText.innerHTML = '<span style="color: var(--error-color);">⚠️ vLLM-Omni not installed. Specify venv path below.</span>';
             } else if (!this.version) {
-                if (helpText) helpText.innerHTML = '<span style="color: var(--warning-color);">vLLM-Omni installed but version unknown. Specify venv path for better detection.</span>';
+                if (helpText) helpText.innerHTML = '<span style="color: var(--warning-color);">⚠️ vLLM-Omni installed but version unknown. Specify venv path for better detection.</span>';
             } else {
                 if (helpText) helpText.textContent = `Subprocess: Direct execution using vLLM-Omni v${this.version}`;
             }
         } else {
-            if (venvGroup) venvGroup.style.display = 'none';
-            if (helpText) helpText.textContent = 'Container mode uses official vLLM-Omni Docker image';
             // Toggle active class on mode buttons
             if (subprocessLabel) subprocessLabel.classList.remove('active');
             if (containerLabel) containerLabel.classList.add('active');
+
+            // Hide venv path option in container mode (same as main vLLM Server)
+            if (venvGroup) venvGroup.style.display = 'none';
+
+            // Update help text
+            if (!this.containerModeAvailable) {
+                if (helpText) helpText.innerHTML = '<span style="color: var(--error-color);">⚠️ No container runtime (podman/docker) found</span>';
+            } else {
+                if (helpText) helpText.textContent = 'Container: Isolated environment using official vLLM-Omni image';
+            }
         }
+
+        // Update command preview
+        this.updateCommandPreview();
     },
 
     // =========================================================================
@@ -1633,17 +1675,18 @@ export const OmniModule = {
         }
 
         // Check if gated model requires HF token (same pattern as main vLLM Server)
+        // Note: Only Stability AI models require HF token + license agreement
+        // Qwen models (including TTS) are Apache-2.0 licensed and don't require HF token
         if (!config.use_modelscope) {
             const model = config.model.toLowerCase();
-            // Known gated models in vLLM-Omni ecosystem
-            const isGated = model.includes('stabilityai/') ||
-                           model.includes('stable-audio') ||
-                           model.includes('stable-diffusion');
+            // Known gated models in vLLM-Omni ecosystem (Stability AI models)
+            const isGated = model.includes('stabilityai/');
 
             if (isGated && !config.hf_token) {
                 this.ui.showNotification(`⚠️ ${config.model} is a gated model and requires a HuggingFace token!`, 'error');
                 this.addLog(`❌ Gated model requires HF token: ${config.model}`, 'error');
                 this.addLog('Get your token from: https://huggingface.co/settings/tokens', 'info');
+                this.addLog('Also accept the license at: https://huggingface.co/' + config.model, 'info');
                 // Focus on HF token input
                 const hfTokenInput = document.getElementById('omni-hf-token');
                 if (hfTokenInput) hfTokenInput.focus();
