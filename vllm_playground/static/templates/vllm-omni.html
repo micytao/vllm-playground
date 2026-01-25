@@ -88,6 +88,10 @@ cd vllm-omni && uv pip install -e .</code></pre>
                             <option value="Tongyi-MAI/Z-Image-Turbo">Z-Image Turbo (Fast)</option>
                             <option value="Qwen/Qwen-Image">Qwen Image</option>
                         </select>
+                        <!-- Omni Recipes Button -->
+                        <button id="omni-browse-recipes-btn" class="btn btn-secondary btn-sm browse-recipes-btn">
+                            📚 Browse Recipes
+                        </button>
                     </div>
 
                     <div class="model-id-display" id="omni-model-id-display">
@@ -396,6 +400,121 @@ cd vllm-omni && uv pip install -e .</code></pre>
         <div class="logs-row-content" id="omni-logs-row-content">
             <div id="omni-logs-container" class="logs-container">
                 <div class="log-entry info">Waiting for vLLM-Omni server...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Omni Recipes Modal -->
+<div id="omni-recipes-modal" class="modal omni-recipes-modal" style="display: none;">
+    <div class="modal-overlay" id="omni-recipes-modal-overlay"></div>
+    <div class="modal-content omni-recipes-modal-content">
+        <div class="modal-header">
+            <h2>📚 vLLM-Omni Recipes</h2>
+            <button id="omni-recipes-modal-close" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p class="recipes-intro">
+                Pre-configured settings optimized for different GPU sizes and use cases.
+                Select a recipe to auto-configure all settings.
+            </p>
+
+            <!-- Recipe Cards -->
+            <div class="omni-recipes-grid" id="omni-recipes-grid">
+                <!-- Small GPU Recipes -->
+                <div class="omni-recipe-card" data-recipe="small-gpu-turbo">
+                    <div class="recipe-badge">Small GPU</div>
+                    <h3>🚀 Z-Image Turbo (16-24GB)</h3>
+                    <p>Fast image generation for GPUs with 16-24GB VRAM (L4, RTX 4090, A10)</p>
+                    <div class="recipe-specs">
+                        <span>Model: Z-Image-Turbo</span>
+                        <span>Steps: 6</span>
+                        <span>Guidance: 1.0</span>
+                        <span>Memory: 85%</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                </div>
+
+                <div class="omni-recipe-card" data-recipe="small-gpu-quality">
+                    <div class="recipe-badge">Small GPU</div>
+                    <h3>🎨 Quality Mode (16-24GB)</h3>
+                    <p>Higher quality with more steps, still fits in smaller GPUs</p>
+                    <div class="recipe-specs">
+                        <span>Model: Z-Image-Turbo</span>
+                        <span>Steps: 20</span>
+                        <span>Guidance: 3.5</span>
+                        <span>Memory: 90%</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                </div>
+
+                <!-- Medium GPU Recipes -->
+                <div class="omni-recipe-card" data-recipe="medium-gpu-balanced">
+                    <div class="recipe-badge">Medium GPU</div>
+                    <h3>⚡ Balanced (32-48GB)</h3>
+                    <p>Good balance of speed and quality for A100-40GB or similar</p>
+                    <div class="recipe-specs">
+                        <span>Model: Z-Image-Turbo</span>
+                        <span>Steps: 12</span>
+                        <span>Guidance: 2.5</span>
+                        <span>Memory: 80%</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                </div>
+
+                <div class="omni-recipe-card" data-recipe="medium-gpu-hq">
+                    <div class="recipe-badge">Medium GPU</div>
+                    <h3>✨ High Quality (32-48GB)</h3>
+                    <p>Maximum quality settings with Qwen Image model</p>
+                    <div class="recipe-specs">
+                        <span>Model: Qwen-Image</span>
+                        <span>Steps: 30</span>
+                        <span>Guidance: 4.0</span>
+                        <span>Memory: 85%</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                </div>
+
+                <!-- Large GPU Recipes -->
+                <div class="omni-recipe-card" data-recipe="large-gpu-fast">
+                    <div class="recipe-badge">Large GPU</div>
+                    <h3>💨 Ultra Fast (80GB+)</h3>
+                    <p>Blazing fast generation on A100-80GB or H100</p>
+                    <div class="recipe-specs">
+                        <span>Model: Z-Image-Turbo</span>
+                        <span>Steps: 4</span>
+                        <span>Guidance: 0.5</span>
+                        <span>Memory: 70%</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                </div>
+
+                <div class="omni-recipe-card" data-recipe="large-gpu-production">
+                    <div class="recipe-badge">Large GPU</div>
+                    <h3>🏭 Production (80GB+)</h3>
+                    <p>Production-ready settings with torch.compile enabled</p>
+                    <div class="recipe-specs">
+                        <span>Model: Qwen-Image</span>
+                        <span>Steps: 25</span>
+                        <span>Guidance: 4.0</span>
+                        <span>torch.compile: On</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                </div>
+
+                <!-- CPU Offload Recipe -->
+                <div class="omni-recipe-card" data-recipe="cpu-offload">
+                    <div class="recipe-badge">Limited VRAM</div>
+                    <h3>💾 CPU Offload Mode</h3>
+                    <p>For GPUs with limited VRAM (8-16GB), uses CPU offloading</p>
+                    <div class="recipe-specs">
+                        <span>Model: Z-Image-Turbo</span>
+                        <span>Steps: 8</span>
+                        <span>CPU Offload: On</span>
+                        <span>Memory: 70%</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                </div>
             </div>
         </div>
     </div>

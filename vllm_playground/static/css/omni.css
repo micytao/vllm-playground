@@ -1315,3 +1315,188 @@
 .gallery-download-btn svg {
     display: block;
 }
+
+/* =============================================================================
+   Omni Recipes Modal (Consistent with main vLLM Server modal theme)
+   ============================================================================= */
+
+.omni-recipes-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.omni-recipes-modal .modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    cursor: pointer;
+}
+
+.omni-recipes-modal-content {
+    position: relative;
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    max-width: 1000px;
+    max-height: 85vh;
+    width: 90%;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    z-index: 1;
+    animation: omniModalSlideIn 0.3s ease-out;
+}
+
+@keyframes omniModalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.omni-recipes-modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.omni-recipes-modal .modal-header h2 {
+    margin: 0;
+    font-size: 1.3rem;
+    color: var(--text-primary);
+}
+
+.omni-recipes-modal .modal-close {
+    background: none;
+    border: none;
+    font-size: 28px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.omni-recipes-modal .modal-close:hover {
+    color: var(--text-primary);
+}
+
+.omni-recipes-modal .modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.omni-recipes-modal .recipes-intro {
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+/* Recipes Grid */
+.omni-recipes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+/* Recipe Card (matches main vLLM Server .recipe-card style) */
+.omni-recipe-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 16px;
+    transition: all 0.2s;
+}
+
+.omni-recipe-card:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.15);
+}
+
+.recipe-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    border-radius: 4px;
+    background: var(--primary-color);
+    color: white;
+    margin-bottom: 10px;
+}
+
+.omni-recipe-card h3 {
+    margin: 0 0 8px 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.omni-recipe-card p {
+    margin: 0 0 12px 0;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.recipe-specs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.recipe-specs span {
+    font-size: 0.75rem;
+    background: var(--bg-tertiary);
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: var(--text-secondary);
+}
+
+.recipe-apply-btn {
+    width: 100%;
+}
+
+/* Browse Recipes Button */
+#omni-browse-recipes-btn {
+    margin-top: 10px;
+    width: 100%;
+}
+
+/* Light theme adjustments (matching main vLLM Server) */
+[data-theme="light"] .omni-recipes-modal-content {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .omni-recipes-modal-content {
+        width: 95%;
+        max-height: 90vh;
+    }
+
+    .omni-recipes-grid {
+        grid-template-columns: 1fr;
+    }
+}

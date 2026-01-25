@@ -124,6 +124,80 @@ export const OmniModule = {
         }
     },
 
+    // Configuration recipes for different GPU sizes
+    omniRecipes: {
+        'small-gpu-turbo': {
+            name: 'Z-Image Turbo (16-24GB)',
+            model: 'Tongyi-MAI/Z-Image-Turbo',
+            model_type: 'image',
+            steps: 6,
+            guidance: 1.0,
+            gpu_memory: 0.85,
+            cpu_offload: false,
+            torch_compile: false
+        },
+        'small-gpu-quality': {
+            name: 'Quality Mode (16-24GB)',
+            model: 'Tongyi-MAI/Z-Image-Turbo',
+            model_type: 'image',
+            steps: 20,
+            guidance: 3.5,
+            gpu_memory: 0.9,
+            cpu_offload: false,
+            torch_compile: false
+        },
+        'medium-gpu-balanced': {
+            name: 'Balanced (32-48GB)',
+            model: 'Tongyi-MAI/Z-Image-Turbo',
+            model_type: 'image',
+            steps: 12,
+            guidance: 2.5,
+            gpu_memory: 0.8,
+            cpu_offload: false,
+            torch_compile: false
+        },
+        'medium-gpu-hq': {
+            name: 'High Quality (32-48GB)',
+            model: 'Qwen/Qwen-Image',
+            model_type: 'image',
+            steps: 30,
+            guidance: 4.0,
+            gpu_memory: 0.85,
+            cpu_offload: false,
+            torch_compile: false
+        },
+        'large-gpu-fast': {
+            name: 'Ultra Fast (80GB+)',
+            model: 'Tongyi-MAI/Z-Image-Turbo',
+            model_type: 'image',
+            steps: 4,
+            guidance: 0.5,
+            gpu_memory: 0.7,
+            cpu_offload: false,
+            torch_compile: false
+        },
+        'large-gpu-production': {
+            name: 'Production (80GB+)',
+            model: 'Qwen/Qwen-Image',
+            model_type: 'image',
+            steps: 25,
+            guidance: 4.0,
+            gpu_memory: 0.85,
+            cpu_offload: false,
+            torch_compile: true
+        },
+        'cpu-offload': {
+            name: 'CPU Offload Mode',
+            model: 'Tongyi-MAI/Z-Image-Turbo',
+            model_type: 'image',
+            steps: 8,
+            guidance: 1.5,
+            gpu_memory: 0.7,
+            cpu_offload: true,
+            torch_compile: false
+        }
+    },
+
     // =========================================================================
     // Template Loading (Option B - Separate HTML)
     // =========================================================================
@@ -280,6 +354,23 @@ export const OmniModule = {
         // Model selection change - update model ID display
         document.getElementById('omni-model-select')?.addEventListener('change', (e) => {
             this.updateModelIdDisplay(e.target.value);
+        });
+
+        // Recipes modal
+        document.getElementById('omni-browse-recipes-btn')?.addEventListener('click', () => this.openRecipesModal());
+        document.getElementById('omni-recipes-modal-close')?.addEventListener('click', () => this.closeRecipesModal());
+        document.getElementById('omni-recipes-modal-overlay')?.addEventListener('click', () => this.closeRecipesModal());
+
+        // Recipe apply buttons (delegated event)
+        document.getElementById('omni-recipes-grid')?.addEventListener('click', (e) => {
+            const applyBtn = e.target.closest('.recipe-apply-btn');
+            if (applyBtn) {
+                const card = applyBtn.closest('.omni-recipe-card');
+                const recipeId = card?.dataset.recipe;
+                if (recipeId) {
+                    this.applyRecipe(recipeId);
+                }
+            }
         });
 
         // Model Source toggle
@@ -725,6 +816,101 @@ export const OmniModule = {
         }
 
         this.ui.showNotification('Template applied! Customize as needed.', 'info');
+    },
+
+    // =========================================================================
+    // Recipes Modal
+    // =========================================================================
+
+    openRecipesModal() {
+        const modal = document.getElementById('omni-recipes-modal');
+        if (modal) {
+            modal.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+        }
+    },
+
+    closeRecipesModal() {
+        const modal = document.getElementById('omni-recipes-modal');
+        if (modal) {
+            modal.style.display = 'none';
+            document.body.style.overflow = '';
+        }
+    },
+
+    applyRecipe(recipeId) {
+        const recipe = this.omniRecipes[recipeId];
+        if (!recipe) {
+            this.ui.showNotification('Recipe not found', 'error');
+            return;
+        }
+
+        // Apply model
+        const modelSelect = document.getElementById('omni-model-select');
+        if (modelSelect) {
+            // Check if model exists in options
+            const option = Array.from(modelSelect.options).find(opt => opt.value === recipe.model);
+            if (option) {
+                modelSelect.value = recipe.model;
+            } else {
+                // Add the model if not in list
+                const newOption = document.createElement('option');
+                newOption.value = recipe.model;
+                newOption.textContent = recipe.model.split('/').pop();
+                modelSelect.appendChild(newOption);
+                modelSelect.value = recipe.model;
+            }
+            this.updateModelIdDisplay(recipe.model);
+        }
+
+        // Apply model type
+        const modelTypeSelect = document.getElementById('omni-model-type');
+        if (modelTypeSelect && recipe.model_type) {
+            modelTypeSelect.value = recipe.model_type;
+            this.onModelTypeChange(recipe.model_type);
+        }
+
+        // Apply inference steps
+        const stepsInput = document.getElementById('omni-steps');
+        const stepsValue = document.getElementById('omni-steps-value');
+        if (stepsInput && recipe.steps !== undefined) {
+            stepsInput.value = recipe.steps;
+            if (stepsValue) stepsValue.textContent = recipe.steps;
+        }
+
+        // Apply guidance scale
+        const guidanceInput = document.getElementById('omni-guidance');
+        const guidanceValue = document.getElementById('omni-guidance-value');
+        if (guidanceInput && recipe.guidance !== undefined) {
+            guidanceInput.value = recipe.guidance;
+            if (guidanceValue) guidanceValue.textContent = recipe.guidance.toFixed(1);
+        }
+
+        // Apply GPU memory utilization
+        const gpuMemoryInput = document.getElementById('omni-gpu-memory');
+        if (gpuMemoryInput && recipe.gpu_memory !== undefined) {
+            gpuMemoryInput.value = recipe.gpu_memory;
+        }
+
+        // Apply CPU offload
+        const cpuOffloadCheckbox = document.getElementById('omni-cpu-offload');
+        if (cpuOffloadCheckbox && recipe.cpu_offload !== undefined) {
+            cpuOffloadCheckbox.checked = recipe.cpu_offload;
+        }
+
+        // Apply torch.compile
+        const torchCompileCheckbox = document.getElementById('omni-torch-compile');
+        if (torchCompileCheckbox && recipe.torch_compile !== undefined) {
+            torchCompileCheckbox.checked = recipe.torch_compile;
+        }
+
+        // Update command preview
+        this.commandManuallyEdited = false;
+        this.updateCommandPreview();
+
+        // Close modal and show notification
+        this.closeRecipesModal();
+        this.ui.showNotification(`Recipe applied: ${recipe.name}`, 'success');
     },
 
     updateStudioUI(modelType) {
