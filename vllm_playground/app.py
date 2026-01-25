@@ -5727,8 +5727,8 @@ async def read_omni_logs_subprocess():
 
             log_line = line.decode("utf-8", errors="replace").strip()
             if log_line:
-                # Broadcast to websocket connections with [OMNI] prefix
-                await broadcast_log(f"[OMNI] {log_line}")
+                # Broadcast to omni websocket connections with [OMNI] prefix
+                await broadcast_omni_log(f"[OMNI] {log_line}")
 
     except Exception as e:
         logger.error(f"Error reading omni logs: {e}")
@@ -5736,7 +5736,7 @@ async def read_omni_logs_subprocess():
     # Check if process ended
     if omni_process and omni_process.returncode is not None:
         omni_running = False
-        await broadcast_log(f"[OMNI] Process ended with code {omni_process.returncode}")
+        await broadcast_omni_log(f"[OMNI] Process ended with code {omni_process.returncode}")
 
 
 # ============================================
