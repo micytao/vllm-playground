@@ -39,6 +39,10 @@ function injectMethods(ui) {
     ui.generateOmniImage = OmniModule.generateImage.bind(OmniModule);
     ui.loadOmniTemplate = OmniModule.loadTemplate.bind(OmniModule);
     ui.onOmniViewActivated = OmniModule.onViewActivated.bind(OmniModule);
+    // Recipe methods
+    ui.openOmniRecipesModal = OmniModule.openRecipesModal.bind(OmniModule);
+    ui.closeOmniRecipesModal = OmniModule.closeRecipesModal.bind(OmniModule);
+    ui.applyOmniRecipe = OmniModule.applyRecipe.bind(OmniModule);
 }
 
 /**
@@ -356,22 +360,8 @@ export const OmniModule = {
             this.updateModelIdDisplay(e.target.value);
         });
 
-        // Recipes modal
-        document.getElementById('omni-browse-recipes-btn')?.addEventListener('click', () => this.openRecipesModal());
-        document.getElementById('omni-recipes-modal-close')?.addEventListener('click', () => this.closeRecipesModal());
-        document.getElementById('omni-recipes-modal-overlay')?.addEventListener('click', () => this.closeRecipesModal());
-
-        // Recipe apply buttons (delegated event)
-        document.getElementById('omni-recipes-grid')?.addEventListener('click', (e) => {
-            const applyBtn = e.target.closest('.recipe-apply-btn');
-            if (applyBtn) {
-                const card = applyBtn.closest('.omni-recipe-card');
-                const recipeId = card?.dataset.recipe;
-                if (recipeId) {
-                    this.applyRecipe(recipeId);
-                }
-            }
-        });
+        // Note: Recipes modal handlers are attached via onclick in HTML for consistency
+        // with main vLLM Server pattern (window.vllmUI.openOmniRecipesModal, etc.)
 
         // Model Source toggle
         document.getElementById('omni-model-source-hub')?.addEventListener('change', () => {
@@ -860,6 +850,7 @@ export const OmniModule = {
                 modelSelect.appendChild(newOption);
                 modelSelect.value = recipe.model;
             }
+            modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
             this.updateModelIdDisplay(recipe.model);
         }
 
@@ -867,6 +858,7 @@ export const OmniModule = {
         const modelTypeSelect = document.getElementById('omni-model-type');
         if (modelTypeSelect && recipe.model_type) {
             modelTypeSelect.value = recipe.model_type;
+            modelTypeSelect.dispatchEvent(new Event('change', { bubbles: true }));
             this.onModelTypeChange(recipe.model_type);
         }
 
@@ -876,6 +868,7 @@ export const OmniModule = {
         if (stepsInput && recipe.steps !== undefined) {
             stepsInput.value = recipe.steps;
             if (stepsValue) stepsValue.textContent = recipe.steps;
+            stepsInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
         // Apply guidance scale
@@ -884,24 +877,28 @@ export const OmniModule = {
         if (guidanceInput && recipe.guidance !== undefined) {
             guidanceInput.value = recipe.guidance;
             if (guidanceValue) guidanceValue.textContent = recipe.guidance.toFixed(1);
+            guidanceInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
         // Apply GPU memory utilization
         const gpuMemoryInput = document.getElementById('omni-gpu-memory');
         if (gpuMemoryInput && recipe.gpu_memory !== undefined) {
             gpuMemoryInput.value = recipe.gpu_memory;
+            gpuMemoryInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         // Apply CPU offload
         const cpuOffloadCheckbox = document.getElementById('omni-cpu-offload');
         if (cpuOffloadCheckbox && recipe.cpu_offload !== undefined) {
             cpuOffloadCheckbox.checked = recipe.cpu_offload;
+            cpuOffloadCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         // Apply torch.compile
         const torchCompileCheckbox = document.getElementById('omni-torch-compile');
         if (torchCompileCheckbox && recipe.torch_compile !== undefined) {
             torchCompileCheckbox.checked = recipe.torch_compile;
+            torchCompileCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         // Update command preview
@@ -910,7 +907,7 @@ export const OmniModule = {
 
         // Close modal and show notification
         this.closeRecipesModal();
-        this.ui.showNotification(`Recipe applied: ${recipe.name}`, 'success');
+        this.ui.showNotification(`✅ Loaded: ${recipe.name}`, 'success');
     },
 
     updateStudioUI(modelType) {
@@ -1596,6 +1593,14 @@ export const OmniModule = {
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
                 </button>
+                <button class="btn btn-sm gallery-delete-btn" title="Delete">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        <line x1="10" y1="11" x2="10" y2="17"/>
+                        <line x1="14" y1="11" x2="14" y2="17"/>
+                    </svg>
+                </button>
             </div>
         `;
 
@@ -1612,6 +1617,12 @@ export const OmniModule = {
         item.querySelector('.gallery-download-btn')?.addEventListener('click', (e) => {
             e.stopPropagation();
             this.downloadImage(item);
+        });
+
+        // Delete click handler
+        item.querySelector('.gallery-delete-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.deleteGalleryItem(item);
         });
 
         // Prepend to gallery
@@ -1647,6 +1658,14 @@ export const OmniModule = {
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
                 </button>
+                <button class="btn btn-sm gallery-delete-btn" title="Delete">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        <line x1="10" y1="11" x2="10" y2="17"/>
+                        <line x1="14" y1="11" x2="14" y2="17"/>
+                    </svg>
+                </button>
             </div>
         `;
 
@@ -1679,6 +1698,12 @@ export const OmniModule = {
         item.querySelector('.gallery-download-btn')?.addEventListener('click', (e) => {
             e.stopPropagation();
             this.downloadVideo(item);
+        });
+
+        // Delete click handler
+        item.querySelector('.gallery-delete-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.deleteGalleryItem(item);
         });
 
         // Prepend to gallery
@@ -1726,6 +1751,14 @@ export const OmniModule = {
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
                 </button>
+                <button class="btn btn-sm gallery-delete-btn" title="Delete">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        <line x1="10" y1="11" x2="10" y2="17"/>
+                        <line x1="14" y1="11" x2="14" y2="17"/>
+                    </svg>
+                </button>
             </div>
         `;
 
@@ -1738,6 +1771,12 @@ export const OmniModule = {
         item.querySelector('.gallery-download-btn')?.addEventListener('click', (e) => {
             e.stopPropagation();
             this.downloadAudio(item);
+        });
+
+        // Delete click handler
+        item.querySelector('.gallery-delete-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.deleteGalleryItem(item);
         });
 
         // Prepend to gallery
@@ -1766,6 +1805,30 @@ export const OmniModule = {
         link.click();
 
         this.ui.showNotification('Image downloaded', 'success');
+    },
+
+    deleteGalleryItem(item) {
+        // Remove with fade animation
+        item.style.transition = 'opacity 0.3s, transform 0.3s';
+        item.style.opacity = '0';
+        item.style.transform = 'scale(0.8)';
+
+        setTimeout(() => {
+            item.remove();
+
+            // Show placeholder if gallery is empty
+            const gallery = document.getElementById('omni-gallery');
+            if (gallery && gallery.querySelectorAll('.gallery-item').length === 0) {
+                gallery.innerHTML = `
+                    <div class="gallery-placeholder">
+                        <span class="placeholder-icon">🖼️</span>
+                        <span>Generated content will appear here</span>
+                    </div>
+                `;
+            }
+
+            this.ui.showNotification('Item deleted', 'info');
+        }, 300);
     },
 
     // =========================================================================

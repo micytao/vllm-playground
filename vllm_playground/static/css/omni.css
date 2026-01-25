@@ -1304,15 +1304,50 @@
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
-/* Download button SVG styling */
-.gallery-download-btn {
+/* Gallery action buttons SVG styling */
+.gallery-download-btn,
+.gallery-delete-btn {
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 6px !important;
+    min-width: 28px;
+    min-height: 28px;
 }
 
-.gallery-download-btn svg {
+.gallery-download-btn svg,
+.gallery-delete-btn svg {
+    display: block;
+}
+
+/* Delete button specific styling */
+.gallery-delete-btn {
+    background: rgba(239, 68, 68, 0.8) !important;
+    border-color: transparent !important;
+}
+
+.gallery-delete-btn:hover {
+    background: rgba(220, 38, 38, 1) !important;
+}
+
+/* Gallery item actions layout */
+.gallery-item-actions {
+    display: flex;
+    gap: 6px;
+}
+
+/* Lightbox download button - compact icon only */
+.lightbox-download-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px !important;
+    min-width: 42px;
+    min-height: 42px;
+    border-radius: 50%;
+}
+
+.lightbox-download-btn svg {
     display: block;
 }
 

@@ -89,7 +89,7 @@ cd vllm-omni && uv pip install -e .</code></pre>
                             <option value="Qwen/Qwen-Image">Qwen Image</option>
                         </select>
                         <!-- Omni Recipes Button -->
-                        <button id="omni-browse-recipes-btn" class="btn btn-secondary btn-sm browse-recipes-btn">
+                        <button id="omni-browse-recipes-btn" class="btn btn-secondary btn-sm browse-recipes-btn" onclick="window.vllmUI.openOmniRecipesModal()">
                             📚 Browse Recipes
                         </button>
                     </div>
@@ -407,11 +407,11 @@ cd vllm-omni && uv pip install -e .</code></pre>
 
 <!-- Omni Recipes Modal -->
 <div id="omni-recipes-modal" class="modal omni-recipes-modal" style="display: none;">
-    <div class="modal-overlay" id="omni-recipes-modal-overlay"></div>
+    <div class="modal-overlay" id="omni-recipes-modal-overlay" onclick="window.vllmUI.closeOmniRecipesModal()"></div>
     <div class="modal-content omni-recipes-modal-content">
         <div class="modal-header">
             <h2>📚 vLLM-Omni Recipes</h2>
-            <button id="omni-recipes-modal-close" class="modal-close">&times;</button>
+            <button id="omni-recipes-modal-close" class="modal-close" onclick="window.vllmUI.closeOmniRecipesModal()">&times;</button>
         </div>
         <div class="modal-body">
             <p class="recipes-intro">
@@ -432,7 +432,7 @@ cd vllm-omni && uv pip install -e .</code></pre>
                         <span>Guidance: 1.0</span>
                         <span>Memory: 85%</span>
                     </div>
-                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('small-gpu-turbo')">Apply Recipe</button>
                 </div>
 
                 <div class="omni-recipe-card" data-recipe="small-gpu-quality">
@@ -445,7 +445,7 @@ cd vllm-omni && uv pip install -e .</code></pre>
                         <span>Guidance: 3.5</span>
                         <span>Memory: 90%</span>
                     </div>
-                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('small-gpu-quality')">Apply Recipe</button>
                 </div>
 
                 <!-- Medium GPU Recipes -->
@@ -459,7 +459,7 @@ cd vllm-omni && uv pip install -e .</code></pre>
                         <span>Guidance: 2.5</span>
                         <span>Memory: 80%</span>
                     </div>
-                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('medium-gpu-balanced')">Apply Recipe</button>
                 </div>
 
                 <div class="omni-recipe-card" data-recipe="medium-gpu-hq">
@@ -472,7 +472,7 @@ cd vllm-omni && uv pip install -e .</code></pre>
                         <span>Guidance: 4.0</span>
                         <span>Memory: 85%</span>
                     </div>
-                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('medium-gpu-hq')">Apply Recipe</button>
                 </div>
 
                 <!-- Large GPU Recipes -->
@@ -486,7 +486,7 @@ cd vllm-omni && uv pip install -e .</code></pre>
                         <span>Guidance: 0.5</span>
                         <span>Memory: 70%</span>
                     </div>
-                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('large-gpu-fast')">Apply Recipe</button>
                 </div>
 
                 <div class="omni-recipe-card" data-recipe="large-gpu-production">
@@ -499,7 +499,7 @@ cd vllm-omni && uv pip install -e .</code></pre>
                         <span>Guidance: 4.0</span>
                         <span>torch.compile: On</span>
                     </div>
-                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('large-gpu-production')">Apply Recipe</button>
                 </div>
 
                 <!-- CPU Offload Recipe -->
@@ -513,7 +513,7 @@ cd vllm-omni && uv pip install -e .</code></pre>
                         <span>CPU Offload: On</span>
                         <span>Memory: 70%</span>
                     </div>
-                    <button class="btn btn-primary btn-sm recipe-apply-btn">Apply Recipe</button>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('cpu-offload')">Apply Recipe</button>
                 </div>
             </div>
         </div>
@@ -528,13 +528,12 @@ cd vllm-omni && uv pip install -e .</code></pre>
         <img id="omni-lightbox-image" src="" alt="Generated image">
         <div class="lightbox-info">
             <p id="omni-lightbox-prompt" class="lightbox-prompt"></p>
-            <button id="omni-lightbox-download" class="btn btn-primary btn-sm">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button id="omni-lightbox-download" class="btn btn-primary btn-sm lightbox-download-btn" title="Download">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                     <polyline points="7 10 12 15 17 10"/>
                     <line x1="12" y1="15" x2="12" y2="3"/>
                 </svg>
-                Download
             </button>
         </div>
     </div>
