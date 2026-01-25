@@ -450,34 +450,34 @@ export const OmniModule = {
             cpu_offload: true,
             torch_compile: false
         },
-        // Video Generation Recipes
+        // Video Generation Recipes (Wan2.2 models)
         'video-small-fast': {
-            name: 'Video Fast (24GB)',
-            model: 'Wan-AI/Wan2.1-T2V-1.3B',
+            name: 'Video 5B Fast (16GB)',
+            model: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
             model_type: 'video',
             steps: 20,
             guidance: 5.0,
-            gpu_memory: 0.85,
+            gpu_memory: 0.9,
             cpu_offload: false,
             torch_compile: false,
             duration: 4,
             fps: 16
         },
         'video-medium-balanced': {
-            name: 'Video Balanced (48GB)',
-            model: 'Wan-AI/Wan2.1-T2V-1.3B',
+            name: 'Video 14B Balanced (24GB+)',
+            model: 'Wan-AI/Wan2.2-T2V-A14B-Diffusers',
             model_type: 'video',
             steps: 30,
             guidance: 6.0,
-            gpu_memory: 0.8,
+            gpu_memory: 0.85,
             cpu_offload: false,
             torch_compile: false,
             duration: 6,
             fps: 24
         },
         'video-large-quality': {
-            name: 'Video HQ (80GB+)',
-            model: 'Wan-AI/Wan2.1-T2V-1.3B',
+            name: 'Video 14B HQ (48GB+)',
+            model: 'Wan-AI/Wan2.2-T2V-A14B-Diffusers',
             model_type: 'video',
             steps: 50,
             guidance: 7.0,
@@ -488,8 +488,8 @@ export const OmniModule = {
             fps: 24
         },
         'video-cpu-offload': {
-            name: 'Video CPU Offload',
-            model: 'Wan-AI/Wan2.1-T2V-1.3B',
+            name: 'Video 5B CPU Offload',
+            model: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
             model_type: 'video',
             steps: 20,
             guidance: 5.0,

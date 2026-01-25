@@ -505,36 +505,36 @@ cd vllm-omni && uv pip install -e .</code></pre>
                     <div class="omni-recipes-grid" id="omni-recipes-grid-video">
                         <div class="omni-recipe-card" data-recipe="video-small-fast">
                             <div class="recipe-badge recipe-badge-video">Video</div>
-                            <h3>🎬 Video Fast (24GB)</h3>
-                            <p>Quick video generation on GPUs with 24GB VRAM</p>
+                            <h3>🎬 Video 5B Fast (16GB)</h3>
+                            <p>Quick video generation with the 5B dense model</p>
                             <div class="recipe-specs">
-                                <span>Model: Wan2.1-T2V</span>
+                                <span>Model: Wan2.2-TI2V-5B</span>
                                 <span>Steps: 20</span>
                                 <span>4s @ 16fps</span>
-                                <span>Memory: 85%</span>
+                                <span>Memory: 90%</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-small-fast')">Apply Recipe</button>
                         </div>
 
                         <div class="omni-recipe-card" data-recipe="video-medium-balanced">
                             <div class="recipe-badge recipe-badge-video">Video</div>
-                            <h3>🎬 Video Balanced (48GB)</h3>
-                            <p>Good balance of quality and speed for 48GB GPUs</p>
+                            <h3>🎬 Video 14B Balanced (24GB+)</h3>
+                            <p>Balanced quality with 14B MoE architecture</p>
                             <div class="recipe-specs">
-                                <span>Model: Wan2.1-T2V</span>
+                                <span>Model: Wan2.2-T2V-A14B</span>
                                 <span>Steps: 30</span>
                                 <span>6s @ 24fps</span>
-                                <span>Memory: 80%</span>
+                                <span>Memory: 85%</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-medium-balanced')">Apply Recipe</button>
                         </div>
 
                         <div class="omni-recipe-card" data-recipe="video-large-quality">
                             <div class="recipe-badge recipe-badge-video">Video</div>
-                            <h3>🎬 Video HQ (80GB+)</h3>
-                            <p>High quality video on large GPUs with torch.compile</p>
+                            <h3>🎬 Video 14B HQ (48GB+)</h3>
+                            <p>High quality video with torch.compile optimization</p>
                             <div class="recipe-specs">
-                                <span>Model: Wan2.1-T2V</span>
+                                <span>Model: Wan2.2-T2V-A14B</span>
                                 <span>Steps: 50</span>
                                 <span>8s @ 24fps</span>
                                 <span>torch.compile: On</span>
@@ -544,10 +544,10 @@ cd vllm-omni && uv pip install -e .</code></pre>
 
                         <div class="omni-recipe-card" data-recipe="video-cpu-offload">
                             <div class="recipe-badge recipe-badge-video">Video</div>
-                            <h3>🎬 Video CPU Offload</h3>
+                            <h3>🎬 Video 5B CPU Offload</h3>
                             <p>Video generation with CPU offloading for limited VRAM</p>
                             <div class="recipe-specs">
-                                <span>Model: Wan2.1-T2V</span>
+                                <span>Model: Wan2.2-TI2V-5B</span>
                                 <span>Steps: 20</span>
                                 <span>4s @ 16fps</span>
                                 <span>CPU Offload: On</span>
