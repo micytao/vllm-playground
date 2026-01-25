@@ -295,30 +295,7 @@ cd vllm-omni && uv pip install -e .</code></pre>
                             <label for="omni-prompt-template">Quick Template:</label>
                             <select id="omni-prompt-template">
                                 <option value="">-- Select a template --</option>
-                                <optgroup label="Landscape">
-                                    <option value="landscape-sunset">Sunset Beach</option>
-                                    <option value="landscape-mountain">Mountain Vista</option>
-                                    <option value="landscape-forest">Enchanted Forest</option>
-                                </optgroup>
-                                <optgroup label="Portrait">
-                                    <option value="portrait-professional">Professional Headshot</option>
-                                    <option value="portrait-artistic">Artistic Portrait</option>
-                                    <option value="portrait-fantasy">Fantasy Character</option>
-                                </optgroup>
-                                <optgroup label="Art & Abstract">
-                                    <option value="art-abstract">Abstract Art</option>
-                                    <option value="art-surreal">Surrealist Dream</option>
-                                    <option value="art-cyberpunk">Cyberpunk City</option>
-                                </optgroup>
-                                <optgroup label="Nature & Animals">
-                                    <option value="nature-wildlife">Wildlife Scene</option>
-                                    <option value="nature-flowers">Flower Garden</option>
-                                    <option value="nature-underwater">Underwater World</option>
-                                </optgroup>
-                                <optgroup label="Product & Object">
-                                    <option value="product-tech">Tech Product</option>
-                                    <option value="product-food">Food Photography</option>
-                                </optgroup>
+                                <!-- Options populated dynamically based on model type -->
                             </select>
                         </div>
                         <button id="omni-generate-btn" class="btn btn-primary" disabled>
@@ -420,9 +397,13 @@ cd vllm-omni && uv pip install -e .</code></pre>
             </p>
 
             <!-- Recipe Cards -->
-            <div class="omni-recipes-grid" id="omni-recipes-grid">
-                <!-- Small GPU Recipes -->
-                <div class="omni-recipe-card" data-recipe="small-gpu-turbo">
+            <div class="omni-recipes-container">
+                <!-- Image Generation Section -->
+                <div class="recipe-section">
+                    <h3 class="recipe-section-header">🖼️ Image Generation</h3>
+                    <div class="omni-recipes-grid" id="omni-recipes-grid-image">
+                        <!-- Small GPU Recipes -->
+                        <div class="omni-recipe-card" data-recipe="small-gpu-turbo">
                     <div class="recipe-badge">Small GPU</div>
                     <h3>🚀 Z-Image Turbo (16-24GB)</h3>
                     <p>Fast image generation for GPUs with 16-24GB VRAM (L4, RTX 4090, A10)</p>
@@ -515,6 +496,132 @@ cd vllm-omni && uv pip install -e .</code></pre>
                     </div>
                     <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('cpu-offload')">Apply Recipe</button>
                 </div>
+                    </div>
+                </div>
+
+                <!-- Video Generation Section -->
+                <div class="recipe-section">
+                    <h3 class="recipe-section-header">🎬 Video Generation</h3>
+                    <div class="omni-recipes-grid" id="omni-recipes-grid-video">
+                        <div class="omni-recipe-card" data-recipe="video-small-fast">
+                            <div class="recipe-badge recipe-badge-video">Video</div>
+                            <h3>🎬 Video Fast (24GB)</h3>
+                            <p>Quick video generation on GPUs with 24GB VRAM</p>
+                            <div class="recipe-specs">
+                                <span>Model: Wan2.1-T2V</span>
+                                <span>Steps: 20</span>
+                                <span>4s @ 16fps</span>
+                                <span>Memory: 85%</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-small-fast')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="video-medium-balanced">
+                            <div class="recipe-badge recipe-badge-video">Video</div>
+                            <h3>🎬 Video Balanced (48GB)</h3>
+                            <p>Good balance of quality and speed for 48GB GPUs</p>
+                            <div class="recipe-specs">
+                                <span>Model: Wan2.1-T2V</span>
+                                <span>Steps: 30</span>
+                                <span>6s @ 24fps</span>
+                                <span>Memory: 80%</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-medium-balanced')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="video-large-quality">
+                            <div class="recipe-badge recipe-badge-video">Video</div>
+                            <h3>🎬 Video HQ (80GB+)</h3>
+                            <p>High quality video on large GPUs with torch.compile</p>
+                            <div class="recipe-specs">
+                                <span>Model: Wan2.1-T2V</span>
+                                <span>Steps: 50</span>
+                                <span>8s @ 24fps</span>
+                                <span>torch.compile: On</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-large-quality')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="video-cpu-offload">
+                            <div class="recipe-badge recipe-badge-video">Video</div>
+                            <h3>🎬 Video CPU Offload</h3>
+                            <p>Video generation with CPU offloading for limited VRAM</p>
+                            <div class="recipe-specs">
+                                <span>Model: Wan2.1-T2V</span>
+                                <span>Steps: 20</span>
+                                <span>4s @ 16fps</span>
+                                <span>CPU Offload: On</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-cpu-offload')">Apply Recipe</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audio/TTS Generation Section -->
+                <div class="recipe-section">
+                    <h3 class="recipe-section-header">🔊 Audio / TTS Generation</h3>
+                    <div class="omni-recipes-grid" id="omni-recipes-grid-audio">
+                        <div class="omni-recipe-card" data-recipe="audio-lightweight">
+                            <div class="recipe-badge recipe-badge-audio">TTS</div>
+                            <h3>🔊 Lightweight TTS (4GB)</h3>
+                            <p>Fast text-to-speech on minimal hardware</p>
+                            <div class="recipe-specs">
+                                <span>Model: Qwen3 TTS Base</span>
+                                <span>VRAM: 4GB</span>
+                                <span>Speed: 1.0x</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-lightweight')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="audio-quality">
+                            <div class="recipe-badge recipe-badge-audio">TTS</div>
+                            <h3>🔊 Quality TTS (8GB)</h3>
+                            <p>High quality voice synthesis with voice design</p>
+                            <div class="recipe-specs">
+                                <span>Model: Qwen3 Voice Design</span>
+                                <span>VRAM: 8GB</span>
+                                <span>Speed: 1.0x</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-quality')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="audio-custom-voice">
+                            <div class="recipe-badge recipe-badge-audio">TTS</div>
+                            <h3>🎤 Custom Voice TTS (8GB)</h3>
+                            <p>TTS with voice cloning capabilities</p>
+                            <div class="recipe-specs">
+                                <span>Model: Qwen3 Custom Voice</span>
+                                <span>VRAM: 8GB</span>
+                                <span>Voice Clone: Yes</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-custom-voice')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="audio-generation">
+                            <div class="recipe-badge recipe-badge-audio">Audio</div>
+                            <h3>🎵 Audio Generation (8GB)</h3>
+                            <p>Generate music and sound effects from text</p>
+                            <div class="recipe-specs">
+                                <span>Model: Stable Audio Open</span>
+                                <span>VRAM: 8GB</span>
+                                <span>Type: Music/SFX</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-generation')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="audio-cpu-offload">
+                            <div class="recipe-badge recipe-badge-audio">TTS</div>
+                            <h3>💾 TTS CPU Offload</h3>
+                            <p>Text-to-speech with CPU offloading for limited VRAM</p>
+                            <div class="recipe-specs">
+                                <span>Model: Qwen3 TTS Base</span>
+                                <span>CPU Offload: On</span>
+                                <span>Memory: 70%</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-cpu-offload')">Apply Recipe</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -529,6 +636,28 @@ cd vllm-omni && uv pip install -e .</code></pre>
         <div class="lightbox-info">
             <p id="omni-lightbox-prompt" class="lightbox-prompt"></p>
             <button id="omni-lightbox-download" class="btn btn-primary btn-sm lightbox-download-btn" title="Download">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Video Lightbox Modal -->
+<div id="omni-video-lightbox" class="omni-lightbox omni-video-lightbox">
+    <div class="lightbox-backdrop"></div>
+    <div class="lightbox-content video-lightbox-content">
+        <button class="lightbox-close" title="Close">&times;</button>
+        <video id="omni-lightbox-video" controls autoplay loop>
+            <source src="" type="video/mp4">
+            Your browser does not support video playback.
+        </video>
+        <div class="lightbox-info">
+            <p id="omni-video-lightbox-prompt" class="lightbox-prompt"></p>
+            <button id="omni-video-lightbox-download" class="btn btn-primary btn-sm lightbox-download-btn" title="Download">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                     <polyline points="7 10 12 15 17 10"/>

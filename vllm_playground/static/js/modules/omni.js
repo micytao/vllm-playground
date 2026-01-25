@@ -65,69 +65,317 @@ export const OmniModule = {
     logWebSocket: null,  // WebSocket for log streaming
     commandManuallyEdited: false,  // Track if user manually edited command preview
 
-    // Prompt templates for quick generation
-    promptTemplates: {
-        // Landscape
-        'landscape-sunset': {
-            prompt: 'Beautiful sunset over ocean waves, vibrant orange and purple sky, golden hour lighting, photorealistic, 4k, detailed clouds, calm waters reflecting the sky',
-            negative: 'blurry, low quality, artifacts, oversaturated, cartoon, painting'
+    // Prompt templates organized by model type
+    promptTemplatesByType: {
+        // =====================================================================
+        // IMAGE GENERATION TEMPLATES
+        // =====================================================================
+        image: {
+            groups: [
+                {
+                    label: 'Landscape',
+                    templates: [
+                        { id: 'landscape-sunset', name: 'Sunset Beach' },
+                        { id: 'landscape-mountain', name: 'Mountain Vista' },
+                        { id: 'landscape-forest', name: 'Enchanted Forest' }
+                    ]
+                },
+                {
+                    label: 'Portrait',
+                    templates: [
+                        { id: 'portrait-professional', name: 'Professional Headshot' },
+                        { id: 'portrait-artistic', name: 'Artistic Portrait' },
+                        { id: 'portrait-fantasy', name: 'Fantasy Character' }
+                    ]
+                },
+                {
+                    label: 'Art & Abstract',
+                    templates: [
+                        { id: 'art-abstract', name: 'Abstract Art' },
+                        { id: 'art-surreal', name: 'Surrealist Dream' },
+                        { id: 'art-cyberpunk', name: 'Cyberpunk City' }
+                    ]
+                },
+                {
+                    label: 'Nature & Animals',
+                    templates: [
+                        { id: 'nature-wildlife', name: 'Wildlife Scene' },
+                        { id: 'nature-flowers', name: 'Flower Garden' },
+                        { id: 'nature-underwater', name: 'Underwater World' }
+                    ]
+                },
+                {
+                    label: 'Product & Object',
+                    templates: [
+                        { id: 'product-tech', name: 'Tech Product' },
+                        { id: 'product-food', name: 'Food Photography' }
+                    ]
+                }
+            ],
+            data: {
+                'landscape-sunset': {
+                    prompt: 'Beautiful sunset over ocean waves, vibrant orange and purple sky, golden hour lighting, photorealistic, 4k, detailed clouds, calm waters reflecting the sky',
+                    negative: 'blurry, low quality, artifacts, oversaturated, cartoon, painting'
+                },
+                'landscape-mountain': {
+                    prompt: 'Majestic snow-capped mountain peaks at golden hour, crystal clear alpine lake reflection, dramatic clouds, professional nature photography, 8k resolution',
+                    negative: 'blurry, artificial, cartoon, drawing, oversaturated, people'
+                },
+                'landscape-forest': {
+                    prompt: 'Enchanted misty forest with sunbeams filtering through ancient trees, moss-covered ground, magical atmosphere, ethereal lighting, fantasy landscape',
+                    negative: 'blurry, dark, muddy colors, artificial, low quality'
+                },
+                'portrait-professional': {
+                    prompt: 'Professional business headshot, confident expression, soft studio lighting, shallow depth of field, clean background, high-end corporate photography',
+                    negative: 'blurry, distorted face, extra fingers, deformed, amateur, harsh lighting'
+                },
+                'portrait-artistic': {
+                    prompt: 'Artistic portrait with dramatic lighting, Rembrandt style, emotional expression, fine art photography, rich shadows and highlights, cinematic mood',
+                    negative: 'blurry, flat lighting, distorted features, low quality, amateur'
+                },
+                'portrait-fantasy': {
+                    prompt: 'Fantasy character portrait, elven features, ethereal beauty, flowing silver hair, glowing eyes, ornate jewelry, magical aura, detailed fantasy art',
+                    negative: 'blurry, bad anatomy, extra limbs, distorted face, low quality'
+                },
+                'art-abstract': {
+                    prompt: 'Abstract fluid art, vibrant swirling colors, dynamic composition, modern art style, blue and gold palette, high contrast, artistic masterpiece',
+                    negative: 'blurry, muddy colors, low contrast, boring, simple'
+                },
+                'art-surreal': {
+                    prompt: 'Surrealist dreamscape, melting clocks, floating objects, impossible architecture, Salvador Dali inspired, vivid imagination, otherworldly atmosphere',
+                    negative: 'blurry, realistic, mundane, boring, low quality'
+                },
+                'art-cyberpunk': {
+                    prompt: 'Cyberpunk city at night, neon lights reflecting on wet streets, flying cars, holographic advertisements, futuristic architecture, rain, atmospheric',
+                    negative: 'blurry, daytime, nature, low quality, simple'
+                },
+                'nature-wildlife': {
+                    prompt: 'Majestic lion in African savanna, golden hour lighting, professional wildlife photography, detailed fur, intense gaze, natural habitat, National Geographic style',
+                    negative: 'blurry, cartoon, artificial, zoo, low quality'
+                },
+                'nature-flowers': {
+                    prompt: 'Beautiful flower garden in full bloom, macro photography, morning dew on petals, vibrant colors, soft bokeh background, botanical beauty',
+                    negative: 'blurry, wilted, artificial, low quality, oversaturated'
+                },
+                'nature-underwater': {
+                    prompt: 'Vibrant coral reef underwater scene, tropical fish, crystal clear water, sunbeams penetrating the surface, marine life photography, colorful sea creatures',
+                    negative: 'blurry, murky water, low quality, artificial'
+                },
+                'product-tech': {
+                    prompt: 'Sleek modern smartphone on reflective surface, studio lighting, minimalist background, product photography, sharp details, professional commercial shot',
+                    negative: 'blurry, cluttered, amateur, low quality, dirty'
+                },
+                'product-food': {
+                    prompt: 'Gourmet dish on elegant plate, professional food photography, appetizing presentation, fresh ingredients, soft natural lighting, restaurant quality',
+                    negative: 'blurry, unappetizing, messy, low quality, artificial'
+                }
+            }
         },
-        'landscape-mountain': {
-            prompt: 'Majestic snow-capped mountain peaks at golden hour, crystal clear alpine lake reflection, dramatic clouds, professional nature photography, 8k resolution',
-            negative: 'blurry, artificial, cartoon, drawing, oversaturated, people'
+
+        // =====================================================================
+        // VIDEO GENERATION TEMPLATES
+        // =====================================================================
+        video: {
+            groups: [
+                {
+                    label: 'Nature & Scenery',
+                    templates: [
+                        { id: 'video-ocean', name: 'Ocean Waves' },
+                        { id: 'video-forest', name: 'Forest Walk' },
+                        { id: 'video-clouds', name: 'Timelapse Clouds' }
+                    ]
+                },
+                {
+                    label: 'Action & Motion',
+                    templates: [
+                        { id: 'video-running', name: 'Running Person' },
+                        { id: 'video-dancing', name: 'Dancing' },
+                        { id: 'video-sports', name: 'Sports Action' }
+                    ]
+                },
+                {
+                    label: 'Urban & City',
+                    templates: [
+                        { id: 'video-cityscape', name: 'City Timelapse' },
+                        { id: 'video-traffic', name: 'Traffic Flow' },
+                        { id: 'video-neon', name: 'Neon Streets' }
+                    ]
+                },
+                {
+                    label: 'Animals',
+                    templates: [
+                        { id: 'video-bird', name: 'Bird Flying' },
+                        { id: 'video-cat', name: 'Cat Playing' },
+                        { id: 'video-fish', name: 'Fish Swimming' }
+                    ]
+                },
+                {
+                    label: 'Abstract & Creative',
+                    templates: [
+                        { id: 'video-particles', name: 'Particle Flow' },
+                        { id: 'video-liquid', name: 'Liquid Motion' },
+                        { id: 'video-morph', name: 'Shape Morphing' }
+                    ]
+                }
+            ],
+            data: {
+                'video-ocean': {
+                    prompt: 'Cinematic ocean waves crashing on rocky shore, golden sunset light, slow motion water spray, peaceful and dramatic, 4K quality, steady camera',
+                    negative: 'static, blurry, low quality, shaky camera, fast motion'
+                },
+                'video-forest': {
+                    prompt: 'Smooth walking through enchanted forest, sunbeams through trees, floating dust particles, magical atmosphere, steady dolly shot, cinematic',
+                    negative: 'shaky, fast movement, blurry, low quality, static'
+                },
+                'video-clouds': {
+                    prompt: 'Timelapse of dramatic clouds moving across sky, golden hour colors, smooth motion, epic atmosphere, professional cinematography',
+                    negative: 'static, jerky, low quality, night time, no movement'
+                },
+                'video-running': {
+                    prompt: 'Athletic person running in slow motion, professional sports photography style, dynamic movement, muscles in motion, cinematic lighting',
+                    negative: 'static, blurry, distorted body, low quality, unnatural movement'
+                },
+                'video-dancing': {
+                    prompt: 'Graceful dancer performing ballet, flowing movements, elegant pose transitions, studio lighting, slow motion, professional dance video',
+                    negative: 'jerky movements, distorted limbs, blurry, low quality, static'
+                },
+                'video-sports': {
+                    prompt: 'Basketball player making a slam dunk, slow motion action, dynamic angle, sports arena lighting, intense moment, professional sports footage',
+                    negative: 'static, blurry, distorted body, low quality, no action'
+                },
+                'video-cityscape': {
+                    prompt: 'Timelapse of modern city skyline day to night transition, lights turning on, traffic moving, clouds passing, professional drone footage',
+                    negative: 'static, blurry, low quality, no movement, empty streets'
+                },
+                'video-traffic': {
+                    prompt: 'Smooth traffic flow on highway at dusk, car lights creating trails, aerial view, timelapse effect, urban beauty, cinematic',
+                    negative: 'static, blurry, low quality, empty road, daytime'
+                },
+                'video-neon': {
+                    prompt: 'Walking through neon-lit cyberpunk streets at night, rain reflections, holographic signs, futuristic atmosphere, smooth camera movement',
+                    negative: 'daytime, static, blurry, low quality, no lights'
+                },
+                'video-bird': {
+                    prompt: 'Majestic eagle soaring through blue sky, slow motion wing movements, detailed feathers, freedom and grace, wildlife documentary style',
+                    negative: 'static, blurry, distorted wings, low quality, on ground'
+                },
+                'video-cat': {
+                    prompt: 'Cute cat playing with toy, natural movements, playful behavior, soft lighting, home environment, adorable expressions, smooth video',
+                    negative: 'static, sleeping, blurry, distorted, low quality'
+                },
+                'video-fish': {
+                    prompt: 'Colorful tropical fish swimming in coral reef, crystal clear water, smooth underwater footage, marine life documentary, vibrant colors',
+                    negative: 'static, murky water, blurry, low quality, dead fish'
+                },
+                'video-particles': {
+                    prompt: 'Abstract particle system flowing and swirling, bioluminescent colors, smooth motion, mesmerizing patterns, digital art, calming movement',
+                    negative: 'static, chaotic, low quality, boring, no movement'
+                },
+                'video-liquid': {
+                    prompt: 'Abstract liquid metal morphing and flowing, chrome reflections, smooth slow motion, satisfying movement, modern art, mesmerizing',
+                    negative: 'static, choppy, low quality, no reflection, boring'
+                },
+                'video-morph': {
+                    prompt: 'Geometric shapes smoothly morphing into each other, colorful transitions, abstract art, satisfying loop, modern animation style',
+                    negative: 'static, jerky, low quality, boring, no transition'
+                }
+            }
         },
-        'landscape-forest': {
-            prompt: 'Enchanted misty forest with sunbeams filtering through ancient trees, moss-covered ground, magical atmosphere, ethereal lighting, fantasy landscape',
-            negative: 'blurry, dark, muddy colors, artificial, low quality'
-        },
-        // Portrait
-        'portrait-professional': {
-            prompt: 'Professional business headshot, confident expression, soft studio lighting, shallow depth of field, clean background, high-end corporate photography',
-            negative: 'blurry, distorted face, extra fingers, deformed, amateur, harsh lighting'
-        },
-        'portrait-artistic': {
-            prompt: 'Artistic portrait with dramatic lighting, Rembrandt style, emotional expression, fine art photography, rich shadows and highlights, cinematic mood',
-            negative: 'blurry, flat lighting, distorted features, low quality, amateur'
-        },
-        'portrait-fantasy': {
-            prompt: 'Fantasy character portrait, elven features, ethereal beauty, flowing silver hair, glowing eyes, ornate jewelry, magical aura, detailed fantasy art',
-            negative: 'blurry, bad anatomy, extra limbs, distorted face, low quality'
-        },
-        // Art & Abstract
-        'art-abstract': {
-            prompt: 'Abstract fluid art, vibrant swirling colors, dynamic composition, modern art style, blue and gold palette, high contrast, artistic masterpiece',
-            negative: 'blurry, muddy colors, low contrast, boring, simple'
-        },
-        'art-surreal': {
-            prompt: 'Surrealist dreamscape, floating objects, impossible architecture, Salvador Dali inspired, melting clocks, desert landscape, thought-provoking imagery',
-            negative: 'realistic, boring, simple, low quality, blurry'
-        },
-        'art-cyberpunk': {
-            prompt: 'Cyberpunk cityscape at night, neon lights reflecting on wet streets, towering skyscrapers, holographic advertisements, flying vehicles, futuristic atmosphere',
-            negative: 'blurry, daytime, rural, nature, low quality, simple'
-        },
-        // Nature & Animals
-        'nature-wildlife': {
-            prompt: 'Majestic lion in African savanna, golden hour lighting, detailed fur texture, powerful stance, wildlife photography, National Geographic style',
-            negative: 'blurry, cartoon, zoo, cage, low quality, bad anatomy'
-        },
-        'nature-flowers': {
-            prompt: 'Beautiful garden of blooming roses and peonies, morning dew drops, soft natural lighting, macro photography style, vibrant colors, bokeh background',
-            negative: 'wilted, dead, artificial, plastic, blurry, oversaturated'
-        },
-        'nature-underwater': {
-            prompt: 'Vibrant coral reef underwater scene, tropical fish, crystal clear water, sunlight rays penetrating, marine life, underwater photography, vivid colors',
-            negative: 'murky water, pollution, dark, blurry, artificial'
-        },
-        // Product & Object
-        'product-tech': {
-            prompt: 'Sleek modern smartphone on marble surface, minimalist composition, studio lighting, product photography, sharp reflections, premium feel',
-            negative: 'blurry, text, watermark, logo, cluttered, low quality'
-        },
-        'product-food': {
-            prompt: 'Gourmet dish beautifully plated, professional food photography, appetizing presentation, fresh ingredients, soft natural lighting, shallow depth of field',
-            negative: 'blurry, unappetizing, messy, low quality, artificial'
+
+        // =====================================================================
+        // AUDIO GENERATION TEMPLATES
+        // =====================================================================
+        audio: {
+            groups: [
+                {
+                    label: 'Music',
+                    templates: [
+                        { id: 'audio-ambient', name: 'Ambient Music' },
+                        { id: 'audio-piano', name: 'Piano Melody' },
+                        { id: 'audio-electronic', name: 'Electronic Beat' }
+                    ]
+                },
+                {
+                    label: 'Nature Sounds',
+                    templates: [
+                        { id: 'audio-rain', name: 'Rain & Thunder' },
+                        { id: 'audio-forest', name: 'Forest Ambiance' },
+                        { id: 'audio-ocean', name: 'Ocean Waves' }
+                    ]
+                },
+                {
+                    label: 'Sound Effects',
+                    templates: [
+                        { id: 'audio-whoosh', name: 'Swoosh/Whoosh' },
+                        { id: 'audio-impact', name: 'Impact Sound' },
+                        { id: 'audio-notification', name: 'Notification Chime' }
+                    ]
+                },
+                {
+                    label: 'Ambient',
+                    templates: [
+                        { id: 'audio-cafe', name: 'Coffee Shop' },
+                        { id: 'audio-city', name: 'City Background' },
+                        { id: 'audio-space', name: 'Space Ambiance' }
+                    ]
+                }
+            ],
+            data: {
+                'audio-ambient': {
+                    prompt: 'Calm ambient music, soft synthesizer pads, relaxing atmosphere, gentle melody, meditation music, peaceful and soothing',
+                    negative: 'loud, harsh, aggressive, fast tempo, vocals, distorted'
+                },
+                'audio-piano': {
+                    prompt: 'Beautiful piano melody, emotional and touching, classical style, soft dynamics, clear notes, concert hall acoustics',
+                    negative: 'harsh, distorted, electronic, loud, fast, aggressive'
+                },
+                'audio-electronic': {
+                    prompt: 'Modern electronic beat, punchy drums, deep bass, catchy synth melody, dance music, energetic and uplifting',
+                    negative: 'acoustic, slow, boring, muddy, distorted, no rhythm'
+                },
+                'audio-rain': {
+                    prompt: 'Gentle rain falling on window, distant thunder, cozy atmosphere, relaxing rain sounds, peaceful ambiance for sleep',
+                    negative: 'heavy storm, loud, harsh, sudden sounds, music'
+                },
+                'audio-forest': {
+                    prompt: 'Forest ambiance with birds singing, gentle breeze through leaves, distant stream, peaceful nature sounds, immersive environment',
+                    negative: 'loud, urban sounds, music, harsh, artificial'
+                },
+                'audio-ocean': {
+                    prompt: 'Ocean waves gently crashing on beach, seagulls in distance, relaxing coastal sounds, peaceful seaside ambiance',
+                    negative: 'storm, loud, harsh, music, artificial, sudden sounds'
+                },
+                'audio-whoosh': {
+                    prompt: 'Smooth swoosh sound effect, clean and professional, cinematic transition sound, fast movement audio, modern UI sound',
+                    negative: 'harsh, distorted, long, music, vocals'
+                },
+                'audio-impact': {
+                    prompt: 'Deep cinematic impact sound, powerful and dramatic, movie trailer style, bass-heavy hit, professional sound design',
+                    negative: 'weak, thin, long, music, vocals, distorted'
+                },
+                'audio-notification': {
+                    prompt: 'Pleasant notification chime, clear and melodic, friendly UI sound, short and recognizable, modern app notification',
+                    negative: 'harsh, annoying, long, complex, music, distorted'
+                },
+                'audio-cafe': {
+                    prompt: 'Coffee shop ambiance, gentle background chatter, clinking cups, espresso machine sounds, cozy atmosphere, work-friendly background',
+                    negative: 'loud, music, harsh, clear speech, empty, silence'
+                },
+                'audio-city': {
+                    prompt: 'Urban city background sounds, distant traffic, pedestrians walking, city life ambiance, daytime urban atmosphere',
+                    negative: 'quiet, nature, music, harsh, isolated sounds'
+                },
+                'audio-space': {
+                    prompt: 'Deep space ambiance, mysterious cosmic sounds, ethereal drone, sci-fi atmosphere, otherworldly and immersive',
+                    negative: 'music, harsh, loud, earth sounds, vocals'
+                }
+            }
         }
+    },
+
+    // Legacy promptTemplates getter for backward compatibility (maps to image templates)
+    get promptTemplates() {
+        return this.promptTemplatesByType.image.data;
     },
 
     // Configuration recipes for different GPU sizes
@@ -201,6 +449,100 @@ export const OmniModule = {
             gpu_memory: 0.7,
             cpu_offload: true,
             torch_compile: false
+        },
+        // Video Generation Recipes
+        'video-small-fast': {
+            name: 'Video Fast (24GB)',
+            model: 'Wan-AI/Wan2.1-T2V-1.3B',
+            model_type: 'video',
+            steps: 20,
+            guidance: 5.0,
+            gpu_memory: 0.85,
+            cpu_offload: false,
+            torch_compile: false,
+            duration: 4,
+            fps: 16
+        },
+        'video-medium-balanced': {
+            name: 'Video Balanced (48GB)',
+            model: 'Wan-AI/Wan2.1-T2V-1.3B',
+            model_type: 'video',
+            steps: 30,
+            guidance: 6.0,
+            gpu_memory: 0.8,
+            cpu_offload: false,
+            torch_compile: false,
+            duration: 6,
+            fps: 24
+        },
+        'video-large-quality': {
+            name: 'Video HQ (80GB+)',
+            model: 'Wan-AI/Wan2.1-T2V-1.3B',
+            model_type: 'video',
+            steps: 50,
+            guidance: 7.0,
+            gpu_memory: 0.85,
+            cpu_offload: false,
+            torch_compile: true,
+            duration: 8,
+            fps: 24
+        },
+        'video-cpu-offload': {
+            name: 'Video CPU Offload',
+            model: 'Wan-AI/Wan2.1-T2V-1.3B',
+            model_type: 'video',
+            steps: 20,
+            guidance: 5.0,
+            gpu_memory: 0.7,
+            cpu_offload: true,
+            torch_compile: false,
+            duration: 4,
+            fps: 16
+        },
+        // Audio/TTS Generation Recipes
+        'audio-lightweight': {
+            name: 'Lightweight TTS (4GB)',
+            model: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base',
+            model_type: 'audio',
+            gpu_memory: 0.9,
+            cpu_offload: false,
+            torch_compile: false,
+            speed: 1.0
+        },
+        'audio-quality': {
+            name: 'Quality TTS (8GB)',
+            model: 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign',
+            model_type: 'audio',
+            gpu_memory: 0.85,
+            cpu_offload: false,
+            torch_compile: false,
+            speed: 1.0
+        },
+        'audio-custom-voice': {
+            name: 'Custom Voice TTS (8GB)',
+            model: 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',
+            model_type: 'audio',
+            gpu_memory: 0.85,
+            cpu_offload: false,
+            torch_compile: false,
+            speed: 1.0
+        },
+        'audio-generation': {
+            name: 'Audio Generation (8GB)',
+            model: 'stabilityai/stable-audio-open-1.0',
+            model_type: 'audio',
+            gpu_memory: 0.85,
+            cpu_offload: false,
+            torch_compile: false
+        },
+        'audio-cpu-offload': {
+            name: 'TTS CPU Offload',
+            model: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base',
+            model_type: 'audio',
+            gpu_memory: 0.7,
+            cpu_offload: true,
+            torch_compile: false,
+            speed: 1.0
         }
     },
 
@@ -273,6 +615,8 @@ export const OmniModule = {
             this.updateModelscopeAvailability();
             console.log('Omni init: loading model list...');
             this.loadModelList();
+            console.log('Omni init: initializing prompt templates...');
+            this.updatePromptTemplates(this.currentModelType || 'image');
             console.log('Omni init: checking server status...');
             this.checkServerStatus();
             console.log('Omni init: updating command preview...');
@@ -782,14 +1126,71 @@ export const OmniModule = {
 
         // Update model dropdown options
         this.updateModelOptions(modelType);
+
+        // Update prompt templates for the selected model type
+        this.updatePromptTemplates(modelType);
     },
 
-    applyPromptTemplate(templateId) {
-        if (!templateId || !this.promptTemplates[templateId]) {
+    /**
+     * Populate the Quick Template dropdown based on model type
+     */
+    updatePromptTemplates(modelType) {
+        const selectEl = document.getElementById('omni-prompt-template');
+        if (!selectEl) return;
+
+        // Clear existing options
+        selectEl.innerHTML = '';
+
+        // Add default option
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = '-- Select a template --';
+        selectEl.appendChild(defaultOption);
+
+        // Get templates for this model type
+        const templateConfig = this.promptTemplatesByType[modelType];
+        if (!templateConfig || !templateConfig.groups) {
+            // Hide template selector for omni type or if no templates
+            const wrapper = selectEl.closest('.template-select-wrapper');
+            if (wrapper) {
+                wrapper.style.display = modelType === 'omni' ? 'none' : 'block';
+            }
             return;
         }
 
-        const template = this.promptTemplates[templateId];
+        // Show template selector
+        const wrapper = selectEl.closest('.template-select-wrapper');
+        if (wrapper) {
+            wrapper.style.display = 'block';
+        }
+
+        // Add option groups
+        templateConfig.groups.forEach(group => {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = group.label;
+
+            group.templates.forEach(template => {
+                const option = document.createElement('option');
+                option.value = template.id;
+                option.textContent = template.name;
+                optgroup.appendChild(option);
+            });
+
+            selectEl.appendChild(optgroup);
+        });
+    },
+
+    applyPromptTemplate(templateId) {
+        if (!templateId) return;
+
+        // Get templates for current model type
+        const modelType = this.currentModelType || 'image';
+        const templateConfig = this.promptTemplatesByType[modelType];
+        if (!templateConfig || !templateConfig.data || !templateConfig.data[templateId]) {
+            return;
+        }
+
+        const template = templateConfig.data[templateId];
         const promptEl = document.getElementById('omni-prompt');
         const negativeEl = document.getElementById('omni-negative-prompt');
 
@@ -923,6 +1324,22 @@ export const OmniModule = {
             torchCompileCheckbox.checked = recipe.torch_compile;
             torchCompileCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
             console.log('[Omni] Torch compile set to:', torchCompileCheckbox.checked);
+        }
+
+        // Apply video-specific parameters
+        if (recipe.duration !== undefined) {
+            const durationInput = document.getElementById('omni-video-duration');
+            if (durationInput) {
+                durationInput.value = recipe.duration;
+                console.log('[Omni] Video duration set to:', durationInput.value);
+            }
+        }
+        if (recipe.fps !== undefined) {
+            const fpsInput = document.getElementById('omni-video-fps');
+            if (fpsInput) {
+                fpsInput.value = recipe.fps;
+                console.log('[Omni] Video FPS set to:', fpsInput.value);
+            }
         }
 
         // Update command preview
@@ -1675,16 +2092,31 @@ export const OmniModule = {
         const item = document.createElement('div');
         item.className = 'gallery-item gallery-item-video';
         item.innerHTML = `
-            <video controls loop muted playsinline>
+            <video loop muted playsinline>
                 <source src="data:video/mp4;base64,${base64Video}" type="video/mp4">
                 Your browser does not support video playback.
             </video>
+            <div class="video-expand-hint" title="Click to enlarge">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 3 21 3 21 9"/>
+                    <polyline points="9 21 3 21 3 15"/>
+                    <line x1="21" y1="3" x2="14" y2="10"/>
+                    <line x1="3" y1="21" x2="10" y2="14"/>
+                </svg>
+            </div>
             <div class="gallery-item-overlay">
                 <span class="gallery-item-prompt">${this.escapeHtml(prompt.substring(0, 50))}...</span>
                 <span class="gallery-item-duration">${duration}s</span>
             </div>
             <div class="gallery-item-actions">
-                <button class="btn btn-sm gallery-play-btn" title="Play/Pause">&#9658;</button>
+                <button class="btn btn-sm gallery-expand-btn" title="Fullscreen">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="15 3 21 3 21 9"/>
+                        <polyline points="9 21 3 21 3 15"/>
+                        <line x1="21" y1="3" x2="14" y2="10"/>
+                        <line x1="3" y1="21" x2="10" y2="14"/>
+                    </svg>
+                </button>
                 <button class="btn btn-sm gallery-download-btn" title="Download">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -1709,23 +2141,28 @@ export const OmniModule = {
         item.dataset.type = 'video';
 
         const video = item.querySelector('video');
-        const playBtn = item.querySelector('.gallery-play-btn');
 
-        // Play/Pause click handler
-        playBtn?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (video.paused) {
-                video.play();
-                playBtn.innerHTML = '&#10074;&#10074;'; // Pause icon
-            } else {
-                video.pause();
-                playBtn.innerHTML = '&#9658;'; // Play icon
-            }
+        // Click on video item to open lightbox (excluding action buttons)
+        item.addEventListener('click', (e) => {
+            // Don't open lightbox if clicking on action buttons
+            if (e.target.closest('.gallery-item-actions')) return;
+            this.openVideoLightbox(base64Video, prompt);
         });
 
-        // Update play button when video ends
-        video?.addEventListener('ended', () => {
-            playBtn.innerHTML = '&#9658;';
+        // Expand button click handler
+        item.querySelector('.gallery-expand-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.openVideoLightbox(base64Video, prompt);
+        });
+
+        // Auto-play video on hover (muted)
+        item.addEventListener('mouseenter', () => {
+            video?.play().catch(() => {});
+        });
+
+        item.addEventListener('mouseleave', () => {
+            video?.pause();
+            if (video) video.currentTime = 0;
         });
 
         // Download click handler
@@ -1928,6 +2365,88 @@ export const OmniModule = {
         if (lightbox) {
             lightbox.classList.remove('active');
             document.body.style.overflow = '';
+        }
+    },
+
+    // =========================================================================
+    // Video Lightbox
+    // =========================================================================
+
+    openVideoLightbox(base64Video, prompt) {
+        const lightbox = document.getElementById('omni-video-lightbox');
+        const lightboxVideo = document.getElementById('omni-lightbox-video');
+        const lightboxPrompt = document.getElementById('omni-video-lightbox-prompt');
+        const downloadBtn = document.getElementById('omni-video-lightbox-download');
+
+        if (!lightbox || !lightboxVideo) return;
+
+        // Set video source and prompt
+        const videoSource = lightboxVideo.querySelector('source');
+        if (videoSource) {
+            videoSource.src = `data:video/mp4;base64,${base64Video}`;
+        }
+        lightboxVideo.load(); // Reload video with new source
+        if (lightboxPrompt) lightboxPrompt.textContent = prompt;
+
+        // Store base64 for download
+        lightbox.dataset.base64 = base64Video;
+
+        // Show lightbox
+        lightbox.classList.add('active');
+        document.body.style.overflow = 'hidden';
+
+        // Auto-play the video
+        lightboxVideo.play().catch(() => {});
+
+        // Close handlers (only add once)
+        if (!lightbox.dataset.listenersAdded) {
+            // Close on backdrop click
+            lightbox.querySelector('.lightbox-backdrop')?.addEventListener('click', () => {
+                this.closeVideoLightbox();
+            });
+
+            // Close on X button click
+            lightbox.querySelector('.lightbox-close')?.addEventListener('click', () => {
+                this.closeVideoLightbox();
+            });
+
+            // Close on Escape key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && lightbox.classList.contains('active')) {
+                    this.closeVideoLightbox();
+                }
+            });
+
+            // Download button
+            downloadBtn?.addEventListener('click', () => {
+                const base64 = lightbox.dataset.base64;
+                if (base64) {
+                    const link = document.createElement('a');
+                    link.href = `data:video/mp4;base64,${base64}`;
+                    link.download = `vllm-omni-video-${Date.now()}.mp4`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    this.ui.showNotification('Video downloaded', 'success');
+                }
+            });
+
+            lightbox.dataset.listenersAdded = 'true';
+        }
+    },
+
+    closeVideoLightbox() {
+        const lightbox = document.getElementById('omni-video-lightbox');
+        const lightboxVideo = document.getElementById('omni-lightbox-video');
+
+        if (lightbox) {
+            lightbox.classList.remove('active');
+            document.body.style.overflow = '';
+
+            // Pause video when closing
+            if (lightboxVideo) {
+                lightboxVideo.pause();
+            }
         }
     },
 

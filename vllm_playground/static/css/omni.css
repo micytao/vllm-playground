@@ -703,7 +703,9 @@
     background: var(--bg-primary);
     border-radius: 0;
     min-height: 200px;
+    max-height: 400px;
     border: 1px solid var(--border-color);
+    align-content: start;
 }
 
 /* Keep .image-gallery for backwards compatibility */
@@ -717,7 +719,9 @@
     background: var(--bg-primary);
     border-radius: 0;
     min-height: 200px;
+    max-height: 400px;
     border: 1px solid var(--border-color);
+    align-content: start;
 }
 
 .gallery-item {
@@ -1351,6 +1355,69 @@
     display: block;
 }
 
+/* Video Lightbox specific styles */
+.omni-video-lightbox .video-lightbox-content {
+    max-width: 90vw;
+    max-height: 90vh;
+}
+
+.omni-video-lightbox video {
+    max-width: 100%;
+    max-height: 70vh;
+    border-radius: 8px;
+    background: #000;
+}
+
+/* Click hint for video thumbnails */
+.gallery-item-video {
+    cursor: pointer;
+}
+
+.gallery-item-video video {
+    pointer-events: none;
+}
+
+.gallery-item-video .gallery-play-btn {
+    pointer-events: auto;
+}
+
+.gallery-item-video .gallery-item-actions {
+    pointer-events: auto;
+}
+
+/* Video expand icon overlay */
+.video-expand-hint {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    padding: 12px;
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.gallery-item-video:hover .video-expand-hint {
+    opacity: 1;
+}
+
+/* Expand button styling */
+.gallery-expand-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px !important;
+    min-width: 28px;
+    min-height: 28px;
+}
+
+.gallery-expand-btn svg {
+    display: block;
+}
+
 /* =============================================================================
    Omni Recipes Modal (Consistent with main vLLM Server modal theme)
    ============================================================================= */
@@ -1445,10 +1512,33 @@
     line-height: 1.5;
 }
 
+/* Recipes Container */
+.omni-recipes-container {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* Recipe Section */
+.recipe-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.recipe-section-header {
+    margin: 0;
+    padding-bottom: 10px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
 /* Recipes Grid */
 .omni-recipes-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 16px;
 }
 
@@ -1476,6 +1566,16 @@
     background: var(--primary-color);
     color: white;
     margin-bottom: 10px;
+}
+
+/* Video recipe badge - orange/amber color */
+.recipe-badge-video {
+    background: #f59e0b;
+}
+
+/* Audio recipe badge - purple/violet color */
+.recipe-badge-audio {
+    background: #8b5cf6;
 }
 
 .omni-recipe-card h3 {
@@ -1509,6 +1609,8 @@
 
 .recipe-apply-btn {
     width: 100%;
+    white-space: nowrap;
+    min-width: fit-content;
 }
 
 /* Browse Recipes Button */
