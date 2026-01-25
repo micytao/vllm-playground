@@ -456,52 +456,77 @@ export const OmniModule = {
             model: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
             model_type: 'video',
             steps: 20,
-            guidance: 5.0,
+            guidance: 4.0,
             gpu_memory: 0.9,
             cpu_offload: false,
             torch_compile: false,
             duration: 4,
-            fps: 16
+            fps: 16,
+            resolution: '480x640'  // Low resolution for lower memory
         },
         'video-medium-balanced': {
             name: 'Video 14B Balanced (24GB+)',
             model: 'Wan-AI/Wan2.2-T2V-A14B-Diffusers',
             model_type: 'video',
             steps: 30,
-            guidance: 6.0,
+            guidance: 4.0,
             gpu_memory: 0.85,
             cpu_offload: false,
             torch_compile: false,
-            duration: 6,
-            fps: 24
+            duration: 4,
+            fps: 16,
+            resolution: '480x640'  // Start with low resolution
         },
         'video-large-quality': {
             name: 'Video 14B HQ (48GB+)',
             model: 'Wan-AI/Wan2.2-T2V-A14B-Diffusers',
             model_type: 'video',
-            steps: 50,
-            guidance: 7.0,
+            steps: 40,
+            guidance: 4.0,
             gpu_memory: 0.85,
             cpu_offload: false,
-            torch_compile: true,
-            duration: 8,
-            fps: 24
+            torch_compile: false,
+            duration: 4,
+            fps: 24,
+            resolution: '720x1280'  // HD only for large GPUs
         },
         'video-cpu-offload': {
             name: 'Video 5B CPU Offload',
             model: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
             model_type: 'video',
             steps: 20,
-            guidance: 5.0,
+            guidance: 4.0,
             gpu_memory: 0.7,
             cpu_offload: true,
             torch_compile: false,
             duration: 4,
-            fps: 16
+            fps: 16,
+            resolution: '480x640'  // Low resolution with CPU offload
         },
-        // Audio/TTS Generation Recipes
-        'audio-lightweight': {
-            name: 'Lightweight TTS (4GB)',
+        // Audio Generation Recipes
+        // Note: Stable Audio requires HF token (gated model)
+        // Note: Qwen3 TTS models may not work in container mode due to missing onnxruntime
+        'audio-generation': {
+            name: 'Stable Audio (8GB)',
+            model: 'stabilityai/stable-audio-open-1.0',
+            model_type: 'audio',
+            gpu_memory: 0.85,
+            cpu_offload: false,
+            torch_compile: false,
+            requires_hf_token: true
+        },
+        'audio-generation-offload': {
+            name: 'Stable Audio CPU Offload',
+            model: 'stabilityai/stable-audio-open-1.0',
+            model_type: 'audio',
+            gpu_memory: 0.7,
+            cpu_offload: true,
+            torch_compile: false,
+            requires_hf_token: true
+        },
+        // Qwen3 TTS recipes (may require onnxruntime - might not work in container)
+        'audio-tts-light': {
+            name: 'Qwen3 TTS Base (4GB)*',
             model: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base',
             model_type: 'audio',
             gpu_memory: 0.9,
@@ -509,8 +534,8 @@ export const OmniModule = {
             torch_compile: false,
             speed: 1.0
         },
-        'audio-quality': {
-            name: 'Quality TTS (8GB)',
+        'audio-tts-quality': {
+            name: 'Qwen3 TTS Voice Design (8GB)*',
             model: 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign',
             model_type: 'audio',
             gpu_memory: 0.85,
@@ -518,29 +543,12 @@ export const OmniModule = {
             torch_compile: false,
             speed: 1.0
         },
-        'audio-custom-voice': {
-            name: 'Custom Voice TTS (8GB)',
+        'audio-tts-custom': {
+            name: 'Qwen3 TTS Custom Voice (8GB)*',
             model: 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',
             model_type: 'audio',
             gpu_memory: 0.85,
             cpu_offload: false,
-            torch_compile: false,
-            speed: 1.0
-        },
-        'audio-generation': {
-            name: 'Audio Generation (8GB)',
-            model: 'stabilityai/stable-audio-open-1.0',
-            model_type: 'audio',
-            gpu_memory: 0.85,
-            cpu_offload: false,
-            torch_compile: false
-        },
-        'audio-cpu-offload': {
-            name: 'TTS CPU Offload',
-            model: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base',
-            model_type: 'audio',
-            gpu_memory: 0.7,
-            cpu_offload: true,
             torch_compile: false,
             speed: 1.0
         }
@@ -1341,6 +1349,13 @@ export const OmniModule = {
                 console.log('[Omni] Video FPS set to:', fpsInput.value);
             }
         }
+        if (recipe.resolution !== undefined) {
+            const resolutionSelect = document.getElementById('omni-video-resolution');
+            if (resolutionSelect) {
+                resolutionSelect.value = recipe.resolution;
+                console.log('[Omni] Video resolution set to:', resolutionSelect.value);
+            }
+        }
 
         // Update command preview
         this.commandManuallyEdited = false;
@@ -1350,6 +1365,21 @@ export const OmniModule = {
         this.closeRecipesModal();
         console.log('[Omni] Recipe applied successfully:', recipe.name);
         this.ui.showNotification(`✅ Loaded: ${recipe.name}`, 'success');
+
+        // Warn if recipe requires HF token (same pattern as main vLLM Server)
+        if (recipe.requires_hf_token) {
+            const hfTokenInput = document.getElementById('omni-hf-token');
+            const hasToken = hfTokenInput?.value?.trim();
+            if (!hasToken) {
+                // Focus on HF token input (same as main vLLM Server)
+                if (hfTokenInput) {
+                    hfTokenInput.focus();
+                }
+                this.ui.showNotification('⚠️ This model requires a HuggingFace token', 'warning');
+                this.addLog('WARNING: This model is gated and requires a HuggingFace token.', 'warning');
+                this.addLog('Get your token from: https://huggingface.co/settings/tokens', 'info');
+            }
+        }
         } catch (error) {
             console.error('[Omni] Error applying recipe:', error);
             alert('Error applying recipe: ' + error.message);
@@ -1473,14 +1503,21 @@ export const OmniModule = {
         const hubLabel = document.getElementById('omni-model-source-hub-label');
         const modelscopeLabel = document.getElementById('omni-model-source-modelscope-label');
 
+        // Get HF token section (same pattern as main vLLM Server)
+        const hfTokenSection = document.getElementById('omni-hf-token-section');
+
         // Reset all button active states
         hubLabel?.classList.remove('active');
         modelscopeLabel?.classList.remove('active');
 
         if (isHub) {
             hubLabel?.classList.add('active');
+            // Show HF token section for HuggingFace (same as main vLLM Server)
+            if (hfTokenSection) hfTokenSection.style.display = 'block';
         } else if (isModelscope) {
             modelscopeLabel?.classList.add('active');
+            // Hide HF token section for ModelScope (same as main vLLM Server)
+            if (hfTokenSection) hfTokenSection.style.display = 'none';
         }
 
         // Store current model source
@@ -1595,6 +1632,25 @@ export const OmniModule = {
             return;
         }
 
+        // Check if gated model requires HF token (same pattern as main vLLM Server)
+        if (!config.use_modelscope) {
+            const model = config.model.toLowerCase();
+            // Known gated models in vLLM-Omni ecosystem
+            const isGated = model.includes('stabilityai/') ||
+                           model.includes('stable-audio') ||
+                           model.includes('stable-diffusion');
+
+            if (isGated && !config.hf_token) {
+                this.ui.showNotification(`⚠️ ${config.model} is a gated model and requires a HuggingFace token!`, 'error');
+                this.addLog(`❌ Gated model requires HF token: ${config.model}`, 'error');
+                this.addLog('Get your token from: https://huggingface.co/settings/tokens', 'info');
+                // Focus on HF token input
+                const hfTokenInput = document.getElementById('omni-hf-token');
+                if (hfTokenInput) hfTokenInput.focus();
+                return;
+            }
+        }
+
         this.ui.showNotification('Starting vLLM-Omni server...', 'info');
         this.addLog('Starting vLLM-Omni server...');
 
@@ -1666,6 +1722,7 @@ export const OmniModule = {
     buildConfig() {
         const runMode = document.querySelector('input[name="omni-run-mode"]:checked')?.value || 'subprocess';
         const useModelscope = document.getElementById('omni-model-source-modelscope')?.checked || false;
+        const hfToken = document.getElementById('omni-hf-token')?.value?.trim() || null;
 
         return {
             model: document.getElementById('omni-model-select')?.value || 'Tongyi-MAI/Z-Image-Turbo',
@@ -1684,6 +1741,8 @@ export const OmniModule = {
             guidance_scale: parseFloat(document.getElementById('omni-guidance')?.value) || 1.0,
             // Model source - if true, download from ModelScope instead of HuggingFace
             use_modelscope: useModelscope,
+            // HuggingFace token for gated models (Stable Audio, etc.)
+            hf_token: hfToken,
         };
     },
 
@@ -1920,18 +1979,25 @@ export const OmniModule = {
             return;
         }
 
+        // Parse resolution from dropdown (format: "HEIGHTxWIDTH")
+        const resolutionSelect = document.getElementById('omni-video-resolution');
+        const resolution = resolutionSelect?.value || '480x640';
+        const [height, width] = resolution.split('x').map(Number);
+
         const request = {
             prompt,
             negative_prompt: document.getElementById('omni-negative-prompt')?.value || null,
             duration: parseInt(document.getElementById('omni-video-duration')?.value) || 4,
-            fps: parseInt(document.getElementById('omni-video-fps')?.value) || 24,
-            num_inference_steps: parseInt(document.getElementById('omni-steps')?.value) || 6,
-            guidance_scale: parseFloat(document.getElementById('omni-guidance')?.value) || 1.0,
+            fps: parseInt(document.getElementById('omni-video-fps')?.value) || 16,
+            height: height || 480,
+            width: width || 640,
+            num_inference_steps: parseInt(document.getElementById('omni-steps')?.value) || 30,
+            guidance_scale: parseFloat(document.getElementById('omni-guidance')?.value) || 4.0,
             seed: document.getElementById('omni-seed')?.value ? parseInt(document.getElementById('omni-seed').value) : null,
         };
 
         this.ui.showNotification('Generating video... This may take a while.', 'info');
-        this.addLog(`Generating video: "${prompt.substring(0, 50)}..." (${request.duration}s @ ${request.fps}fps)`);
+        this.addLog(`Generating video: "${prompt.substring(0, 50)}..." (${request.duration}s @ ${request.fps}fps, ${request.height}x${request.width})`);
 
         const generateBtn = document.getElementById('omni-generate-btn');
         const generateBtnText = document.getElementById('omni-generate-btn-text');

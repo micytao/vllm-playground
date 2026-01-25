@@ -246,8 +246,10 @@ class VideoGenerationRequest(BaseModel):
     prompt: str
     negative_prompt: Optional[str] = None
     duration: int = 4  # Duration in seconds
-    fps: int = 24  # Frames per second
-    num_inference_steps: int = 50
+    fps: int = 16  # Frames per second (default 16 for lower memory)
+    height: int = 480  # Video height (default 480 for lower memory)
+    width: int = 640  # Video width (default 640 for lower memory)
+    num_inference_steps: int = 30
     guidance_scale: float = 4.0
     seed: Optional[int] = None
 
@@ -5230,11 +5232,16 @@ async def generate_video(request: VideoGenerationRequest) -> VideoGenerationResp
         "extra_body": {
             "modality": "video",
             "num_frames": num_frames,
+            "height": request.height,
+            "width": request.width,
             "fps": request.fps,
             "num_inference_steps": request.num_inference_steps,
             "guidance_scale": request.guidance_scale,
         },
     }
+
+    if request.negative_prompt:
+        payload["extra_body"]["negative_prompt"] = request.negative_prompt
 
     if request.seed is not None:
         payload["extra_body"]["seed"] = request.seed

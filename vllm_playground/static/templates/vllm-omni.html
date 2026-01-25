@@ -136,6 +136,13 @@ cd vllm-omni && uv pip install -e .</code></pre>
                         <input type="number" id="omni-port" value="8091" min="1024" max="65535">
                         <span class="help-text">Server port (default: 8091)</span>
                     </div>
+
+                    <!-- HuggingFace Token for Gated Models (same pattern as main vLLM Server) -->
+                    <div class="form-group" id="omni-hf-token-section">
+                        <label for="omni-hf-token">HuggingFace Token (Optional)</label>
+                        <input type="password" id="omni-hf-token" class="form-control" placeholder="hf_xxxxxxxxxxxxx">
+                        <small class="form-help">Required for gated models (Stable Audio, etc.). Get token from <a href="https://huggingface.co/settings/tokens" target="_blank">HuggingFace Settings</a></small>
+                    </div>
                 </div>
             </div>
 
@@ -277,13 +284,21 @@ cd vllm-omni && uv pip install -e .</code></pre>
                     <div class="video-params" id="omni-video-params" style="display: none;">
                         <div class="param-group">
                             <label for="omni-video-duration">Duration (sec)</label>
-                            <input type="number" id="omni-video-duration" value="4" min="1" max="30" step="1">
+                            <input type="number" id="omni-video-duration" value="4" min="1" max="16" step="1">
                         </div>
                         <div class="param-group">
                             <label for="omni-video-fps">FPS</label>
-                            <input type="number" id="omni-video-fps" value="24" min="8" max="60" step="1">
+                            <input type="number" id="omni-video-fps" value="16" min="8" max="30" step="1">
                         </div>
-                        <span class="help-text video-tip">Duration and frame rate for video generation</span>
+                        <div class="param-group">
+                            <label for="omni-video-resolution">Resolution</label>
+                            <select id="omni-video-resolution">
+                                <option value="480x640">480x640 (Low Memory)</option>
+                                <option value="480x848">480x848 (16:9 Low)</option>
+                                <option value="720x1280" selected>720x1280 (HD)</option>
+                            </select>
+                        </div>
+                        <span class="help-text video-tip">Lower resolution uses less GPU memory. Start with 480x640 if you get OOM errors.</span>
                     </div>
 
                     <div class="prompt-actions">
@@ -557,68 +572,69 @@ cd vllm-omni && uv pip install -e .</code></pre>
                     </div>
                 </div>
 
-                <!-- Audio/TTS Generation Section -->
+                <!-- Audio Generation Section -->
                 <div class="recipe-section">
-                    <h3 class="recipe-section-header">🔊 Audio / TTS Generation</h3>
+                    <h3 class="recipe-section-header">🔊 Audio Generation</h3>
+                    <p class="recipe-section-note">⚠️ Qwen3 TTS models may not work in container mode (missing onnxruntime). Use Stable Audio instead.</p>
                     <div class="omni-recipes-grid" id="omni-recipes-grid-audio">
-                        <div class="omni-recipe-card" data-recipe="audio-lightweight">
-                            <div class="recipe-badge recipe-badge-audio">TTS</div>
-                            <h3>🔊 Lightweight TTS (4GB)</h3>
-                            <p>Fast text-to-speech on minimal hardware</p>
-                            <div class="recipe-specs">
-                                <span>Model: Qwen3 TTS Base</span>
-                                <span>VRAM: 4GB</span>
-                                <span>Speed: 1.0x</span>
-                            </div>
-                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-lightweight')">Apply Recipe</button>
-                        </div>
-
-                        <div class="omni-recipe-card" data-recipe="audio-quality">
-                            <div class="recipe-badge recipe-badge-audio">TTS</div>
-                            <h3>🔊 Quality TTS (8GB)</h3>
-                            <p>High quality voice synthesis with voice design</p>
-                            <div class="recipe-specs">
-                                <span>Model: Qwen3 Voice Design</span>
-                                <span>VRAM: 8GB</span>
-                                <span>Speed: 1.0x</span>
-                            </div>
-                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-quality')">Apply Recipe</button>
-                        </div>
-
-                        <div class="omni-recipe-card" data-recipe="audio-custom-voice">
-                            <div class="recipe-badge recipe-badge-audio">TTS</div>
-                            <h3>🎤 Custom Voice TTS (8GB)</h3>
-                            <p>TTS with voice cloning capabilities</p>
-                            <div class="recipe-specs">
-                                <span>Model: Qwen3 Custom Voice</span>
-                                <span>VRAM: 8GB</span>
-                                <span>Voice Clone: Yes</span>
-                            </div>
-                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-custom-voice')">Apply Recipe</button>
-                        </div>
-
                         <div class="omni-recipe-card" data-recipe="audio-generation">
                             <div class="recipe-badge recipe-badge-audio">Audio</div>
-                            <h3>🎵 Audio Generation (8GB)</h3>
+                            <h3>🎵 Stable Audio (8GB)</h3>
                             <p>Generate music and sound effects from text</p>
                             <div class="recipe-specs">
                                 <span>Model: Stable Audio Open</span>
                                 <span>VRAM: 8GB</span>
-                                <span>Type: Music/SFX</span>
+                                <span>🔑 HF Token Required</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-generation')">Apply Recipe</button>
                         </div>
 
-                        <div class="omni-recipe-card" data-recipe="audio-cpu-offload">
-                            <div class="recipe-badge recipe-badge-audio">TTS</div>
-                            <h3>💾 TTS CPU Offload</h3>
-                            <p>Text-to-speech with CPU offloading for limited VRAM</p>
+                        <div class="omni-recipe-card" data-recipe="audio-generation-offload">
+                            <div class="recipe-badge recipe-badge-audio">Audio</div>
+                            <h3>💾 Stable Audio CPU Offload</h3>
+                            <p>Audio generation with CPU offloading</p>
+                            <div class="recipe-specs">
+                                <span>Model: Stable Audio Open</span>
+                                <span>CPU Offload: On</span>
+                                <span>🔑 HF Token Required</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-generation-offload')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="audio-tts-light">
+                            <div class="recipe-badge recipe-badge-audio">TTS*</div>
+                            <h3>🔊 Qwen3 TTS Base (4GB)*</h3>
+                            <p>Lightweight TTS (may require onnxruntime)</p>
                             <div class="recipe-specs">
                                 <span>Model: Qwen3 TTS Base</span>
-                                <span>CPU Offload: On</span>
-                                <span>Memory: 70%</span>
+                                <span>VRAM: 4GB</span>
+                                <span>⚠️ May not work in container</span>
                             </div>
-                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-cpu-offload')">Apply Recipe</button>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-tts-light')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="audio-tts-quality">
+                            <div class="recipe-badge recipe-badge-audio">TTS*</div>
+                            <h3>🔊 Qwen3 Voice Design (8GB)*</h3>
+                            <p>High quality TTS (may require onnxruntime)</p>
+                            <div class="recipe-specs">
+                                <span>Model: Qwen3 Voice Design</span>
+                                <span>VRAM: 8GB</span>
+                                <span>⚠️ May not work in container</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-tts-quality')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="audio-tts-custom">
+                            <div class="recipe-badge recipe-badge-audio">TTS*</div>
+                            <h3>🎤 Qwen3 Custom Voice (8GB)*</h3>
+                            <p>TTS with voice cloning (may require onnxruntime)</p>
+                            <div class="recipe-specs">
+                                <span>Model: Qwen3 Custom Voice</span>
+                                <span>VRAM: 8GB</span>
+                                <span>⚠️ May not work in container</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-tts-custom')">Apply Recipe</button>
                         </div>
                     </div>
                 </div>

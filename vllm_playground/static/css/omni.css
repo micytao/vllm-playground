@@ -1535,6 +1535,16 @@
     border-bottom: 1px solid var(--border-color);
 }
 
+.recipe-section-note {
+    margin: 0;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    color: var(--warning-color, #f59e0b);
+    background: rgba(245, 158, 11, 0.1);
+    border-radius: 6px;
+    border-left: 3px solid var(--warning-color, #f59e0b);
+}
+
 /* Recipes Grid */
 .omni-recipes-grid {
     display: grid;
