@@ -850,8 +850,11 @@ async def read_root():
 
 
 @app.get("/api/status")
-async def get_status() -> ServerStatus:
-    """Get current server status"""
+async def get_status():
+    """Get current server status.
+
+    Returns with no-cache headers to ensure fresh state after backend restart.
+    """
     global vllm_running, current_config, server_start_time, current_run_mode, container_id, vllm_process
 
     # Check status based on run mode
@@ -898,7 +901,10 @@ async def get_status() -> ServerStatus:
         minutes, seconds = divmod(remainder, 60)
         uptime = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    return ServerStatus(running=running, uptime=uptime, config=current_config)
+    server_status = ServerStatus(running=running, uptime=uptime, config=current_config)
+
+    # Return with no-cache header - allows 304 responses but ensures validation
+    return JSONResponse(content=server_status.model_dump(), headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/debug/connection")
@@ -989,7 +995,10 @@ async def test_vllm_connection():
 
 @app.get("/api/features")
 async def get_features():
-    """Check which optional features are available"""
+    """Check which optional features are available.
+
+    Returns with no-cache headers to ensure fresh data after backend restart.
+    """
     # Get version from package or local file
     version = None
 
@@ -1117,7 +1126,8 @@ async def get_features():
     if CONTAINER_MODE_AVAILABLE and container_manager:
         features["container_runtime"] = container_manager.runtime
 
-    return features
+    # Return with no-cache header - allows 304 responses but ensures validation
+    return JSONResponse(content=features, headers={"Cache-Control": "no-cache"})
 
 
 # =============================================================================
@@ -4791,8 +4801,11 @@ async def check_omni_health():
 
 
 @app.get("/api/omni/status")
-async def get_omni_status() -> OmniServerStatus:
-    """Get vLLM-Omni server status"""
+async def get_omni_status():
+    """Get vLLM-Omni server status.
+
+    Returns with no-cache headers to ensure fresh state after backend restart.
+    """
     global omni_running, omni_config, omni_start_time, omni_run_mode
 
     uptime = None
@@ -4808,7 +4821,7 @@ async def get_omni_status() -> OmniServerStatus:
         health_result = await check_omni_health()
         ready = health_result.get("ready", False)
 
-    return OmniServerStatus(
+    status = OmniServerStatus(
         running=omni_running,
         ready=ready,
         model=omni_config.model if omni_config else None,
@@ -4817,6 +4830,9 @@ async def get_omni_status() -> OmniServerStatus:
         run_mode=omni_run_mode,
         uptime=uptime,
     )
+
+    # Return with no-cache header - allows 304 responses but ensures validation
+    return JSONResponse(content=status.model_dump(), headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/api/omni/check-venv")

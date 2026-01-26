@@ -580,9 +580,13 @@ export const OmniModule = {
 
     async loadTemplate() {
         const container = document.getElementById('vllm-omni-view');
+        if (!container) {
+            console.error('vLLM-Omni view container not found');
+            return;
+        }
 
         // Skip if already loaded
-        if (this.templateLoaded) {
+        if (this.templateLoaded && container.querySelector('#omni-config-panel')) {
             console.log('vLLM-Omni template already loaded');
             return;
         }
@@ -590,24 +594,14 @@ export const OmniModule = {
         console.log('Loading vLLM-Omni template...');
 
         try {
-            // Add cache-busting to prevent stale template issues
-            const response = await fetch('/static/templates/vllm-omni.html', {
-                cache: 'no-cache'
-            });
-            console.log('Fetch response status:', response.status);
-
+            const response = await fetch('/static/templates/vllm-omni.html');
             if (!response.ok) throw new Error(`Failed to load template: ${response.status}`);
 
             const html = await response.text();
-            console.log('Template HTML loaded, length:', html.length);
-
-            // Replace loading placeholder with actual content
             container.innerHTML = html;
             this.templateLoaded = true;
 
-            console.log('Template injected, initializing...');
-
-            // Initialize event listeners and UI after template is loaded
+            // Initialize event listeners and UI
             this.init();
 
             console.log('vLLM-Omni template loaded successfully');
@@ -623,13 +617,10 @@ export const OmniModule = {
         }
     },
 
-    async onViewActivated() {
-        if (!this.templateLoaded) {
-            await this.loadTemplate();
-        } else {
-            // Refresh status when returning to view
+    onViewActivated() {
+        // Template is preloaded at startup, just refresh status when switching to this view
+        if (this.templateLoaded) {
             this.checkServerStatus();
-            // Reconnect WebSocket if disconnected
             this.connectLogWebSocket();
         }
     },

@@ -1351,6 +1351,9 @@ number ::= [0-9]+`
             this.omniVersion = features.vllm_omni_version || null;
             initOmniModule(this);
 
+            // Preload vLLM-Omni template immediately (like MCP/Claude Code which are inline)
+            this.loadOmniTemplate();
+
             // Handle ModelScope availability
             this.modelscopeInstalled = features.modelscope_installed || false;
             this.modelscopeVersion = features.modelscope_version || null;
