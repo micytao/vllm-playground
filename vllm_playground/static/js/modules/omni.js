@@ -1221,6 +1221,13 @@ export const OmniModule = {
                 if (stepsGroup) stepsGroup.style.display = 'block';
                 if (guidanceGroup) guidanceGroup.style.display = 'block';
             }
+
+            // Image upload is only available for image models that support image editing
+            // Hide for video/audio model types; visibility for image models is handled by updateImageUploadVisibility
+            if (imageUpload && modelType !== 'image') {
+                imageUpload.style.display = 'none';
+                this.clearUploadedImage();
+            }
         }
 
         // Update model dropdown options
@@ -1598,6 +1605,63 @@ export const OmniModule = {
             console.log('[Omni] Model ID display updated to:', modelIdValue.textContent);
         } else {
             console.warn('[Omni] omni-model-id-value element not found!');
+        }
+        // Update image upload visibility based on model's image edit support
+        this.updateImageUploadVisibility(modelId);
+    },
+
+    /**
+     * Get model info from the cached model list
+     * @param {string} modelId - The model ID to look up
+     * @returns {Object|null} The model info object or null if not found
+     */
+    getModelInfo(modelId) {
+        if (!this.modelList) return null;
+
+        // Search through all model types (image, video, audio, omni)
+        for (const modelType of Object.keys(this.modelList)) {
+            const models = this.modelList[modelType] || [];
+            const model = models.find(m => m.id === modelId);
+            if (model) return model;
+        }
+        return null;
+    },
+
+    /**
+     * Update the image upload dropzone visibility based on whether
+     * the selected model supports image-to-image editing.
+     * Only image-edit models (like Qwen-Image-Edit) support input images.
+     * @param {string} modelId - The selected model ID
+     */
+    updateImageUploadVisibility(modelId) {
+        const imageUpload = document.getElementById('omni-image-upload');
+        const dropzone = document.getElementById('omni-dropzone');
+        const dropzoneText = dropzone?.querySelector('.dropzone-text');
+        const modelEditTip = document.getElementById('omni-model-edit-tip');
+
+        if (!imageUpload) return;
+
+        const modelInfo = this.getModelInfo(modelId);
+        const supportsImageEdit = modelInfo?.supports_image_edit === true;
+        const currentModelType = document.getElementById('omni-model-type')?.value;
+
+        console.log('[Omni] updateImageUploadVisibility:', modelId, 'supports_image_edit:', supportsImageEdit);
+
+        // Show/hide the model edit support tip
+        if (modelEditTip) {
+            modelEditTip.style.display = (currentModelType === 'image' && supportsImageEdit) ? 'block' : 'none';
+        }
+
+        // Only show image upload for image models that support image editing
+        if (currentModelType === 'image' && supportsImageEdit) {
+            imageUpload.style.display = 'block';
+            if (dropzoneText) {
+                dropzoneText.textContent = 'Drop image here for image-to-image editing';
+            }
+        } else {
+            imageUpload.style.display = 'none';
+            // Clear any uploaded image when switching to non-edit model
+            this.clearUploadedImage();
         }
     },
 

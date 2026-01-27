@@ -223,6 +223,25 @@ class OmniConfig(BaseModel):
     trust_remote_code: bool = False
 
 
+# Image-Edit models that support image-to-image generation
+# Text-to-image models (like Z-Image-Turbo) do NOT support input images
+IMAGE_EDIT_MODELS = {
+    "Qwen/Qwen-Image-Edit",
+    "Qwen/Qwen-Image-Edit-2509",
+    "Qwen/Qwen-Image-Edit-2511",
+    "meituan-longcat/LongCat-Image-Edit",
+}
+
+
+def is_image_edit_model(model_id: str) -> bool:
+    """Check if a model supports image-to-image editing.
+
+    Only image-edit models (like Qwen-Image-Edit) support input images.
+    Text-to-image models (like Z-Image-Turbo) will ignore input images.
+    """
+    return model_id in IMAGE_EDIT_MODELS
+
+
 class ImageGenerationRequest(BaseModel):
     """Request for image generation via vLLM-Omni"""
 
@@ -5151,6 +5170,14 @@ async def generate_omni_image(request: ImageGenerationRequest):
     if not omni_config:
         raise HTTPException(status_code=400, detail="vLLM-Omni configuration not available")
 
+    # Validate image-to-image is only used with image-edit models
+    if request.input_image and not is_image_edit_model(omni_config.model):
+        return ImageGenerationResponse(
+            success=False,
+            error=f"Image-to-image not supported by {omni_config.model}. "
+            f"Use an image-edit model like Qwen/Qwen-Image-Edit instead.",
+        )
+
     try:
         import time
 
@@ -5605,38 +5632,57 @@ async def list_omni_models():
     """
     return {
         "image": [
-            # Qwen Image Models
+            # Qwen Image Models (Text-to-Image)
             {
                 "id": "Qwen/Qwen-Image",
                 "name": "Qwen Image",
                 "vram": "24GB",
                 "description": "High quality text-to-image",
+                "supports_image_edit": False,
             },
             {
                 "id": "Qwen/Qwen-Image-2512",
                 "name": "Qwen Image 2512",
                 "vram": "24GB",
                 "description": "Higher resolution (2512px)",
+                "supports_image_edit": False,
             },
-            {"id": "Qwen/Qwen-Image-Edit", "name": "Qwen Image Edit", "vram": "24GB", "description": "Image editing"},
+            # Qwen Image-Edit Models (Image-to-Image)
+            {
+                "id": "Qwen/Qwen-Image-Edit",
+                "name": "Qwen Image Edit",
+                "vram": "24GB",
+                "description": "Image editing (supports image-to-image)",
+                "supports_image_edit": True,
+            },
             {
                 "id": "Qwen/Qwen-Image-Edit-2509",
                 "name": "Qwen Image Edit 2509",
                 "vram": "24GB",
-                "description": "Advanced image editing",
+                "description": "Advanced image editing (supports image-to-image)",
+                "supports_image_edit": True,
+            },
+            {
+                "id": "Qwen/Qwen-Image-Edit-2511",
+                "name": "Qwen Image Edit 2511",
+                "vram": "24GB",
+                "description": "Latest image editing (supports image-to-image)",
+                "supports_image_edit": True,
             },
             {
                 "id": "Qwen/Qwen-Image-Layered",
                 "name": "Qwen Image Layered",
                 "vram": "24GB",
                 "description": "Layered image generation",
+                "supports_image_edit": False,
             },
-            # Z-Image
+            # Z-Image (Text-to-Image)
             {
                 "id": "Tongyi-MAI/Z-Image-Turbo",
                 "name": "Z-Image Turbo",
                 "vram": "16GB",
-                "description": "Fast image generation",
+                "description": "Fast text-to-image generation",
+                "supports_image_edit": False,
             },
             # BAGEL
             {
@@ -5644,41 +5690,53 @@ async def list_omni_models():
                 "name": "BAGEL 7B MoT",
                 "vram": "16GB",
                 "description": "ByteDance DiT model",
+                "supports_image_edit": False,
             },
             # Ovis
-            {"id": "OvisAI/Ovis-Image", "name": "Ovis Image", "vram": "16GB", "description": "Ovis image generation"},
+            {
+                "id": "OvisAI/Ovis-Image",
+                "name": "Ovis Image",
+                "vram": "16GB",
+                "description": "Ovis image generation",
+                "supports_image_edit": False,
+            },
             # LongCat
             {
                 "id": "meituan-longcat/LongCat-Image",
                 "name": "LongCat Image",
                 "vram": "16GB",
                 "description": "Meituan image generation",
+                "supports_image_edit": False,
             },
             {
                 "id": "meituan-longcat/LongCat-Image-Edit",
                 "name": "LongCat Image Edit",
                 "vram": "16GB",
-                "description": "Meituan image editing",
+                "description": "Meituan image editing (supports image-to-image)",
+                "supports_image_edit": True,
             },
-            # Stable Diffusion
+            # Stable Diffusion (Text-to-Image)
             {
                 "id": "stabilityai/stable-diffusion-3.5-medium",
                 "name": "Stable Diffusion 3.5",
                 "vram": "16GB",
                 "description": "SD3.5 medium model",
+                "supports_image_edit": False,
             },
-            # FLUX
+            # FLUX (Text-to-Image)
             {
                 "id": "black-forest-labs/FLUX.2-klein-4B",
                 "name": "FLUX.2 Klein 4B",
                 "vram": "12GB",
                 "description": "Compact FLUX model",
+                "supports_image_edit": False,
             },
             {
                 "id": "black-forest-labs/FLUX.2-klein-9B",
                 "name": "FLUX.2 Klein 9B",
                 "vram": "24GB",
                 "description": "Larger FLUX model",
+                "supports_image_edit": False,
             },
         ],
         "omni": [

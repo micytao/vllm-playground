@@ -95,6 +95,9 @@ uv pip install onnxruntime</code></pre>
                         <button id="omni-browse-recipes-btn" class="btn btn-secondary btn-sm browse-recipes-btn" onclick="window.vllmUI.openOmniRecipesModal()">
                             📚 Browse Recipes
                         </button>
+                        <span class="help-text" id="omni-model-edit-tip" style="display: none; color: var(--success-color);">
+                            ✓ This model supports image-to-image editing
+                        </span>
                     </div>
 
                     <div class="model-id-display" id="omni-model-id-display">
@@ -289,12 +292,15 @@ uv pip install onnxruntime</code></pre>
                     <span class="studio-title" id="omni-studio-title">Image Generation</span>
                 </div>
 
-                <!-- Image Upload Dropzone (for image-to-image, hidden for video) -->
-                <div class="image-upload-section" id="omni-image-upload">
+                <!-- Image Upload Dropzone (only shown for Image-Edit models like Qwen-Image-Edit) -->
+                <div class="image-upload-section" id="omni-image-upload" style="display: none;">
+                    <div class="image-edit-info" style="font-size: 0.85em; color: var(--text-muted); margin-bottom: 8px; padding: 6px 10px; background: var(--surface-color); border-radius: 6px; border-left: 3px solid var(--primary-color);">
+                        <strong>Image-to-Image Mode:</strong> Upload an image to edit with your prompt. Only available with Image-Edit models.
+                    </div>
                     <div class="dropzone" id="omni-dropzone">
                         <div class="dropzone-content">
                             <span class="dropzone-icon">&#128444;</span>
-                            <span class="dropzone-text">Drop image here for image-to-image</span>
+                            <span class="dropzone-text">Drop image here for image-to-image editing</span>
                             <span class="dropzone-hint">or click to browse (optional)</span>
                         </div>
                         <input type="file" id="omni-image-input" accept="image/*" hidden>
