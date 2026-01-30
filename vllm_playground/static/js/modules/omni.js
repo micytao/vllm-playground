@@ -617,8 +617,13 @@ export const OmniModule = {
         }
     },
 
-    onViewActivated() {
-        // Template is preloaded at startup, just refresh status when switching to this view
+    async onViewActivated() {
+        // Load template if not already loaded (fallback if preload didn't complete)
+        if (!this.templateLoaded) {
+            await this.loadTemplate();
+        }
+
+        // Template is now loaded, refresh status
         if (this.templateLoaded) {
             this.checkServerStatus();
             this.connectLogWebSocket();
@@ -1384,6 +1389,12 @@ export const OmniModule = {
             console.log('[Omni] Model set to:', modelSelect.value);
             modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
             this.updateModelIdDisplay(recipe.model);
+
+            // Clear custom model input when recipe is applied (so dropdown selection takes effect)
+            const customModelInput = document.getElementById('omni-custom-model');
+            if (customModelInput) {
+                customModelInput.value = '';
+            }
         }
 
         // Apply inference steps
@@ -1927,8 +1938,13 @@ export const OmniModule = {
         const useModelscope = document.getElementById('omni-model-source-modelscope')?.checked || false;
         const hfToken = document.getElementById('omni-hf-token')?.value?.trim() || null;
 
+        // Custom model takes priority over dropdown selection (same pattern as main vLLM Server)
+        const customModel = document.getElementById('omni-custom-model')?.value?.trim();
+        const selectedModel = document.getElementById('omni-model-select')?.value || 'Tongyi-MAI/Z-Image-Turbo';
+        const model = customModel || selectedModel;
+
         return {
-            model: document.getElementById('omni-model-select')?.value || 'Tongyi-MAI/Z-Image-Turbo',
+            model: model,
             model_type: document.getElementById('omni-model-type')?.value || 'image',
             port: parseInt(document.getElementById('omni-port')?.value) || 8091,
             run_mode: runMode,

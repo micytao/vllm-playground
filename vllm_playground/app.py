@@ -5128,6 +5128,8 @@ async def stop_omni_server():
         raise HTTPException(status_code=400, detail="vLLM-Omni server is not running")
 
     try:
+        stopped_something = False
+
         if omni_run_mode == "subprocess" and omni_process:
             # Terminate subprocess
             omni_process.terminate()
@@ -5138,6 +5140,7 @@ async def stop_omni_server():
                 await omni_process.wait()
 
             omni_process = None
+            stopped_something = True
             logger.info("vLLM-Omni subprocess stopped")
 
         elif omni_run_mode == "container" and omni_container_id:
@@ -5145,18 +5148,39 @@ async def stop_omni_server():
             if container_manager:
                 await container_manager.stop_omni_container(omni_container_id)
             omni_container_id = None
+            stopped_something = True
             logger.info("vLLM-Omni container stopped")
 
+        # Handle inconsistent state - omni_running is True but nothing to stop
+        if not stopped_something:
+            logger.warning(
+                f"vLLM-Omni state inconsistent: running={omni_running}, mode={omni_run_mode}, "
+                f"process={omni_process is not None}, container={omni_container_id is not None}"
+            )
+            logger.info("Resetting vLLM-Omni state")
+
+        # Always reset state
         omni_running = False
         omni_config = None
         omni_start_time = None
         omni_run_mode = None
+        omni_process = None
+        omni_container_id = None
 
         return {"status": "stopped"}
 
     except Exception as e:
-        logger.error(f"Failed to stop vLLM-Omni: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Reset state even on error to allow recovery
+        omni_running = False
+        omni_config = None
+        omni_start_time = None
+        omni_run_mode = None
+        omni_process = None
+        omni_container_id = None
+
+        error_msg = str(e) if str(e) else "Unknown error during stop"
+        logger.error(f"Failed to stop vLLM-Omni: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @app.post("/api/omni/generate")
@@ -5632,47 +5656,47 @@ async def list_omni_models():
     """
     return {
         "image": [
-            # Qwen Image Models (Text-to-Image)
+            # Qwen Image Models (Text-to-Image) - require >48GB VRAM
             {
                 "id": "Qwen/Qwen-Image",
                 "name": "Qwen Image",
-                "vram": "24GB",
+                "vram": ">48GB",
                 "description": "High quality text-to-image",
                 "supports_image_edit": False,
             },
             {
                 "id": "Qwen/Qwen-Image-2512",
                 "name": "Qwen Image 2512",
-                "vram": "24GB",
+                "vram": ">48GB",
                 "description": "Higher resolution (2512px)",
                 "supports_image_edit": False,
             },
-            # Qwen Image-Edit Models (Image-to-Image)
+            # Qwen Image-Edit Models (Image-to-Image) - require >48GB VRAM
             {
                 "id": "Qwen/Qwen-Image-Edit",
                 "name": "Qwen Image Edit",
-                "vram": "24GB",
+                "vram": ">48GB",
                 "description": "Image editing (supports image-to-image)",
                 "supports_image_edit": True,
             },
             {
                 "id": "Qwen/Qwen-Image-Edit-2509",
                 "name": "Qwen Image Edit 2509",
-                "vram": "24GB",
+                "vram": ">48GB",
                 "description": "Advanced image editing (supports image-to-image)",
                 "supports_image_edit": True,
             },
             {
                 "id": "Qwen/Qwen-Image-Edit-2511",
                 "name": "Qwen Image Edit 2511",
-                "vram": "24GB",
+                "vram": ">48GB",
                 "description": "Latest image editing (supports image-to-image)",
                 "supports_image_edit": True,
             },
             {
                 "id": "Qwen/Qwen-Image-Layered",
                 "name": "Qwen Image Layered",
-                "vram": "24GB",
+                "vram": ">48GB",
                 "description": "Layered image generation",
                 "supports_image_edit": False,
             },
