@@ -519,13 +519,13 @@ export const OmniModule = {
             resolution: '320x512'  // Minimal resolution with CPU offload
         },
         // Audio Generation Recipes
-        // Note: Stable Audio requires HF token (gated model)
-        // Note: Qwen3 TTS models may not work in container mode due to missing onnxruntime
+        // Note: Stable Audio requires HF token (gated model) - uses /v1/chat/completions (diffusion)
+        // Note: Qwen3 TTS models may not work in container mode due to missing onnxruntime - uses /v1/audio/speech
         'audio-generation': {
-            name: 'Stable Audio (8GB)',
+            name: 'Stable Audio (32GB+)',
             model: 'stabilityai/stable-audio-open-1.0',
             model_type: 'audio',
-            gpu_memory: 0.85,
+            gpu_memory: 0.9,
             cpu_offload: false,
             torch_compile: false,
             requires_hf_token: true
@@ -543,7 +543,7 @@ export const OmniModule = {
         // Note: Container mode may not work due to missing onnxruntime in vLLM-Omni image
         // Use subprocess mode with local vLLM-Omni install that includes onnxruntime
         'audio-tts-light': {
-            name: 'Qwen3 TTS Base (4GB)',
+            name: 'Qwen3 TTS Base (12GB)',
             model: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base',
             model_type: 'audio',
             gpu_memory: 0.9,
@@ -553,20 +553,20 @@ export const OmniModule = {
             container_limitation: 'onnxruntime'  // Flag for container mode warning
         },
         'audio-tts-quality': {
-            name: 'Qwen3 TTS Voice Design (8GB)',
+            name: 'Qwen3 TTS Voice Design (24GB+)',
             model: 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign',
             model_type: 'audio',
-            gpu_memory: 0.85,
+            gpu_memory: 0.9,
             cpu_offload: false,
             torch_compile: false,
             speed: 1.0,
             container_limitation: 'onnxruntime'
         },
         'audio-tts-custom': {
-            name: 'Qwen3 TTS Custom Voice (8GB)',
+            name: 'Qwen3 TTS Custom Voice (24GB+)',
             model: 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',
             model_type: 'audio',
-            gpu_memory: 0.85,
+            gpu_memory: 0.9,
             cpu_offload: false,
             torch_compile: false,
             speed: 1.0,
@@ -2307,18 +2307,29 @@ export const OmniModule = {
             return;
         }
 
+        // Build request with both TTS and Stable Audio parameters
+        // Backend will use appropriate params based on model type
+        const voice = document.getElementById('omni-tts-voice')?.value || 'Vivian';
+        const instructions = document.getElementById('omni-tts-instructions')?.value?.trim() || null;
+        const audioDuration = parseFloat(document.getElementById('omni-audio-duration')?.value) || 10.0;
+        const audioSteps = parseInt(document.getElementById('omni-audio-steps')?.value) || 50;
+        const audioGuidance = parseFloat(document.getElementById('omni-audio-guidance')?.value) || 7.0;
+
         const request = {
             text: prompt,
-            seed: document.getElementById('omni-seed')?.value ? parseInt(document.getElementById('omni-seed').value) : null,
-            // Stable Audio memory optimization parameters
-            audio_duration: parseFloat(document.getElementById('omni-audio-duration')?.value) || 10.0,
-            num_inference_steps: parseInt(document.getElementById('omni-audio-steps')?.value) || 50,
-            guidance_scale: parseFloat(document.getElementById('omni-audio-guidance')?.value) || 7.0,
+            // TTS parameters (Qwen3-TTS)
+            voice: voice,
+            instructions: instructions,
+            // Stable Audio parameters (diffusion)
+            audio_duration: audioDuration,
+            num_inference_steps: audioSteps,
+            guidance_scale: audioGuidance,
             negative_prompt: "low quality, average quality",
+            seed: document.getElementById('omni-seed')?.value ? parseInt(document.getElementById('omni-seed').value) : null,
         };
 
         this.ui.showNotification('Generating audio...', 'info');
-        this.addLog(`Generating audio: "${prompt.substring(0, 50)}..." (${request.audio_duration}s, ${request.num_inference_steps} steps)`);
+        this.addLog(`Generating audio: "${prompt.substring(0, 50)}..." (voice: ${voice}, ${audioDuration}s, ${audioSteps} steps)`);
 
         const generateBtn = document.getElementById('omni-generate-btn');
         const generateBtnText = document.getElementById('omni-generate-btn-text');

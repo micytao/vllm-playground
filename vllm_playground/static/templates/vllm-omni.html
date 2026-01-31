@@ -170,7 +170,7 @@ uv pip install onnxruntime</code></pre>
                     <div class="form-group">
                         <label>Tensor Parallel Size</label>
                         <input type="number" id="omni-tensor-parallel" value="1" min="1" max="8" step="1">
-                        <span class="help-text">Number of GPUs for model parallelism (1 = single GPU)</span>
+                        <span class="help-text">For LLMs: splits model across GPUs. For diffusion: runs parallel workers (each needs full model memory)</span>
                     </div>
                     <div class="form-group">
                         <label>GPU Memory Utilization</label>
@@ -239,22 +239,40 @@ uv pip install onnxruntime</code></pre>
                         </div>
                     </div>
 
-                    <!-- Audio Parameters: Only for audio generation (Stable Audio) -->
+                    <!-- Audio Parameters: For TTS (Qwen3-TTS) and Diffusion (Stable Audio) models -->
                     <div id="omni-audio-params-group" style="display: none;">
+                        <!-- TTS Voice Settings (for Qwen3-TTS) -->
                         <div class="form-group">
-                            <label for="omni-audio-duration">Audio Duration (seconds): <span id="omni-audio-duration-value">10</span></label>
+                            <label for="omni-tts-voice">Voice (TTS models)</label>
+                            <select id="omni-tts-voice">
+                                <option value="Vivian" selected>Vivian (Female)</option>
+                                <option value="Ryan">Ryan (Male)</option>
+                                <option value="Ethan">Ethan (Male)</option>
+                                <option value="Olivia">Olivia (Female)</option>
+                            </select>
+                            <span class="help-text">For Qwen3-TTS models only</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="omni-tts-instructions">Style Instructions (optional)</label>
+                            <input type="text" id="omni-tts-instructions" placeholder="e.g., Speak with excitement">
+                            <span class="help-text">For Qwen3-TTS: voice style or emotion</span>
+                        </div>
+                        <hr style="margin: 15px 0; border-color: #444;">
+                        <!-- Stable Audio Parameters -->
+                        <div class="form-group">
+                            <label for="omni-audio-duration">Audio Duration: <span id="omni-audio-duration-value">10</span>s</label>
                             <input type="range" id="omni-audio-duration" min="1" max="47" value="10" step="1">
-                            <span class="help-text">Shorter duration = less GPU memory. Max 47s. For OOM errors, try 5-10s.</span>
+                            <span class="help-text">For Stable Audio: 1-47 seconds (shorter = less GPU memory)</span>
                         </div>
                         <div class="form-group">
                             <label for="omni-audio-steps">Inference Steps: <span id="omni-audio-steps-value">50</span></label>
                             <input type="range" id="omni-audio-steps" min="10" max="200" value="50" step="10">
-                            <span class="help-text">Lower steps = faster & less memory, but lower quality. 50-100 recommended.</span>
+                            <span class="help-text">For Stable Audio: quality vs speed (20-100 recommended)</span>
                         </div>
                         <div class="form-group">
                             <label for="omni-audio-guidance">Guidance Scale: <span id="omni-audio-guidance-value">7.0</span></label>
                             <input type="range" id="omni-audio-guidance" min="1" max="15" value="7" step="0.5">
-                            <span class="help-text">Higher = follows prompt more closely. 7.0 is recommended.</span>
+                            <span class="help-text">For Stable Audio: prompt adherence (7.0 recommended)</span>
                         </div>
                     </div>
 
@@ -642,14 +660,15 @@ uv pip install onnxruntime</code></pre>
                 <div class="recipe-section">
                     <h3 class="recipe-section-header">🔊 Audio Generation</h3>
                     <p class="recipe-section-note">⚠️ <strong>Stable Audio</strong>: Requires HF token AND accepting license at <a href="https://huggingface.co/stabilityai/stable-audio-open-1.0" target="_blank">huggingface.co</a>.<br>⚠️ <strong>Qwen3 TTS</strong>: Open model (Apache-2.0), but container image missing onnxruntime. Use <strong>Subprocess mode</strong> with local vLLM-Omni install, or wait for container fix.</p>
+                    <p class="recipe-section-note" style="margin-top: 8px;">💡 <strong>Tip</strong>: These models use different API endpoints — <strong>Stable Audio</strong> (diffusion) uses <code>/v1/chat/completions</code>, while <strong>Qwen3 TTS</strong> uses <code>/v1/audio/speech</code>. The backend auto-detects the model type.</p>
                     <div class="omni-recipes-grid" id="omni-recipes-grid-audio">
                         <div class="omni-recipe-card" data-recipe="audio-generation">
                             <div class="recipe-badge recipe-badge-audio">Audio</div>
-                            <h3>🎵 Stable Audio (8GB)</h3>
-                            <p>Generate music and sound effects from text</p>
+                            <h3>🎵 Stable Audio (32GB+)</h3>
+                            <p>Generate music and sound effects from text (diffusion model, up to 47s)</p>
                             <div class="recipe-specs">
                                 <span>Model: Stable Audio Open</span>
-                                <span>VRAM: 8GB</span>
+                                <span>VRAM: 32GB+</span>
                                 <span>🔑 HF Token + License</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-generation')">Apply Recipe</button>
@@ -658,7 +677,7 @@ uv pip install onnxruntime</code></pre>
                         <div class="omni-recipe-card" data-recipe="audio-generation-offload">
                             <div class="recipe-badge recipe-badge-audio">Audio</div>
                             <h3>💾 Stable Audio CPU Offload</h3>
-                            <p>Audio generation with CPU offloading</p>
+                            <p>Audio generation with CPU offloading (lower VRAM)</p>
                             <div class="recipe-specs">
                                 <span>Model: Stable Audio Open</span>
                                 <span>CPU Offload: On</span>
@@ -669,11 +688,11 @@ uv pip install onnxruntime</code></pre>
 
                         <div class="omni-recipe-card" data-recipe="audio-tts-light">
                             <div class="recipe-badge recipe-badge-audio">TTS</div>
-                            <h3>🔊 Qwen3 TTS Base (4GB)</h3>
-                            <p>Lightweight multilingual text-to-speech</p>
+                            <h3>🔊 Qwen3 TTS Base (12GB)</h3>
+                            <p>Lightweight multilingual text-to-speech (0.6B)</p>
                             <div class="recipe-specs">
                                 <span>Model: Qwen3 TTS 0.6B</span>
-                                <span>VRAM: 4GB</span>
+                                <span>VRAM: 12GB</span>
                                 <span>📦 Subprocess mode only</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-tts-light')">Apply Recipe</button>
@@ -681,11 +700,11 @@ uv pip install onnxruntime</code></pre>
 
                         <div class="omni-recipe-card" data-recipe="audio-tts-quality">
                             <div class="recipe-badge recipe-badge-audio">TTS</div>
-                            <h3>🔊 Qwen3 Voice Design (8GB)</h3>
-                            <p>High quality TTS with voice design</p>
+                            <h3>🔊 Qwen3 Voice Design (24GB+)</h3>
+                            <p>High quality TTS with voice design (1.7B)</p>
                             <div class="recipe-specs">
                                 <span>Model: Qwen3 TTS 1.7B</span>
-                                <span>VRAM: 8GB</span>
+                                <span>VRAM: 24GB+</span>
                                 <span>📦 Subprocess mode only</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-tts-quality')">Apply Recipe</button>
@@ -693,11 +712,11 @@ uv pip install onnxruntime</code></pre>
 
                         <div class="omni-recipe-card" data-recipe="audio-tts-custom">
                             <div class="recipe-badge recipe-badge-audio">TTS</div>
-                            <h3>🎤 Qwen3 Custom Voice (8GB)</h3>
-                            <p>TTS with voice cloning capabilities</p>
+                            <h3>🎤 Qwen3 Custom Voice (24GB+)</h3>
+                            <p>TTS with voice cloning capabilities (1.7B)</p>
                             <div class="recipe-specs">
                                 <span>Model: Qwen3 TTS 1.7B</span>
-                                <span>VRAM: 8GB</span>
+                                <span>VRAM: 24GB+</span>
                                 <span>📦 Subprocess mode only</span>
                             </div>
                             <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-tts-custom')">Apply Recipe</button>
