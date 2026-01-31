@@ -2021,11 +2021,17 @@ export const OmniModule = {
                     }, 10000);  // Start polling after 10 seconds if not triggered by logs
                 }
             } else {
-                throw new Error(result.detail || 'Failed to start server');
+                // Handle error detail - could be string or object
+                let errorMsg = result.detail || result.error || 'Failed to start server';
+                if (typeof errorMsg === 'object') {
+                    errorMsg = errorMsg.message || errorMsg.msg || JSON.stringify(errorMsg);
+                }
+                throw new Error(errorMsg);
             }
         } catch (error) {
-            this.addLog(`❌ Failed to start server: ${error.message}`, 'error');
-            this.ui.showNotification(`Failed to start: ${error.message}`, 'error');
+            const errMsg = error.message || String(error);
+            this.addLog(`❌ Failed to start server: ${errMsg}`, 'error');
+            this.ui.showNotification(`Failed to start: ${errMsg}`, 'error');
             // Re-enable start button on error (same pattern as main vLLM Server)
             if (startBtn) startBtn.disabled = false;
         } finally {
@@ -2177,7 +2183,7 @@ export const OmniModule = {
                 command += `source ${config.venv_path}/bin/activate\n`;
             }
 
-            command += `\nvllm-omni serve ${config.model}`;
+            command += `\nvllm serve ${config.model} --omni`;
             command += ` \\\n  --port ${config.port}`;
             if (config.tensor_parallel_size > 1) {
                 command += ` \\\n  --tensor-parallel-size ${config.tensor_parallel_size}`;
