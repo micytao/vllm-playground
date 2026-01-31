@@ -779,8 +779,11 @@ export const OmniModule = {
 
     connectLogWebSocket() {
         // Connect to vLLM-Omni log streaming WebSocket
-        if (this.logWebSocket && this.logWebSocket.readyState === WebSocket.OPEN) {
-            return; // Already connected
+        // Check for both OPEN and CONNECTING states to avoid duplicate connections
+        if (this.logWebSocket &&
+            (this.logWebSocket.readyState === WebSocket.OPEN ||
+             this.logWebSocket.readyState === WebSocket.CONNECTING)) {
+            return; // Already connected or connecting
         }
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -899,7 +902,7 @@ export const OmniModule = {
             this.commandManuallyEdited = true;
         });
 
-        // Update command preview on config changes
+        // Update command preview on config changes (server configuration only)
         const configElements = [
             document.getElementById('omni-model-type'),
             document.getElementById('omni-model-select'),
@@ -940,7 +943,7 @@ export const OmniModule = {
             document.getElementById('omni-tts-speed-value').textContent = e.target.value;
         });
 
-        // Audio parameter sliders (for Stable Audio)
+        // Audio parameter sliders (for Stable Audio) - display value only
         document.getElementById('omni-audio-duration')?.addEventListener('input', (e) => {
             document.getElementById('omni-audio-duration-value').textContent = e.target.value;
         });
@@ -2065,18 +2068,27 @@ export const OmniModule = {
 
             if (response.ok) {
                 this.serverRunning = true;
-                this.serverReady = false;  // Not ready yet, still loading
-                this.updateServerStatus(true, false);
-                this.ui.showNotification('vLLM-Omni server started - loading model...', 'info');
-                this.addLog(`✅ Server started in ${result.mode} mode on port ${result.port}`);
-                // Health check polling will be triggered by log messages (watching for "Uvicorn running")
-                // For container mode, also start polling after a delay as logs may be delayed
-                if (result.mode === 'container') {
-                    setTimeout(() => {
-                        if (this.serverRunning && !this.serverReady && !this.healthCheckInterval) {
-                            this.startHealthCheckPolling();
-                        }
-                    }, 10000);  // Start polling after 10 seconds if not triggered by logs
+
+                // In-process mode: model is already loaded and ready
+                if (result.mode === 'inprocess') {
+                    this.serverReady = true;
+                    this.updateServerStatus(true, true);
+                    this.ui.showNotification('Stable Audio model loaded and ready!', 'success');
+                    this.addLog(`✅ Model loaded in-process mode (no API server needed)`);
+                } else {
+                    this.serverReady = false;  // Not ready yet, still loading
+                    this.updateServerStatus(true, false);
+                    this.ui.showNotification('vLLM-Omni server started - loading model...', 'info');
+                    this.addLog(`✅ Server started in ${result.mode} mode on port ${result.port}`);
+                    // Health check polling will be triggered by log messages (watching for "Uvicorn running")
+                    // For container mode, also start polling after a delay as logs may be delayed
+                    if (result.mode === 'container') {
+                        setTimeout(() => {
+                            if (this.serverRunning && !this.serverReady && !this.healthCheckInterval) {
+                                this.startHealthCheckPolling();
+                            }
+                        }, 10000);  // Start polling after 10 seconds if not triggered by logs
+                    }
                 }
             } else {
                 // Handle error detail - could be string or object
@@ -2200,13 +2212,13 @@ export const OmniModule = {
             command += `    enforce_eager=${!config.enable_torch_compile ? 'True' : 'False'},\n`;
             command += `    trust_remote_code=True,\n`;
             command += `)\n\n`;
-            command += `# Generate audio:\n`;
+            command += `# Generate audio (parameters from UI at generation time):\n`;
             command += `output = model.generate(\n`;
-            command += `    "your prompt here",\n`;
-            command += `    negative_prompt="Low quality.",\n`;
-            command += `    guidance_scale=7.0,\n`;
-            command += `    num_inference_steps=100,\n`;
-            command += `    extra={"audio_start_in_s": 0.0, "audio_end_in_s": 10.0},\n`;
+            command += `    prompt,\n`;
+            command += `    negative_prompt=negative_prompt,\n`;
+            command += `    guidance_scale=guidance_scale,\n`;
+            command += `    num_inference_steps=num_inference_steps,\n`;
+            command += `    extra={"audio_start_in_s": 0.0, "audio_end_in_s": duration},\n`;
             command += `)\n`;
         } else if (runMode === 'container') {
             // Container mode - podman/docker command
