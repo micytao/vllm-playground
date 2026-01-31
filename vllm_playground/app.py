@@ -5741,34 +5741,59 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
                 import base64
                 import io
                 import numpy as np
+                from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
                 # Set up generator for reproducibility
                 generator = None
                 if request.seed is not None:
                     generator = torch.Generator(device="cuda").manual_seed(request.seed)
 
-                # Build extra parameters
-                extra = {
-                    "audio_start_in_s": 0.0,
-                    "audio_end_in_s": request.audio_duration if request.audio_duration else 10.0,
-                }
-
-                # Generate audio using offline inference
-                audio_output = omni_inprocess_model.generate(
-                    request.text,
-                    negative_prompt=request.negative_prompt or "Low quality.",
+                # Build sampling params (matches vLLM-Omni example API)
+                # Ref: https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/text_to_audio/text_to_audio.py
+                sampling_params = OmniDiffusionSamplingParams(
                     generator=generator,
                     guidance_scale=request.guidance_scale if request.guidance_scale else 7.0,
                     num_inference_steps=request.num_inference_steps if request.num_inference_steps else 100,
-                    extra=extra,
+                    num_outputs_per_prompt=1,
+                    extra_args={
+                        "audio_start_in_s": 0.0,
+                        "audio_end_in_s": request.audio_duration if request.audio_duration else 10.0,
+                    },
                 )
 
-                # Convert output to WAV bytes
-                # audio_output is a list with tensor, get the first one
-                audio_tensor = audio_output[0]
+                # Generate audio using offline inference
+                # API: omni.generate({"prompt": ..., "negative_prompt": ...}, OmniDiffusionSamplingParams)
+                outputs = omni_inprocess_model.generate(
+                    {
+                        "prompt": request.text,
+                        "negative_prompt": request.negative_prompt or "Low quality.",
+                    },
+                    sampling_params,
+                )
+
+                # Extract audio from output
+                # Output structure: outputs[0].request_output[0].multimodal_output["audio"]
+                output = outputs[0]
+                request_output = output.request_output[0]
+                audio_tensor = request_output.multimodal_output.get("audio")
+
+                if audio_tensor is None:
+                    raise ValueError("No audio output found in response")
 
                 # Convert to numpy: [samples, channels] for soundfile
-                audio_np = audio_tensor.cpu().float().numpy().T
+                if isinstance(audio_tensor, torch.Tensor):
+                    audio_tensor = audio_tensor.cpu().float().numpy()
+
+                # Handle different output shapes
+                if audio_tensor.ndim == 3:
+                    # [batch, channels, samples] -> take first batch
+                    audio_np = audio_tensor[0].T  # [samples, channels]
+                elif audio_tensor.ndim == 2:
+                    # [channels, samples]
+                    audio_np = audio_tensor.T  # [samples, channels]
+                else:
+                    # [samples] - mono
+                    audio_np = audio_tensor
 
                 # Normalize audio
                 max_val = np.max(np.abs(audio_np))
