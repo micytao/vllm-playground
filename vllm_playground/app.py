@@ -5590,6 +5590,17 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
                 # Diffusion returns JSON with audio data
                 result = await response.json()
 
+                # Debug: Log the response structure to understand the format
+                logger.info(f"Audio response keys: {list(result.keys())}")
+                if "choices" in result and result["choices"]:
+                    msg = result["choices"][0].get("message", {})
+                    logger.info(f"Message keys: {list(msg.keys())}")
+                    logger.info(f"Message content type: {type(msg.get('content'))}")
+                    if isinstance(msg.get("content"), list) and msg.get("content"):
+                        logger.info(
+                            f"Content[0] keys: {list(msg['content'][0].keys()) if isinstance(msg['content'][0], dict) else 'not a dict'}"
+                        )
+
                 # Check for error in response
                 if "error" in result:
                     error_msg = result["error"]
@@ -5616,26 +5627,65 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
                         base64_data = audio_obj
 
                 # Check content list for audio (diffusion format)
+                # vLLM-Omni diffusion uses: .choices[0].message.content[0].image_url.url
+                # Even for audio, the format uses "image_url" key!
                 if not base64_data:
                     content = message.get("content", [])
                     if isinstance(content, list):
                         for item in content:
-                            if isinstance(item, dict) and item.get("type") == "audio":
-                                audio_url = item.get("audio_url", {}).get("url", "")
-                                if audio_url.startswith("data:audio"):
-                                    try:
-                                        mime_part = audio_url.split(";")[0]
-                                        audio_format = mime_part.replace("data:", "")
-                                    except (IndexError, ValueError):
+                            if isinstance(item, dict):
+                                item_type = item.get("type", "")
+                                # Check for audio type
+                                if item_type == "audio":
+                                    audio_url = item.get("audio_url", {}).get("url", "")
+                                    if audio_url.startswith("data:audio"):
+                                        try:
+                                            mime_part = audio_url.split(";")[0]
+                                            audio_format = mime_part.replace("data:", "")
+                                        except (IndexError, ValueError):
+                                            audio_format = "audio/wav"
+                                        base64_data = audio_url.split(",", 1)[1] if "," in audio_url else audio_url
+                                    elif audio_url:
+                                        base64_data = audio_url
+                                    break
+                                # vLLM-Omni diffusion uses image_url format for ALL outputs (including audio!)
+                                elif item_type == "image_url":
+                                    image_url = item.get("image_url", {}).get("url", "")
+                                    logger.info(
+                                        f"Found image_url type content, URL prefix: {image_url[:50] if image_url else 'empty'}..."
+                                    )
+                                    # Check if it's audio data (Stable Audio returns audio in image_url format)
+                                    if image_url.startswith("data:audio"):
+                                        try:
+                                            mime_part = image_url.split(";")[0]
+                                            audio_format = mime_part.replace("data:", "")
+                                        except (IndexError, ValueError):
+                                            audio_format = "audio/wav"
+                                        base64_data = image_url.split(",", 1)[1] if "," in image_url else image_url
+                                        logger.info(f"Extracted audio from image_url format, format: {audio_format}")
+                                        break
+                                    # Could be raw base64 without data: prefix
+                                    elif image_url and not image_url.startswith("data:image"):
+                                        # Assume it's audio data
+                                        base64_data = image_url.split(",", 1)[1] if "," in image_url else image_url
                                         audio_format = "audio/wav"
-                                    base64_data = audio_url.split(",", 1)[1] if "," in audio_url else audio_url
-                                elif audio_url:
-                                    base64_data = audio_url
-                                break
+                                        logger.info(f"Extracted raw base64 from image_url, assuming audio/wav")
+                                        break
                     elif isinstance(content, str) and content:
                         base64_data = content
 
+                # Also check for audio at the response level (some models return it there)
+                if not base64_data and "audio" in result:
+                    audio_data = result["audio"]
+                    if isinstance(audio_data, dict):
+                        base64_data = audio_data.get("data") or audio_data.get("url")
+                        audio_format = f"audio/{audio_data.get('format', 'wav')}"
+                    elif isinstance(audio_data, str):
+                        base64_data = audio_data
+
                 if not base64_data:
+                    # Log the full response for debugging
+                    logger.error(f"No audio data found. Full response: {result}")
                     return AudioGenerationResponse(
                         success=False,
                         error="No audio data in response - generation may have failed (check server logs for OOM errors)",
