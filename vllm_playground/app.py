@@ -5545,30 +5545,31 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
 
     messages = [{"role": "user", "content": request.text}]
 
+    # vLLM-Omni diffusion expects parameters at top level, NOT in extra_body
+    # See: https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/quickstart/
     payload = {
         "model": omni_config.model,
         "messages": messages,
-        "extra_body": {
-            "modality": "audio",
-        },
+        # Diffusion parameters at top level
+        "modality": "audio",
     }
 
-    # Add Stable Audio specific parameters
+    # Add Stable Audio specific parameters at top level
     if request.audio_duration is not None:
-        payload["extra_body"]["audio_end_in_s"] = request.audio_duration
-        payload["extra_body"]["audio_start_in_s"] = 0.0
+        payload["audio_end_in_s"] = request.audio_duration
+        payload["audio_start_in_s"] = 0.0
 
     if request.num_inference_steps is not None:
-        payload["extra_body"]["num_inference_steps"] = request.num_inference_steps
+        payload["num_inference_steps"] = request.num_inference_steps
 
     if request.guidance_scale is not None:
-        payload["extra_body"]["guidance_scale"] = request.guidance_scale
+        payload["guidance_scale"] = request.guidance_scale
 
     if request.negative_prompt:
-        payload["extra_body"]["negative_prompt"] = request.negative_prompt
+        payload["negative_prompt"] = request.negative_prompt
 
     if request.seed is not None:
-        payload["extra_body"]["seed"] = request.seed
+        payload["seed"] = request.seed
 
     duration_str = f"{request.audio_duration}s" if request.audio_duration else "default"
     steps_str = f"{request.num_inference_steps} steps" if request.num_inference_steps else "default"
