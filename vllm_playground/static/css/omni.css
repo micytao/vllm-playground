@@ -778,7 +778,7 @@
     border-radius: 0;
     min-height: 200px;
     max-height: 350px;
-    border: 1px solid var(--border-color);
+    /* border removed - parent .generation-gallery-wrapper already has border */
     align-content: start;
 }
 
@@ -794,7 +794,7 @@
     border-radius: 0;
     min-height: 200px;
     max-height: 400px;
-    border: 1px solid var(--border-color);
+    /* border removed - parent wrapper already has border */
     align-content: start;
 }
 
@@ -1665,6 +1665,37 @@
 /* TTS recipe badge - teal/cyan color */
 .recipe-badge-tts {
     background: #06b6d4;
+}
+
+/* WIP Badge for Coming Soon sections */
+.wip-badge {
+    background: #f0ad4e;
+    color: #fff;
+    font-size: 0.65em;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 4px;
+    margin-left: 10px;
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Disabled recipe cards (WIP sections) */
+.recipe-card-disabled {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.recipe-card-disabled .recipe-apply-btn {
+    background: #6c757d !important;
+    cursor: not-allowed;
+}
+
+/* Disabled model type options in dropdown */
+#omni-model-type option:disabled {
+    color: #888;
+    font-style: italic;
 }
 
 .omni-recipe-card h3 {

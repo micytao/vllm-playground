@@ -1500,6 +1500,15 @@ export const OmniModule = {
                 return;
             }
 
+            // Guard: Block disabled model types (video, omni) - Coming Soon
+            if (recipe.model_type === 'video' || recipe.model_type === 'omni') {
+                console.log('[Omni] Blocked recipe with disabled model type:', recipe.model_type);
+                if (this.ui) {
+                    this.ui.showNotification('This feature is coming soon!', 'info');
+                }
+                return;
+            }
+
         // Apply model type FIRST (this rebuilds the model dropdown)
         const modelTypeSelect = document.getElementById('omni-model-type');
         if (modelTypeSelect && recipe.model_type) {

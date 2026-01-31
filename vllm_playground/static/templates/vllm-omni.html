@@ -77,10 +77,10 @@ uv pip install onnxruntime</code></pre>
                         <label>Model Type</label>
                         <select id="omni-model-type">
                             <option value="image">Image Generation</option>
-                            <option value="video">Video Generation</option>
+                            <option value="video" disabled>Video Generation (Coming Soon)</option>
                             <option value="tts">TTS (Text-to-Speech)</option>
                             <option value="audio">Audio (Music/SFX)</option>
-                            <option value="omni">Omni (Text + Audio Chat)</option>
+                            <option value="omni" disabled>Omni (Text + Audio Chat) (Coming Soon)</option>
                         </select>
                         <span class="help-text" id="omni-model-type-tip">Generate images from text prompts (Text-to-Image)</span>
                     </div>
@@ -599,10 +599,10 @@ uv pip install onnxruntime</code></pre>
                 </div>
 
                 <!-- Video Generation Section -->
-                <div class="recipe-section">
-                    <h3 class="recipe-section-header">🎬 Video Generation</h3>
+                <div class="recipe-section recipe-section-wip">
+                    <h3 class="recipe-section-header">🎬 Video Generation <span class="wip-badge">WIP</span></h3>
                     <div class="omni-recipes-grid" id="omni-recipes-grid-video">
-                        <div class="omni-recipe-card" data-recipe="video-small-fast">
+                        <div class="omni-recipe-card recipe-card-disabled" data-recipe="video-small-fast">
                             <div class="recipe-badge recipe-badge-video">Video</div>
                             <h3>🎬 Video 5B Minimal (16GB)</h3>
                             <p>Smallest config for GPUs with limited VRAM</p>
@@ -612,10 +612,10 @@ uv pip install onnxruntime</code></pre>
                                 <span>2s @ 16fps</span>
                                 <span>Steps: 20</span>
                             </div>
-                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-small-fast')">Apply Recipe</button>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" disabled>Apply Recipe</button>
                         </div>
 
-                        <div class="omni-recipe-card" data-recipe="video-l4-optimized">
+                        <div class="omni-recipe-card recipe-card-disabled" data-recipe="video-l4-optimized">
                             <div class="recipe-badge recipe-badge-video">Video</div>
                             <h3>🎬 Video 5B for L4 (24GB)</h3>
                             <p>Conservative settings for L4 GPUs</p>
@@ -625,10 +625,10 @@ uv pip install onnxruntime</code></pre>
                                 <span>2s @ 16fps</span>
                                 <span>GPU: 70%</span>
                             </div>
-                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-l4-optimized')">Apply Recipe</button>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" disabled>Apply Recipe</button>
                         </div>
 
-                        <div class="omni-recipe-card" data-recipe="video-medium-balanced">
+                        <div class="omni-recipe-card recipe-card-disabled" data-recipe="video-medium-balanced">
                             <div class="recipe-badge recipe-badge-video">Video</div>
                             <h3>🎬 Video 5B Quality (32GB+)</h3>
                             <p>Better quality with 16:9 aspect ratio</p>
@@ -638,10 +638,10 @@ uv pip install onnxruntime</code></pre>
                                 <span>4s @ 16fps</span>
                                 <span>Steps: 30</span>
                             </div>
-                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-medium-balanced')">Apply Recipe</button>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" disabled>Apply Recipe</button>
                         </div>
 
-                        <div class="omni-recipe-card" data-recipe="video-large-quality">
+                        <div class="omni-recipe-card recipe-card-disabled" data-recipe="video-large-quality">
                             <div class="recipe-badge recipe-badge-video">Video</div>
                             <h3>🎬 Video 14B HQ (48GB+)</h3>
                             <p>High quality HD video for A40/A100 GPUs</p>
@@ -651,10 +651,10 @@ uv pip install onnxruntime</code></pre>
                                 <span>4s @ 24fps</span>
                                 <span>Steps: 40</span>
                             </div>
-                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-large-quality')">Apply Recipe</button>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" disabled>Apply Recipe</button>
                         </div>
 
-                        <div class="omni-recipe-card" data-recipe="video-cpu-offload">
+                        <div class="omni-recipe-card recipe-card-disabled" data-recipe="video-cpu-offload">
                             <div class="recipe-badge recipe-badge-video">Video</div>
                             <h3>🎬 Video 5B CPU Offload (16GB+)</h3>
                             <p>Aggressive CPU offload, needs 32GB+ system RAM</p>
@@ -664,7 +664,7 @@ uv pip install onnxruntime</code></pre>
                                 <span>2s @ 16fps</span>
                                 <span>GPU: 50% + CPU</span>
                             </div>
-                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('video-cpu-offload')">Apply Recipe</button>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" disabled>Apply Recipe</button>
                         </div>
                     </div>
                 </div>
@@ -715,7 +715,7 @@ uv pip install onnxruntime</code></pre>
                 <!-- Audio Generation (Music/SFX) Section -->
                 <div class="recipe-section">
                     <h3 class="recipe-section-header">🎵 Audio Generation (Music/SFX)</h3>
-                    <p class="recipe-section-note">⚠️ <strong>Stable Audio</strong>: Requires HF token AND accepting license at <a href="https://huggingface.co/stabilityai/stable-audio-open-1.0" target="_blank">huggingface.co</a>.<br>💡 Uses <code>/v1/chat/completions</code> endpoint with diffusion-based generation.</p>
+                    <p class="recipe-section-note">⚠️ <strong>Stable Audio</strong>: Requires HF token AND accepting license at <a href="https://huggingface.co/stabilityai/stable-audio-open-1.0" target="_blank">huggingface.co</a>.<br>🔧 Uses <strong>offline inference</strong> (in-process mode) to bypass vLLM-Omni serving bug. Container mode unavailable.</p>
                     <div class="omni-recipes-grid" id="omni-recipes-grid-audio">
                         <div class="omni-recipe-card" data-recipe="audio-generation">
                             <div class="recipe-badge recipe-badge-audio">Audio</div>
