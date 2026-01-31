@@ -5435,13 +5435,16 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
         }
     ]
 
+    # Build payload following the official vLLM-Omni API pattern
+    # Reference: https://github.com/vllm-project/vllm-omni/blob/main/examples/online_serving/qwen3_omni/gradio_demo.py
     payload = {
         "model": omni_config.model,
         "messages": messages,
         "temperature": 0.7,
         "max_tokens": 4096,
+        # modalities is a top-level parameter per official example
+        "modalities": ["audio"],
         "extra_body": {
-            "modality": "audio",
             "speed": request.speed,
         },
     }
@@ -5503,70 +5506,88 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
                         logger.error(f"vLLM-Omni message error: {error_msg}")
                         return AudioGenerationResponse(success=False, error=f"Generation failed: {error_msg}")
 
-                    content = message.get("content", [])
-
                     # Log the response structure for debugging
-                    logger.debug(
-                        f"vLLM-Omni response content type: {type(content)}, content: {str(content)[:200] if content else 'empty'}"
-                    )
+                    logger.debug(f"vLLM-Omni response message keys: {message.keys()}")
 
                     # Handle different response formats
                     base64_data = None
                     audio_format = "audio/wav"  # Default format
                     audio_duration = None
 
-                    if isinstance(content, list):
-                        if not content:
-                            # Empty content list - generation likely failed
-                            logger.error("vLLM-Omni returned empty content list - generation may have failed")
-                            return AudioGenerationResponse(
-                                success=False,
-                                error="Generation failed: no audio content returned (possible OOM or model error)",
-                            )
+                    # Method 1: Check for audio in message.audio (official Qwen3-Omni API format)
+                    # Reference: https://github.com/vllm-project/vllm-omni/blob/main/examples/online_serving/qwen3_omni/gradio_demo.py
+                    audio_obj = message.get("audio")
+                    if audio_obj:
+                        logger.info("Found audio in message.audio (official API format)")
+                        if isinstance(audio_obj, dict):
+                            # Format: {"data": "base64...", "format": "wav"}
+                            base64_data = audio_obj.get("data")
+                            audio_format = f"audio/{audio_obj.get('format', 'wav')}"
+                        elif isinstance(audio_obj, str):
+                            # Direct base64 string
+                            base64_data = audio_obj
 
-                        for item in content:
-                            if isinstance(item, dict) and item.get("type") == "audio":
-                                audio_url = item.get("audio_url", {}).get("url", "")
-                                if audio_url.startswith("data:audio"):
-                                    # Extract MIME type from data URL (e.g., "data:audio/flac;base64,...")
-                                    try:
-                                        mime_part = audio_url.split(";")[0]  # "data:audio/flac"
-                                        audio_format = mime_part.replace("data:", "")  # "audio/flac"
-                                    except (IndexError, ValueError):
-                                        audio_format = "audio/wav"
-                                    base64_data = audio_url.split(",", 1)[1] if "," in audio_url else audio_url
-                                elif audio_url:
-                                    base64_data = audio_url
-                                # Try to get duration if provided
-                                audio_duration = item.get("duration")
-                                break
-                            elif isinstance(item, dict) and item.get("type") == "text":
-                                # Check if text content contains error message
-                                text = item.get("text", "")
-                                if (
-                                    "error" in text.lower()
-                                    or "failed" in text.lower()
-                                    or "out of memory" in text.lower()
-                                ):
-                                    logger.error(f"vLLM-Omni returned error in text: {text}")
-                                    return AudioGenerationResponse(success=False, error=f"Generation failed: {text}")
-                    elif isinstance(content, str):
-                        if not content or content.strip() == "":
-                            logger.error("vLLM-Omni returned empty string content")
-                            return AudioGenerationResponse(success=False, error="Generation failed: empty response")
-                        # Check if string content is an error message
-                        if (
-                            "error" in content.lower()
-                            or "failed" in content.lower()
-                            or "out of memory" in content.lower()
-                        ):
-                            logger.error(f"vLLM-Omni returned error message: {content}")
-                            return AudioGenerationResponse(success=False, error=f"Generation failed: {content}")
-                        # Some models return base64 directly
-                        base64_data = content
-                    elif content is None or content == "":
-                        logger.error("vLLM-Omni returned null/empty content")
-                        return AudioGenerationResponse(success=False, error="Generation failed: no content in response")
+                    # Method 2: Check content list for audio (alternative format)
+                    content = message.get("content", [])
+
+                    # Method 2: Check content list/string for audio (if not found in message.audio)
+                    if not base64_data:
+                        if isinstance(content, list):
+                            if not content:
+                                # Empty content list - generation likely failed
+                                logger.error("vLLM-Omni returned empty content list - generation may have failed")
+                                return AudioGenerationResponse(
+                                    success=False,
+                                    error="Generation failed: no audio content returned (possible OOM or model error)",
+                                )
+
+                            for item in content:
+                                if isinstance(item, dict) and item.get("type") == "audio":
+                                    audio_url = item.get("audio_url", {}).get("url", "")
+                                    if audio_url.startswith("data:audio"):
+                                        # Extract MIME type from data URL (e.g., "data:audio/flac;base64,...")
+                                        try:
+                                            mime_part = audio_url.split(";")[0]  # "data:audio/flac"
+                                            audio_format = mime_part.replace("data:", "")  # "audio/flac"
+                                        except (IndexError, ValueError):
+                                            audio_format = "audio/wav"
+                                        base64_data = audio_url.split(",", 1)[1] if "," in audio_url else audio_url
+                                    elif audio_url:
+                                        base64_data = audio_url
+                                    # Try to get duration if provided
+                                    audio_duration = item.get("duration")
+                                    break
+                                elif isinstance(item, dict) and item.get("type") == "text":
+                                    # Check if text content contains error message
+                                    text = item.get("text", "")
+                                    if (
+                                        "error" in text.lower()
+                                        or "failed" in text.lower()
+                                        or "out of memory" in text.lower()
+                                    ):
+                                        logger.error(f"vLLM-Omni returned error in text: {text}")
+                                        return AudioGenerationResponse(
+                                            success=False, error=f"Generation failed: {text}"
+                                        )
+                        elif isinstance(content, str):
+                            if not content or content.strip() == "":
+                                logger.error("vLLM-Omni returned empty string content")
+                                return AudioGenerationResponse(success=False, error="Generation failed: empty response")
+                            # Check if string content is an error message
+                            if (
+                                "error" in content.lower()
+                                or "failed" in content.lower()
+                                or "out of memory" in content.lower()
+                            ):
+                                logger.error(f"vLLM-Omni returned error message: {content}")
+                                return AudioGenerationResponse(success=False, error=f"Generation failed: {content}")
+                            # Some models return base64 directly
+                            base64_data = content
+                        elif content is None or content == "":
+                            logger.error("vLLM-Omni returned null/empty content and no message.audio")
+                            return AudioGenerationResponse(
+                                success=False, error="Generation failed: no content in response"
+                            )
 
                     if not base64_data:
                         logger.error(f"No audio data found in response. Content: {str(content)[:500]}")
