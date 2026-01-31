@@ -91,7 +91,7 @@ uv pip install onnxruntime</code></pre>
                             <option value="Tongyi-MAI/Z-Image-Turbo">Z-Image Turbo (Fast)</option>
                             <option value="Qwen/Qwen-Image">Qwen Image</option>
                         </select>
-                        <input type="text" id="omni-custom-model" class="form-control" placeholder="Or enter custom model ID (e.g., Qwen/Qwen2.5-Omni-7B)" style="margin-top: 8px;">
+                        <input type="text" id="omni-custom-model" class="form-control" placeholder="Or enter custom model ID (e.g., your-org/your-model)" style="margin-top: 8px;">
                         <!-- Omni Recipes Button -->
                         <button id="omni-browse-recipes-btn" class="btn btn-secondary btn-sm browse-recipes-btn" onclick="window.vllmUI.openOmniRecipesModal()">
                             📚 Browse Recipes
@@ -231,6 +231,25 @@ uv pip install onnxruntime</code></pre>
                                 </div>
                             </div>
                             <span class="help-text">Lower resolution & shorter duration use less GPU memory. For L4 (24GB): use 480x640, 4s, 16fps. For OOM errors, try 320x512.</span>
+                        </div>
+                    </div>
+
+                    <!-- Audio Parameters: Only for audio generation (Stable Audio) -->
+                    <div id="omni-audio-params-group" style="display: none;">
+                        <div class="form-group">
+                            <label for="omni-audio-duration">Audio Duration (seconds): <span id="omni-audio-duration-value">10</span></label>
+                            <input type="range" id="omni-audio-duration" min="1" max="47" value="10" step="1">
+                            <span class="help-text">Shorter duration = less GPU memory. Max 47s. For OOM errors, try 5-10s.</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="omni-audio-steps">Inference Steps: <span id="omni-audio-steps-value">50</span></label>
+                            <input type="range" id="omni-audio-steps" min="10" max="200" value="50" step="10">
+                            <span class="help-text">Lower steps = faster & less memory, but lower quality. 50-100 recommended.</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="omni-audio-guidance">Guidance Scale: <span id="omni-audio-guidance-value">7.0</span></label>
+                            <input type="range" id="omni-audio-guidance" min="1" max="15" value="7" step="0.5">
+                            <span class="help-text">Higher = follows prompt more closely. 7.0 is recommended.</span>
                         </div>
                     </div>
 

@@ -65,8 +65,9 @@ vLLM-Omni provides official container images:
 
 | Model | VRAM | Description |
 |-------|------|-------------|
-| Qwen/Qwen2.5-Omni-7B | 16GB | Text + Audio I/O |
 | Qwen/Qwen3-Omni-30B-A3B-Instruct | 48GB | Advanced omni model |
+
+> **Note:** Qwen2.5-Omni models have been removed as they require 2+ GPUs for their multi-stage pipeline.
 
 ### Video Generation Models
 

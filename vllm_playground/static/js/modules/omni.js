@@ -821,6 +821,7 @@ export const OmniModule = {
         const configElements = [
             document.getElementById('omni-model-type'),
             document.getElementById('omni-model-select'),
+            document.getElementById('omni-custom-model'),
             document.getElementById('omni-port'),
             document.getElementById('omni-venv-path'),
             document.getElementById('omni-gpu-device'),
@@ -849,6 +850,17 @@ export const OmniModule = {
         });
         document.getElementById('omni-guidance')?.addEventListener('input', (e) => {
             document.getElementById('omni-guidance-value').textContent = e.target.value;
+        });
+
+        // Audio parameter sliders (for Stable Audio)
+        document.getElementById('omni-audio-duration')?.addEventListener('input', (e) => {
+            document.getElementById('omni-audio-duration-value').textContent = e.target.value;
+        });
+        document.getElementById('omni-audio-steps')?.addEventListener('input', (e) => {
+            document.getElementById('omni-audio-steps-value').textContent = e.target.value;
+        });
+        document.getElementById('omni-audio-guidance')?.addEventListener('input', (e) => {
+            document.getElementById('omni-audio-guidance-value').textContent = e.target.value;
         });
 
         // Run mode toggle
@@ -1213,15 +1225,26 @@ export const OmniModule = {
             // Show/hide generation parameters based on model type:
             // - Image: Show image size, steps, guidance
             // - Video: Show video params (resolution, duration, fps), steps, guidance
-            // - Audio: Hide all (TTS doesn't use these diffusion parameters)
+            // - Audio: Show audio params (duration, steps, guidance) for Stable Audio
+            const audioParamsGroup = document.getElementById('omni-audio-params-group');
+
             if (modelType === 'audio') {
-                if (generationParams) generationParams.style.display = 'none';
+                // Show generation params section for audio (Stable Audio has diffusion params)
+                if (generationParams) generationParams.style.display = 'block';
+                if (imageSizeGroup) imageSizeGroup.style.display = 'none';
+                if (videoParamsGroup) videoParamsGroup.style.display = 'none';
+                if (audioParamsGroup) audioParamsGroup.style.display = 'block';
+                // Hide general steps/guidance (we have audio-specific ones)
+                if (stepsGroup) stepsGroup.style.display = 'none';
+                if (guidanceGroup) guidanceGroup.style.display = 'none';
             } else {
                 if (generationParams) generationParams.style.display = 'block';
                 // Image Size only for image generation
                 if (imageSizeGroup) imageSizeGroup.style.display = modelType === 'image' ? 'block' : 'none';
                 // Video params (resolution, duration, fps) only for video generation
                 if (videoParamsGroup) videoParamsGroup.style.display = modelType === 'video' ? 'block' : 'none';
+                // Hide audio params for non-audio models
+                if (audioParamsGroup) audioParamsGroup.style.display = 'none';
                 // Inference Steps and Guidance Scale for both image and video
                 if (stepsGroup) stepsGroup.style.display = 'block';
                 if (guidanceGroup) guidanceGroup.style.display = 'block';
@@ -2273,10 +2296,15 @@ export const OmniModule = {
         const request = {
             text: prompt,
             seed: document.getElementById('omni-seed')?.value ? parseInt(document.getElementById('omni-seed').value) : null,
+            // Stable Audio memory optimization parameters
+            audio_duration: parseFloat(document.getElementById('omni-audio-duration')?.value) || 10.0,
+            num_inference_steps: parseInt(document.getElementById('omni-audio-steps')?.value) || 50,
+            guidance_scale: parseFloat(document.getElementById('omni-audio-guidance')?.value) || 7.0,
+            negative_prompt: "low quality, average quality",
         };
 
         this.ui.showNotification('Generating audio...', 'info');
-        this.addLog(`Generating audio: "${prompt.substring(0, 50)}..."`);
+        this.addLog(`Generating audio: "${prompt.substring(0, 50)}..." (${request.audio_duration}s, ${request.num_inference_steps} steps)`);
 
         const generateBtn = document.getElementById('omni-generate-btn');
         const generateBtnText = document.getElementById('omni-generate-btn-text');
@@ -2293,7 +2321,7 @@ export const OmniModule = {
             const result = await response.json();
 
             if (result.success) {
-                this.addAudioToGallery(result.audio_base64, prompt, result.duration);
+                this.addAudioToGallery(result.audio_base64, prompt, result.duration, result.audio_format);
                 this.ui.showNotification(`Audio generated in ${result.generation_time?.toFixed(1)}s`, 'success');
                 this.addLog(`Audio generated in ${result.generation_time?.toFixed(1)}s`);
             } else {
@@ -2484,13 +2512,30 @@ export const OmniModule = {
         document.body.removeChild(link);
     },
 
-    addAudioToGallery(base64Audio, text, duration) {
+    addAudioToGallery(base64Audio, text, duration, audioFormat = 'audio/wav') {
         const gallery = document.getElementById('omni-gallery');
         if (!gallery) return;
 
         // Remove placeholder
         const placeholder = gallery.querySelector('.gallery-placeholder');
         if (placeholder) placeholder.remove();
+
+        // Normalize audio format - ensure it's a valid MIME type
+        const mimeType = audioFormat || 'audio/wav';
+
+        // Get file extension for the source type attribute
+        const formatMap = {
+            'audio/wav': 'audio/wav',
+            'audio/wave': 'audio/wav',
+            'audio/x-wav': 'audio/wav',
+            'audio/flac': 'audio/flac',
+            'audio/x-flac': 'audio/flac',
+            'audio/mp3': 'audio/mpeg',
+            'audio/mpeg': 'audio/mpeg',
+            'audio/ogg': 'audio/ogg',
+            'audio/webm': 'audio/webm',
+        };
+        const normalizedMime = formatMap[mimeType] || mimeType;
 
         // Create gallery item for audio
         const item = document.createElement('div');
@@ -2500,7 +2545,7 @@ export const OmniModule = {
                 <div class="audio-icon">🔊</div>
                 <div class="audio-text">${this.escapeHtml(text.substring(0, 80))}${text.length > 80 ? '...' : ''}</div>
                 <audio controls>
-                    <source src="data:audio/wav;base64,${base64Audio}" type="audio/wav">
+                    <source src="data:${normalizedMime};base64,${base64Audio}" type="${normalizedMime}">
                     Your browser does not support audio playback.
                 </audio>
                 ${duration ? `<span class="audio-duration">${duration.toFixed(1)}s</span>` : ''}
@@ -2528,6 +2573,7 @@ export const OmniModule = {
         item.dataset.base64 = base64Audio;
         item.dataset.prompt = text;
         item.dataset.type = 'audio';
+        item.dataset.audioFormat = normalizedMime;
 
         // Download click handler
         item.querySelector('.gallery-download-btn')?.addEventListener('click', (e) => {
@@ -2549,10 +2595,22 @@ export const OmniModule = {
     downloadAudio(item) {
         const base64 = item.dataset.base64;
         const prompt = item.dataset.prompt || 'audio';
+        const audioFormat = item.dataset.audioFormat || 'audio/wav';
+
+        // Map MIME type to file extension
+        const extensionMap = {
+            'audio/wav': 'wav',
+            'audio/flac': 'flac',
+            'audio/mpeg': 'mp3',
+            'audio/mp3': 'mp3',
+            'audio/ogg': 'ogg',
+            'audio/webm': 'webm',
+        };
+        const extension = extensionMap[audioFormat] || 'wav';
 
         const link = document.createElement('a');
-        link.href = `data:audio/wav;base64,${base64}`;
-        link.download = `omni-audio-${prompt.substring(0, 20).replace(/[^a-z0-9]/gi, '_')}-${Date.now()}.wav`;
+        link.href = `data:${audioFormat};base64,${base64}`;
+        link.download = `omni-audio-${prompt.substring(0, 20).replace(/[^a-z0-9]/gi, '_')}-${Date.now()}.${extension}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -2824,6 +2882,7 @@ export const OmniModule = {
         const textSpan = assistantMessageDiv?.querySelector('.message-text');
         let fullText = '';
         let audioData = null;
+        let audioFormat = 'audio/wav';
 
         try {
             const response = await fetch('/api/omni/chat', {
@@ -2872,6 +2931,7 @@ export const OmniModule = {
                             // Handle audio content (usually at the end)
                             if (parsed.audio) {
                                 audioData = parsed.audio;
+                                audioFormat = parsed.audio_format || 'audio/wav';
                             }
 
                             // Handle error
@@ -2896,7 +2956,7 @@ export const OmniModule = {
             if (audioData && assistantMessageDiv) {
                 const audioContainer = document.createElement('div');
                 audioContainer.className = 'chat-audio-response';
-                audioContainer.innerHTML = `<audio controls src="data:audio/wav;base64,${audioData}" class="chat-inline-audio"></audio>`;
+                audioContainer.innerHTML = `<audio controls src="data:${audioFormat};base64,${audioData}" class="chat-inline-audio"></audio>`;
                 assistantMessageDiv.querySelector('.message-body')?.appendChild(audioContainer);
             }
 
@@ -2945,7 +3005,8 @@ export const OmniModule = {
             if (media.type === 'image') {
                 html += `<img src="data:image/png;base64,${media.data}" class="chat-inline-image" alt="Generated image">`;
             } else if (media.type === 'audio') {
-                html += `<audio controls src="data:audio/wav;base64,${media.data}" class="chat-inline-audio"></audio>`;
+                const format = media.format || 'audio/wav';
+                html += `<audio controls src="data:${format};base64,${media.data}" class="chat-inline-audio"></audio>`;
             }
         }
 

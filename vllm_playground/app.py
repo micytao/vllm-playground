@@ -295,6 +295,11 @@ class AudioGenerationRequest(BaseModel):
     voice: Optional[str] = None  # Voice ID for TTS
     speed: float = 1.0  # Speech speed
     seed: Optional[int] = None
+    # Stable Audio specific parameters for memory optimization
+    audio_duration: Optional[float] = 10.0  # Duration in seconds (max 47s, lower = less memory)
+    num_inference_steps: Optional[int] = 50  # Quality vs speed tradeoff (lower = less memory)
+    guidance_scale: Optional[float] = 7.0  # Prompt adherence
+    negative_prompt: Optional[str] = "low quality, average quality"  # Improves quality
 
 
 class AudioGenerationResponse(BaseModel):
@@ -302,6 +307,7 @@ class AudioGenerationResponse(BaseModel):
 
     success: bool
     audio_base64: Optional[str] = None
+    audio_format: Optional[str] = None  # MIME type like "audio/wav", "audio/flac", "audio/mp3"
     duration: Optional[float] = None
     error: Optional[str] = None
     generation_time: Optional[float] = None
@@ -5440,6 +5446,20 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
         },
     }
 
+    # Add Stable Audio specific parameters for memory optimization
+    if request.audio_duration is not None:
+        payload["extra_body"]["audio_end_in_s"] = request.audio_duration
+        payload["extra_body"]["audio_start_in_s"] = 0.0
+
+    if request.num_inference_steps is not None:
+        payload["extra_body"]["num_inference_steps"] = request.num_inference_steps
+
+    if request.guidance_scale is not None:
+        payload["extra_body"]["guidance_scale"] = request.guidance_scale
+
+    if request.negative_prompt:
+        payload["extra_body"]["negative_prompt"] = request.negative_prompt
+
     if request.seed is not None:
         payload["extra_body"]["seed"] = request.seed
 
@@ -5462,42 +5482,105 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
                 result = await response.json()
 
                 try:
+                    # Check for error in response (vLLM-Omni may return 200 with error in body)
+                    if "error" in result:
+                        error_msg = result["error"]
+                        if isinstance(error_msg, dict):
+                            error_msg = error_msg.get("message", str(error_msg))
+                        logger.error(f"vLLM-Omni returned error: {error_msg}")
+                        return AudioGenerationResponse(success=False, error=f"Generation failed: {error_msg}")
+
                     # Parse the response to extract audio data
                     choices = result.get("choices", [])
                     if not choices:
                         return AudioGenerationResponse(success=False, error="No choices in response")
 
                     message = choices[0].get("message", {})
+
+                    # Check for error in the message (some models put errors here)
+                    if message.get("error"):
+                        error_msg = message.get("error")
+                        logger.error(f"vLLM-Omni message error: {error_msg}")
+                        return AudioGenerationResponse(success=False, error=f"Generation failed: {error_msg}")
+
                     content = message.get("content", [])
+
+                    # Log the response structure for debugging
+                    logger.debug(
+                        f"vLLM-Omni response content type: {type(content)}, content: {str(content)[:200] if content else 'empty'}"
+                    )
 
                     # Handle different response formats
                     base64_data = None
+                    audio_format = "audio/wav"  # Default format
                     audio_duration = None
 
                     if isinstance(content, list):
+                        if not content:
+                            # Empty content list - generation likely failed
+                            logger.error("vLLM-Omni returned empty content list - generation may have failed")
+                            return AudioGenerationResponse(
+                                success=False,
+                                error="Generation failed: no audio content returned (possible OOM or model error)",
+                            )
+
                         for item in content:
-                            if item.get("type") == "audio":
+                            if isinstance(item, dict) and item.get("type") == "audio":
                                 audio_url = item.get("audio_url", {}).get("url", "")
                                 if audio_url.startswith("data:audio"):
+                                    # Extract MIME type from data URL (e.g., "data:audio/flac;base64,...")
+                                    try:
+                                        mime_part = audio_url.split(";")[0]  # "data:audio/flac"
+                                        audio_format = mime_part.replace("data:", "")  # "audio/flac"
+                                    except (IndexError, ValueError):
+                                        audio_format = "audio/wav"
                                     base64_data = audio_url.split(",", 1)[1] if "," in audio_url else audio_url
-                                else:
+                                elif audio_url:
                                     base64_data = audio_url
                                 # Try to get duration if provided
                                 audio_duration = item.get("duration")
                                 break
+                            elif isinstance(item, dict) and item.get("type") == "text":
+                                # Check if text content contains error message
+                                text = item.get("text", "")
+                                if (
+                                    "error" in text.lower()
+                                    or "failed" in text.lower()
+                                    or "out of memory" in text.lower()
+                                ):
+                                    logger.error(f"vLLM-Omni returned error in text: {text}")
+                                    return AudioGenerationResponse(success=False, error=f"Generation failed: {text}")
                     elif isinstance(content, str):
+                        if not content or content.strip() == "":
+                            logger.error("vLLM-Omni returned empty string content")
+                            return AudioGenerationResponse(success=False, error="Generation failed: empty response")
+                        # Check if string content is an error message
+                        if (
+                            "error" in content.lower()
+                            or "failed" in content.lower()
+                            or "out of memory" in content.lower()
+                        ):
+                            logger.error(f"vLLM-Omni returned error message: {content}")
+                            return AudioGenerationResponse(success=False, error=f"Generation failed: {content}")
                         # Some models return base64 directly
                         base64_data = content
+                    elif content is None or content == "":
+                        logger.error("vLLM-Omni returned null/empty content")
+                        return AudioGenerationResponse(success=False, error="Generation failed: no content in response")
 
                     if not base64_data:
-                        return AudioGenerationResponse(success=False, error="No audio data in response")
+                        logger.error(f"No audio data found in response. Content: {str(content)[:500]}")
+                        return AudioGenerationResponse(
+                            success=False, error="No audio data in response - generation may have failed"
+                        )
 
                     generation_time = time.time() - start_time
-                    logger.info(f"Audio generated in {generation_time:.2f}s")
+                    logger.info(f"Audio generated in {generation_time:.2f}s, format: {audio_format}")
 
                     return AudioGenerationResponse(
                         success=True,
                         audio_base64=base64_data,
+                        audio_format=audio_format,
                         duration=audio_duration,
                         generation_time=generation_time,
                     )
@@ -5589,12 +5672,19 @@ async def omni_chat(request: OmniChatRequest):
                                                 elif item.get("type") == "audio":
                                                     audio_url = item.get("audio_url", {}).get("url", "")
                                                     if audio_url.startswith("data:audio"):
+                                                        # Extract audio format from data URL
+                                                        audio_format = "audio/wav"
+                                                        try:
+                                                            mime_part = audio_url.split(";")[0]
+                                                            audio_format = mime_part.replace("data:", "")
+                                                        except (IndexError, ValueError):
+                                                            pass
                                                         audio_data = (
                                                             audio_url.split(",", 1)[1]
                                                             if "," in audio_url
                                                             else audio_url
                                                         )
-                                                        yield f"data: {json.dumps({'audio': audio_data})}\n\n"
+                                                        yield f"data: {json.dumps({'audio': audio_data, 'audio_format': audio_format})}\n\n"
 
                                 except json.JSONDecodeError:
                                     continue
@@ -5620,10 +5710,17 @@ async def omni_chat(request: OmniChatRequest):
                                         elif item.get("type") == "audio":
                                             audio_url = item.get("audio_url", {}).get("url", "")
                                             if audio_url.startswith("data:audio"):
+                                                # Extract audio format from data URL
+                                                audio_format = "audio/wav"
+                                                try:
+                                                    mime_part = audio_url.split(";")[0]
+                                                    audio_format = mime_part.replace("data:", "")
+                                                except (IndexError, ValueError):
+                                                    pass
                                                 audio_data = (
                                                     audio_url.split(",", 1)[1] if "," in audio_url else audio_url
                                                 )
-                                                yield f"data: {json.dumps({'audio': audio_data})}\n\n"
+                                                yield f"data: {json.dumps({'audio': audio_data, 'audio_format': audio_format})}\n\n"
 
                         except (KeyError, IndexError, TypeError) as e:
                             logger.error(f"Failed to parse vLLM-Omni response: {e}")
@@ -5765,18 +5862,7 @@ async def list_omni_models():
         ],
         "omni": [
             # Qwen Omni Models (Text + Audio I/O)
-            {
-                "id": "Qwen/Qwen2.5-Omni-3B",
-                "name": "Qwen2.5 Omni 3B",
-                "vram": "8GB",
-                "description": "Lightweight text + audio",
-            },
-            {
-                "id": "Qwen/Qwen2.5-Omni-7B",
-                "name": "Qwen2.5 Omni 7B",
-                "vram": "16GB",
-                "description": "Text + Audio I/O",
-            },
+            # Note: Qwen2.5-Omni models removed - they require 2+ GPUs for multi-stage pipeline
             {
                 "id": "Qwen/Qwen3-Omni-30B-A3B-Instruct",
                 "name": "Qwen3 Omni 30B",
