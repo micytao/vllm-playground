@@ -5548,35 +5548,35 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
     if not omni_config:
         return AudioGenerationResponse(success=False, error="vLLM-Omni configuration not available")
 
-    # Use /v1/chat/completions endpoint with extra_body for diffusion parameters
-    # Requires proper stage config with final_output_type: audio
-    omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
+    # Try /v1/images/generations endpoint with response_format: b64_json
+    # This uses a different code path (serving_images.py) that may handle audio output
+    # better than serving_chat.py which only serializes images.
+    omni_url = f"http://localhost:{omni_config.port}/v1/images/generations"
 
-    messages = [{"role": "user", "content": request.text}]
-
-    # Build payload with extra_body for Stable Audio parameters
+    # Build payload for images/generations endpoint
     payload = {
         "model": omni_config.model,
-        "messages": messages,
-        "extra_body": {},
+        "prompt": request.text,
+        "n": 1,
+        "response_format": "b64_json",  # Request base64 encoded output
     }
 
-    # Add Stable Audio specific parameters in extra_body
+    # Add Stable Audio specific parameters at top level
     if request.audio_duration is not None:
-        payload["extra_body"]["audio_end_in_s"] = request.audio_duration
-        payload["extra_body"]["audio_start_in_s"] = 0.0
+        payload["audio_end_in_s"] = request.audio_duration
+        payload["audio_start_in_s"] = 0.0
 
     if request.num_inference_steps is not None:
-        payload["extra_body"]["num_inference_steps"] = request.num_inference_steps
+        payload["num_inference_steps"] = request.num_inference_steps
 
     if request.guidance_scale is not None:
-        payload["extra_body"]["guidance_scale"] = request.guidance_scale
+        payload["guidance_scale"] = request.guidance_scale
 
     if request.negative_prompt:
-        payload["extra_body"]["negative_prompt"] = request.negative_prompt
+        payload["negative_prompt"] = request.negative_prompt
 
     if request.seed is not None:
-        payload["extra_body"]["seed"] = request.seed
+        payload["seed"] = request.seed
 
     duration_str = f"{request.audio_duration}s" if request.audio_duration else "default"
     steps_str = f"{request.num_inference_steps} steps" if request.num_inference_steps else "default"
@@ -5598,8 +5598,9 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
                 # Diffusion returns JSON with audio data
                 result = await response.json()
 
-                # Debug: Log the response structure to understand the format
+                # Debug: Log the full response structure to understand the format
                 logger.info(f"Audio response keys: {list(result.keys())}")
+                logger.info(f"Full audio response: {str(result)[:1000]}...")
 
                 # Check for error in response
                 if "error" in result:

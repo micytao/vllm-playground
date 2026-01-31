@@ -1,8 +1,10 @@
-# Issue: Stable Audio Open model outputs no audio data - `final_output_type` defaults to `image` instead of `audio`
+# Issue: Stable Audio Open model outputs no audio data - `serving_chat.py` doesn't serialize audio output
 
 ## Summary
 
-When serving `stabilityai/stable-audio-open-1.0` with vLLM-Omni, the model loads and processes requests successfully, but **no audio data is returned** in the response. The server logs show `0 images` after generation completes, and all diffusion-specific parameters are ignored.
+When serving `stabilityai/stable-audio-open-1.0` with vLLM-Omni, the model loads and **generates audio successfully**, but **no audio data is returned** in the response. The server logs show `0 images` after generation completes.
+
+**Root Cause**: The `/v1/chat/completions` endpoint in `serving_chat.py` only serializes **image** output from diffusion models. When `final_output_type: audio` is set, the audio data is generated but not included in the response.
 
 ## Environment
 
@@ -43,6 +45,8 @@ curl -s http://localhost:8091/v1/chat/completions \
 
 ## Actual Behavior
 
+### Issue 1: Without Custom Stage Config (default behavior)
+
 1. **All parameters are ignored**:
 ```
 WARNING 01-31 20:58:22 [protocol.py:117] The following fields were present in the request but ignored: {'audio_end_in_s', 'num_inference_steps', 'audio_start_in_s', 'negative_prompt', 'modality', 'guidance_scale'}
@@ -56,20 +60,39 @@ INFO 01-31 20:58:22 [serving_chat.py:1891] Diffusion chat request chatcmpl-xxx: 
 3. **Stage config shows `image` output type** (should be `audio`):
 ```
 INFO 01-31 20:58:00 [omni_stage.py:100] [OmniStage] stage_config: {
-  'stage_id': 0,
-  'stage_type': 'diffusion',
-  ...
-  'final_output': True,
   'final_output_type': 'image'   # <-- WRONG: Should be 'audio' for Stable Audio
 }
 ```
 
-4. **Generation completes but returns 0 outputs**:
+### Issue 2: With Custom Stage Config (`final_output_type: audio`)
+
+After providing a custom stage config with `final_output_type: audio`:
+
+1. **Stage config is correctly applied**:
 ```
-INFO 01-31 20:58:24 [serving_chat.py:2063] Diffusion chat completed for request chatcmpl-xxx: 0 images
+[OmniStage] stage_config: {
+  'final_output_type': 'audio',   # ✅ Correct
+  'engine_output_type': 'audio',  # ✅ Correct
+}
 ```
 
-5. **Response contains no audio data** - the response is essentially empty or contains only metadata.
+2. **Parameters are now passed correctly**:
+```
+INFO [serving_chat.py:1891] Diffusion chat request chatcmpl-xxx: prompt='...', ref_images=0, params={'audio_end_in_s': 10.0, 'audio_start_in_s': 0.0, 'num_inference_steps': 50, 'guidance_scale': 7.0, 'negative_prompt': '...'}
+```
+
+3. **Generation completes successfully**:
+```
+INFO [diffusion_engine.py:80] Generation completed successfully.
+INFO [diffusion_engine.py:98] Post-processing completed in 0.0012 seconds
+```
+
+4. **BUT: serving_chat.py still reports "0 images"** - even though audio was generated:
+```
+INFO [serving_chat.py:2063] Diffusion chat completed for request chatcmpl-xxx: 0 images
+```
+
+5. **Response contains no audio data** - The generation succeeded but the output is not serialized into the response.
 
 ## Full Server Logs
 
@@ -120,20 +143,9 @@ INFO 01-31 20:58:24 [serving_chat.py:2063] Diffusion chat completed for request 
 
 ## Root Cause Analysis
 
-After investigating the vLLM-Omni source code, I found the following:
+After investigating the vLLM-Omni source code, I found **two separate issues**:
 
-### 1. StableAudioPipeline Implementation is Correct
-
-The `StableAudioPipeline` in `vllm_omni/diffusion/models/stable_audio/pipeline_stable_audio.py` correctly:
-- Implements `SupportAudioOutput` interface
-- Returns `DiffusionOutput(output=audio)` with audio tensor
-- Reads parameters from `req.sampling_params.extra_args`:
-```python
-audio_start_in_s = req.sampling_params.extra_args.get("audio_start_in_s", audio_start_in_s)
-audio_end_in_s = req.sampling_params.extra_args.get("audio_end_in_s", audio_end_in_s)
-```
-
-### 2. Missing Default Stage Config for Stable Audio
+### Issue 1: Missing Default Stage Config for Stable Audio
 
 Unlike other models (Qwen2.5-Omni, Qwen3-Omni, Bagel, etc.) which have default stage configs in `vllm_omni/model_executor/stage_configs/`, **there is no `stable_audio.yaml`** stage config file.
 
@@ -146,17 +158,40 @@ Current stage configs available:
 
 **Missing**: `stable_audio.yaml`
 
-### 3. Auto-Detection Defaults to Image Output
-
 When no stage config is provided, the auto-detection logic sets `final_output_type: 'image'` instead of detecting that Stable Audio should output audio.
 
-### 4. Parameters Not Routed to `extra_args`
+### Issue 2: serving_chat.py Does Not Serialize Audio Output (CRITICAL)
 
-The API layer (`protocol.py`) is ignoring the `extra_body` parameters instead of routing them to `OmniDiffusionSamplingParams.extra_args` where the pipeline expects them.
+Even with the correct stage config (`final_output_type: audio`), the `/v1/chat/completions` endpoint in `serving_chat.py` **does not serialize audio output into the response**.
+
+Evidence:
+- Generation completes successfully: `[diffusion_engine.py:80] Generation completed successfully`
+- Post-processing works: `Post-processing completed in 0.0012 seconds`
+- But response shows: `Diffusion chat completed: 0 images`
+
+The `serving_chat.py` code appears to only handle `images` output type for diffusion models:
+```python
+# Likely code pattern in serving_chat.py:
+logger.info(f"Diffusion chat completed for request {request_id}: {len(images)} images")
+# ^ This counts images, but doesn't handle audio output type
+```
+
+### Issue 3: StableAudioPipeline Implementation is Correct
+
+The `StableAudioPipeline` in `vllm_omni/diffusion/models/stable_audio/pipeline_stable_audio.py` correctly:
+- Implements `SupportAudioOutput` interface
+- Returns `DiffusionOutput(output=audio)` with audio tensor
+- Reads parameters from `req.sampling_params.extra_args`:
+```python
+audio_start_in_s = req.sampling_params.extra_args.get("audio_start_in_s", audio_start_in_s)
+audio_end_in_s = req.sampling_params.extra_args.get("audio_end_in_s", audio_end_in_s)
+```
+
+The pipeline itself works correctly - the bug is in the serving layer.
 
 ## Proposed Fix
 
-### Option 1: Add Default Stage Config (Recommended)
+### Fix 1: Add Default Stage Config (Partial Fix)
 
 Add a default stage config for Stable Audio at `vllm_omni/model_executor/stage_configs/stable_audio.yaml`:
 
@@ -180,7 +215,7 @@ stage_args:
       distributed_executor_backend: "mp"
       enable_prefix_caching: false
     final_output: true
-    final_output_type: audio  # <-- Key fix
+    final_output_type: audio  # <-- Key config
     is_comprehension: false
     default_sampling_params:
       num_inference_steps: 100
@@ -194,7 +229,28 @@ runtime:
     max_inflight: 1
 ```
 
-### Option 2: Auto-Detect Audio Models
+**Note**: This alone does NOT fix the issue - see Fix 2 below.
+
+### Fix 2: Update serving_chat.py to Handle Audio Output (CRITICAL)
+
+The `/v1/chat/completions` endpoint in `serving_chat.py` needs to handle `final_output_type: audio`:
+
+```python
+# In serving_chat.py, around line 2063
+# Current code (likely):
+logger.info(f"Diffusion chat completed for request {request_id}: {len(images)} images")
+
+# Should check output type and serialize accordingly:
+if final_output_type == "audio":
+    # Serialize audio output to response (base64 WAV, etc.)
+    audio_data = result.audio  # or similar
+    # Add to response choices
+elif final_output_type == "image":
+    # Existing image handling
+    images = result.images
+```
+
+### Fix 3: Auto-Detect Audio Models
 
 Update the model detection logic to automatically set `final_output_type: 'audio'` when detecting audio diffusion models:
 
@@ -203,10 +259,6 @@ Update the model detection logic to automatically set `final_output_type: 'audio
 if model_name.lower().contains("stable-audio") or pipeline_class == "StableAudioPipeline":
     final_output_type = "audio"
 ```
-
-### Option 3: Route Parameters Correctly
-
-Ensure `extra_body` parameters are properly routed to `OmniDiffusionSamplingParams.extra_args` for diffusion models.
 
 ## Workaround
 
