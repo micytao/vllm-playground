@@ -825,6 +825,7 @@ export const OmniModule = {
             document.getElementById('omni-port'),
             document.getElementById('omni-venv-path'),
             document.getElementById('omni-gpu-device'),
+            document.getElementById('omni-tensor-parallel'),
             document.getElementById('omni-gpu-memory'),
             document.getElementById('omni-cpu-offload'),
             document.getElementById('omni-torch-compile'),
@@ -1973,6 +1974,7 @@ export const OmniModule = {
             run_mode: runMode,
             venv_path: runMode === 'subprocess' ? document.getElementById('omni-venv-path')?.value : null,
             gpu_device: document.getElementById('omni-gpu-device')?.value || null,
+            tensor_parallel_size: parseInt(document.getElementById('omni-tensor-parallel')?.value) || 1,
             gpu_memory_utilization: parseFloat(document.getElementById('omni-gpu-memory')?.value) || 0.9,
             enable_cpu_offload: document.getElementById('omni-cpu-offload')?.checked || false,
             enable_torch_compile: document.getElementById('omni-torch-compile')?.checked || false,
@@ -2034,6 +2036,12 @@ export const OmniModule = {
             command += ` \\\n  ${image}`;
             command += ` \\\n  vllm serve ${config.model} --omni`;
             command += ` \\\n  --port ${config.port}`;
+            if (config.tensor_parallel_size > 1) {
+                command += ` \\\n  --tensor-parallel-size ${config.tensor_parallel_size}`;
+            }
+            if (config.gpu_memory_utilization && config.gpu_memory_utilization !== 0.9) {
+                command += ` \\\n  --gpu-memory-utilization ${config.gpu_memory_utilization}`;
+            }
             if (!config.enable_torch_compile) {
                 command += ` \\\n  --enforce-eager`;  // Disable torch.compile for faster startup
             }
@@ -2056,6 +2064,12 @@ export const OmniModule = {
 
             command += `\nvllm-omni serve ${config.model}`;
             command += ` \\\n  --port ${config.port}`;
+            if (config.tensor_parallel_size > 1) {
+                command += ` \\\n  --tensor-parallel-size ${config.tensor_parallel_size}`;
+            }
+            if (config.gpu_memory_utilization && config.gpu_memory_utilization !== 0.9) {
+                command += ` \\\n  --gpu-memory-utilization ${config.gpu_memory_utilization}`;
+            }
             if (!config.enable_torch_compile) {
                 command += ` \\\n  --enforce-eager`;  // Disable torch.compile for faster startup
             }
