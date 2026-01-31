@@ -288,24 +288,31 @@ class VideoGenerationResponse(BaseModel):
     generation_time: Optional[float] = None
 
 
-class AudioGenerationRequest(BaseModel):
-    """Request for audio generation via vLLM-Omni.
+class TTSGenerationRequest(BaseModel):
+    """Request for TTS (Text-to-Speech) generation via vLLM-Omni.
 
-    Supports two model types:
-    1. TTS models (Qwen3-TTS) - Uses /v1/audio/speech
-    2. Diffusion models (Stable Audio) - Uses /v1/chat/completions
+    Uses Qwen3-TTS models via /v1/audio/speech endpoint.
 
-    References:
+    Reference:
     - Qwen3-TTS: https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/examples/online_serving/qwen3_tts/
+    """
+
+    text: str
+    voice: Optional[str] = "Vivian"  # Voice ID: Vivian, Serena, Ono_Anna, Sohee, Ryan, Aiden, Dylan, Eric, Uncle_Fu
+    speed: float = 1.0  # Speech speed (0.25-4.0)
+    instructions: Optional[str] = None  # Voice style/emotion instructions
+
+
+class AudioGenerationRequest(BaseModel):
+    """Request for audio (music/SFX) generation via vLLM-Omni.
+
+    Uses Stable Audio models via /v1/chat/completions endpoint (diffusion-based).
+
+    Reference:
     - Stable Audio: Uses diffusion API like image generation
     """
 
     text: str
-    # TTS parameters (Qwen3-TTS)
-    voice: Optional[str] = "Vivian"  # Voice ID (Vivian, Ryan, Ethan, Olivia)
-    speed: float = 1.0  # Speech speed (0.25-4.0)
-    instructions: Optional[str] = None  # Voice style/emotion instructions
-    # Stable Audio parameters (diffusion)
     audio_duration: Optional[float] = 10.0  # Duration in seconds (max 47s)
     num_inference_steps: Optional[int] = 50  # Quality vs speed (20-200)
     guidance_scale: Optional[float] = 7.0  # Prompt adherence (1-15)
@@ -5424,17 +5431,14 @@ async def generate_video(request: VideoGenerationRequest) -> VideoGenerationResp
         return VideoGenerationResponse(success=False, error=str(e))
 
 
-@app.post("/api/omni/generate-audio")
-async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResponse:
-    """Generate audio using vLLM-Omni models.
+@app.post("/api/omni/generate-tts")
+async def generate_tts(request: TTSGenerationRequest) -> AudioGenerationResponse:
+    """Generate speech using TTS models (Qwen3-TTS).
 
-    Supports two types of audio models:
-    1. TTS models (Qwen3-TTS) - Uses /v1/audio/speech endpoint
-    2. Diffusion models (Stable Audio) - Uses /v1/chat/completions endpoint
+    Uses /v1/audio/speech endpoint for text-to-speech synthesis.
 
-    References:
+    Reference:
     - Qwen3-TTS: https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/examples/online_serving/qwen3_tts/
-    - Stable Audio: Uses diffusion API like image generation
     """
     global omni_running, omni_config
 
@@ -5444,68 +5448,22 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
     if not omni_config:
         return AudioGenerationResponse(success=False, error="vLLM-Omni configuration not available")
 
-    # Detect model type based on model name
-    model_name = omni_config.model.lower()
-    is_tts_model = "tts" in model_name or "qwen3-tts" in model_name
-    is_stable_audio = "stable-audio" in model_name or "stable_audio" in model_name
+    omni_url = f"http://localhost:{omni_config.port}/v1/audio/speech"
 
-    if is_tts_model:
-        # ═══════════════════════════════════════════════════════════════════════
-        # TTS Model (Qwen3-TTS) - Uses /v1/audio/speech endpoint
-        # ═══════════════════════════════════════════════════════════════════════
-        omni_url = f"http://localhost:{omni_config.port}/v1/audio/speech"
+    payload = {
+        "model": omni_config.model,
+        "input": request.text,
+        "voice": request.voice or "Vivian",
+        "response_format": "wav",
+    }
 
-        payload = {
-            "model": omni_config.model,
-            "input": request.text,
-            "voice": request.voice or "Vivian",
-            "response_format": "wav",
-        }
+    if request.speed and request.speed != 1.0:
+        payload["speed"] = request.speed
 
-        if request.speed and request.speed != 1.0:
-            payload["speed"] = request.speed
+    if request.instructions:
+        payload["instructions"] = request.instructions
 
-        if request.instructions:
-            payload["instructions"] = request.instructions
-
-        logger.info(f"Generating TTS audio: {request.text[:50]}...")
-
-    else:
-        # ═══════════════════════════════════════════════════════════════════════
-        # Diffusion Model (Stable Audio) - Uses /v1/chat/completions endpoint
-        # ═══════════════════════════════════════════════════════════════════════
-        omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
-
-        messages = [{"role": "user", "content": request.text}]
-
-        payload = {
-            "model": omni_config.model,
-            "messages": messages,
-            "extra_body": {
-                "modality": "audio",
-            },
-        }
-
-        # Add Stable Audio specific parameters
-        if request.audio_duration is not None:
-            payload["extra_body"]["audio_end_in_s"] = request.audio_duration
-            payload["extra_body"]["audio_start_in_s"] = 0.0
-
-        if request.num_inference_steps is not None:
-            payload["extra_body"]["num_inference_steps"] = request.num_inference_steps
-
-        if request.guidance_scale is not None:
-            payload["extra_body"]["guidance_scale"] = request.guidance_scale
-
-        if request.negative_prompt:
-            payload["extra_body"]["negative_prompt"] = request.negative_prompt
-
-        if request.seed is not None:
-            payload["extra_body"]["seed"] = request.seed
-
-        duration_str = f"{request.audio_duration}s" if request.audio_duration else "default"
-        steps_str = f"{request.num_inference_steps} steps" if request.num_inference_steps else "default"
-        logger.info(f"Generating Stable Audio: {request.text[:50]}... ({duration_str}, {steps_str})")
+    logger.info(f"Generating TTS audio: {request.text[:50]}... (voice: {request.voice}, speed: {request.speed}x)")
 
     start_time = time.time()
 
@@ -5517,12 +5475,10 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
 
                 if response.status != 200:
                     error_text = await response.text()
-                    logger.error(f"vLLM-Omni audio error: {error_text}")
+                    logger.error(f"vLLM-Omni TTS error: {error_text}")
                     return AudioGenerationResponse(success=False, error=f"vLLM-Omni error: {error_text}")
 
-                # ═══════════════════════════════════════════════════════════════
-                # Handle TTS response (raw audio bytes from /v1/audio/speech)
-                # ═══════════════════════════════════════════════════════════════
+                # TTS returns raw audio bytes
                 if "audio" in content_type or "application/octet-stream" in content_type:
                     audio_bytes = await response.read()
 
@@ -5553,74 +5509,148 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
                         duration=None,
                         generation_time=generation_time,
                     )
-
-                # ═══════════════════════════════════════════════════════════════
-                # Handle Diffusion response (JSON from /v1/chat/completions)
-                # ═══════════════════════════════════════════════════════════════
                 else:
-                    result = await response.json()
-
-                    # Check for error in response
-                    if "error" in result:
-                        error_msg = result["error"]
-                        if isinstance(error_msg, dict):
-                            error_msg = error_msg.get("message", str(error_msg))
-                        return AudioGenerationResponse(success=False, error=f"Generation failed: {error_msg}")
-
-                    # Extract audio from diffusion response
-                    choices = result.get("choices", [])
-                    if not choices:
-                        return AudioGenerationResponse(success=False, error="No choices in response")
-
-                    message = choices[0].get("message", {})
-                    base64_data = None
-                    audio_format = "audio/wav"
-
-                    # Check message.audio (Qwen3-Omni format)
-                    audio_obj = message.get("audio")
-                    if audio_obj:
-                        if isinstance(audio_obj, dict):
-                            base64_data = audio_obj.get("data")
-                            audio_format = f"audio/{audio_obj.get('format', 'wav')}"
-                        elif isinstance(audio_obj, str):
-                            base64_data = audio_obj
-
-                    # Check content list for audio (diffusion format)
-                    if not base64_data:
-                        content = message.get("content", [])
-                        if isinstance(content, list):
-                            for item in content:
-                                if isinstance(item, dict) and item.get("type") == "audio":
-                                    audio_url = item.get("audio_url", {}).get("url", "")
-                                    if audio_url.startswith("data:audio"):
-                                        try:
-                                            mime_part = audio_url.split(";")[0]
-                                            audio_format = mime_part.replace("data:", "")
-                                        except (IndexError, ValueError):
-                                            audio_format = "audio/wav"
-                                        base64_data = audio_url.split(",", 1)[1] if "," in audio_url else audio_url
-                                    elif audio_url:
-                                        base64_data = audio_url
-                                    break
-                        elif isinstance(content, str) and content:
-                            base64_data = content
-
-                    if not base64_data:
-                        return AudioGenerationResponse(
-                            success=False,
-                            error="No audio data in response - generation may have failed (check server logs for OOM errors)",
-                        )
-
-                    generation_time = time.time() - start_time
-                    logger.info(f"Diffusion audio generated in {generation_time:.2f}s, format: {audio_format}")
-
+                    # Unexpected response format
+                    error_text = await response.text()
                     return AudioGenerationResponse(
-                        success=True,
-                        audio_base64=base64_data,
-                        audio_format=audio_format,
-                        duration=None,
-                        generation_time=generation_time,
+                        success=False,
+                        error=f"Unexpected response format: {content_type}. Response: {error_text[:500]}",
                     )
+
+    except asyncio.TimeoutError:
+        return AudioGenerationResponse(success=False, error="TTS generation timed out (5 minute limit)")
+    except Exception as e:
+        logger.error(f"TTS generation error: {e}")
+        return AudioGenerationResponse(success=False, error=str(e))
+
+
+@app.post("/api/omni/generate-audio")
+async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResponse:
+    """Generate audio (music/SFX) using Stable Audio models.
+
+    Uses /v1/chat/completions endpoint with diffusion-based generation.
+
+    Reference:
+    - Stable Audio: Uses diffusion API like image generation
+    """
+    global omni_running, omni_config
+
+    if not omni_running:
+        return AudioGenerationResponse(success=False, error="vLLM-Omni server is not running")
+
+    if not omni_config:
+        return AudioGenerationResponse(success=False, error="vLLM-Omni configuration not available")
+
+    omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
+
+    messages = [{"role": "user", "content": request.text}]
+
+    payload = {
+        "model": omni_config.model,
+        "messages": messages,
+        "extra_body": {
+            "modality": "audio",
+        },
+    }
+
+    # Add Stable Audio specific parameters
+    if request.audio_duration is not None:
+        payload["extra_body"]["audio_end_in_s"] = request.audio_duration
+        payload["extra_body"]["audio_start_in_s"] = 0.0
+
+    if request.num_inference_steps is not None:
+        payload["extra_body"]["num_inference_steps"] = request.num_inference_steps
+
+    if request.guidance_scale is not None:
+        payload["extra_body"]["guidance_scale"] = request.guidance_scale
+
+    if request.negative_prompt:
+        payload["extra_body"]["negative_prompt"] = request.negative_prompt
+
+    if request.seed is not None:
+        payload["extra_body"]["seed"] = request.seed
+
+    duration_str = f"{request.audio_duration}s" if request.audio_duration else "default"
+    steps_str = f"{request.num_inference_steps} steps" if request.num_inference_steps else "default"
+    logger.info(f"Generating Stable Audio: {request.text[:50]}... ({duration_str}, {steps_str})")
+
+    start_time = time.time()
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=300)  # 5 minutes for audio generation
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(omni_url, json=payload) as response:
+                content_type = response.headers.get("Content-Type", "")
+
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"vLLM-Omni audio error: {error_text}")
+                    return AudioGenerationResponse(success=False, error=f"vLLM-Omni error: {error_text}")
+
+                # Diffusion returns JSON with audio data
+                result = await response.json()
+
+                # Check for error in response
+                if "error" in result:
+                    error_msg = result["error"]
+                    if isinstance(error_msg, dict):
+                        error_msg = error_msg.get("message", str(error_msg))
+                    return AudioGenerationResponse(success=False, error=f"Generation failed: {error_msg}")
+
+                # Extract audio from diffusion response
+                choices = result.get("choices", [])
+                if not choices:
+                    return AudioGenerationResponse(success=False, error="No choices in response")
+
+                message = choices[0].get("message", {})
+                base64_data = None
+                audio_format = "audio/wav"
+
+                # Check message.audio (Qwen3-Omni format)
+                audio_obj = message.get("audio")
+                if audio_obj:
+                    if isinstance(audio_obj, dict):
+                        base64_data = audio_obj.get("data")
+                        audio_format = f"audio/{audio_obj.get('format', 'wav')}"
+                    elif isinstance(audio_obj, str):
+                        base64_data = audio_obj
+
+                # Check content list for audio (diffusion format)
+                if not base64_data:
+                    content = message.get("content", [])
+                    if isinstance(content, list):
+                        for item in content:
+                            if isinstance(item, dict) and item.get("type") == "audio":
+                                audio_url = item.get("audio_url", {}).get("url", "")
+                                if audio_url.startswith("data:audio"):
+                                    try:
+                                        mime_part = audio_url.split(";")[0]
+                                        audio_format = mime_part.replace("data:", "")
+                                    except (IndexError, ValueError):
+                                        audio_format = "audio/wav"
+                                    base64_data = audio_url.split(",", 1)[1] if "," in audio_url else audio_url
+                                elif audio_url:
+                                    base64_data = audio_url
+                                break
+                    elif isinstance(content, str) and content:
+                        base64_data = content
+
+                if not base64_data:
+                    return AudioGenerationResponse(
+                        success=False,
+                        error="No audio data in response - generation may have failed (check server logs for OOM errors)",
+                    )
+
+                generation_time = time.time() - start_time
+                logger.info(f"Diffusion audio generated in {generation_time:.2f}s, format: {audio_format}")
+
+                return AudioGenerationResponse(
+                    success=True,
+                    audio_base64=base64_data,
+                    audio_format=audio_format,
+                    duration=None,
+                    generation_time=generation_time,
+                )
 
     except aiohttp.ClientError as e:
         logger.error(f"Connection error to vLLM-Omni: {e}")
@@ -5923,20 +5953,13 @@ async def list_omni_models():
                 "description": "Image-to-video generation",
             },
         ],
-        "audio": [
-            # Stable Audio (diffusion-based, uses /v1/chat/completions)
-            {
-                "id": "stabilityai/stable-audio-open-1.0",
-                "name": "Stable Audio Open",
-                "vram": "32GB+",
-                "description": "Text-to-audio/music generation (diffusion model, up to 47s)",
-            },
+        "tts": [
             # Qwen TTS Models (uses /v1/audio/speech)
             {
-                "id": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
-                "name": "Qwen3 TTS Custom Voice",
-                "vram": "24GB+",
-                "description": "TTS with custom voice cloning (1.7B params)",
+                "id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+                "name": "Qwen3 TTS Base",
+                "vram": "12GB",
+                "description": "Lightweight TTS model (0.6B params)",
             },
             {
                 "id": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
@@ -5945,10 +5968,19 @@ async def list_omni_models():
                 "description": "TTS with voice design capabilities (1.7B params)",
             },
             {
-                "id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
-                "name": "Qwen3 TTS Base",
-                "vram": "12GB",
-                "description": "Lightweight TTS model (0.6B params)",
+                "id": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+                "name": "Qwen3 TTS Custom Voice",
+                "vram": "24GB+",
+                "description": "TTS with custom voice cloning (1.7B params)",
+            },
+        ],
+        "audio": [
+            # Stable Audio (diffusion-based, uses /v1/chat/completions)
+            {
+                "id": "stabilityai/stable-audio-open-1.0",
+                "name": "Stable Audio Open",
+                "vram": "32GB+",
+                "description": "Text-to-audio/music generation (diffusion model, up to 47s)",
             },
         ],
     }

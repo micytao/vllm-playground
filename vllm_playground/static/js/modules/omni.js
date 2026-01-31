@@ -284,7 +284,72 @@ export const OmniModule = {
         },
 
         // =====================================================================
-        // AUDIO GENERATION TEMPLATES
+        // TTS (TEXT-TO-SPEECH) TEMPLATES
+        // =====================================================================
+        tts: {
+            groups: [
+                {
+                    label: 'Introductions',
+                    templates: [
+                        { id: 'tts-playground-intro', name: 'vLLM Playground Intro' },
+                        { id: 'tts-welcome', name: 'Welcome Message' },
+                        { id: 'tts-demo', name: 'TTS Demo' }
+                    ]
+                },
+                {
+                    label: 'Professional',
+                    templates: [
+                        { id: 'tts-news', name: 'News Anchor Style' },
+                        { id: 'tts-presentation', name: 'Presentation Opening' },
+                        { id: 'tts-tutorial', name: 'Tutorial Narration' }
+                    ]
+                },
+                {
+                    label: 'Creative',
+                    templates: [
+                        { id: 'tts-story', name: 'Story Narration' },
+                        { id: 'tts-podcast', name: 'Podcast Intro' }
+                    ]
+                }
+            ],
+            data: {
+                'tts-playground-intro': {
+                    prompt: 'Welcome to vLLM Playground! I am your AI assistant, powered by vLLM and vLLM-Omni. This playground allows you to experiment with state-of-the-art language models, generate stunning images, create videos, and now, synthesize natural-sounding speech like this. Whether you are a researcher, developer, or AI enthusiast, vLLM Playground provides an intuitive interface to explore the latest in generative AI. Let us get started!',
+                    negative: ''
+                },
+                'tts-welcome': {
+                    prompt: 'Hello and welcome! Thank you for using our text-to-speech service. I can help you convert any text into natural, human-like speech. Feel free to type anything you would like me to say, and I will do my best to deliver it with clarity and expression.',
+                    negative: ''
+                },
+                'tts-demo': {
+                    prompt: 'This is a demonstration of the Qwen3 text-to-speech model. Notice how the speech flows naturally, with appropriate pauses, intonation, and rhythm. The model can handle various types of content, from conversational dialogue to formal announcements.',
+                    negative: ''
+                },
+                'tts-news': {
+                    prompt: 'Good evening. In today\'s top stories: Researchers have made significant breakthroughs in artificial intelligence, with new models demonstrating unprecedented capabilities in language understanding and generation. Meanwhile, tech companies continue to invest heavily in AI infrastructure. Stay tuned for more updates.',
+                    negative: ''
+                },
+                'tts-presentation': {
+                    prompt: 'Good morning everyone, and thank you for joining today\'s presentation. We have an exciting agenda ahead of us, covering the latest developments in our field. I\'ll be walking you through the key findings and their implications for our work going forward.',
+                    negative: ''
+                },
+                'tts-tutorial': {
+                    prompt: 'In this tutorial, we\'ll walk through the process step by step. First, make sure you have all the necessary prerequisites installed. Then, follow along as I guide you through each stage of the setup. Don\'t worry if you encounter any issues - I\'ll address common problems along the way.',
+                    negative: ''
+                },
+                'tts-story': {
+                    prompt: 'Once upon a time, in a land far away, there lived a curious inventor who dreamed of building machines that could think and speak. Day after day, she worked in her workshop, combining gears and circuits until one morning, her creation spoke its first words.',
+                    negative: ''
+                },
+                'tts-podcast': {
+                    prompt: 'Hey everyone, welcome back to the show! I\'m your host, and today we have an incredible episode lined up for you. We\'re going to dive deep into some fascinating topics that I know you\'re going to love. So grab your coffee, get comfortable, and let\'s get into it!',
+                    negative: ''
+                }
+            }
+        },
+
+        // =====================================================================
+        // AUDIO GENERATION TEMPLATES (MUSIC/SFX)
         // =====================================================================
         audio: {
             groups: [
@@ -518,9 +583,43 @@ export const OmniModule = {
             fps: 16,
             resolution: '320x512'  // Minimal resolution with CPU offload
         },
-        // Audio Generation Recipes
+        // TTS (Text-to-Speech) Recipes - Qwen3 TTS
+        // Note: Uses /v1/audio/speech endpoint for speech synthesis
+        // Apache-2.0 licensed, no HF token required
+        // Note: Container mode may not work due to missing onnxruntime in vLLM-Omni image
+        // Use subprocess mode with local vLLM-Omni install that includes onnxruntime
+        'tts-base': {
+            name: 'Qwen3 TTS Base (12GB)',
+            model: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base',
+            model_type: 'tts',
+            gpu_memory: 0.9,
+            cpu_offload: false,
+            torch_compile: false,
+            speed: 1.0,
+            container_limitation: 'onnxruntime'  // Flag for container mode warning
+        },
+        'tts-voice-design': {
+            name: 'Qwen3 TTS Voice Design (24GB+)',
+            model: 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign',
+            model_type: 'tts',
+            gpu_memory: 0.9,
+            cpu_offload: false,
+            torch_compile: false,
+            speed: 1.0,
+            container_limitation: 'onnxruntime'
+        },
+        'tts-custom-voice': {
+            name: 'Qwen3 TTS Custom Voice (24GB+)',
+            model: 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',
+            model_type: 'tts',
+            gpu_memory: 0.9,
+            cpu_offload: false,
+            torch_compile: false,
+            speed: 1.0,
+            container_limitation: 'onnxruntime'
+        },
+        // Audio Generation Recipes (Music/SFX) - Stable Audio
         // Note: Stable Audio requires HF token (gated model) - uses /v1/chat/completions (diffusion)
-        // Note: Qwen3 TTS models may not work in container mode due to missing onnxruntime - uses /v1/audio/speech
         'audio-generation': {
             name: 'Stable Audio (32GB+)',
             model: 'stabilityai/stable-audio-open-1.0',
@@ -538,39 +637,6 @@ export const OmniModule = {
             cpu_offload: true,
             torch_compile: false,
             requires_hf_token: true
-        },
-        // Qwen3 TTS recipes - Apache-2.0 licensed, no HF token required
-        // Note: Container mode may not work due to missing onnxruntime in vLLM-Omni image
-        // Use subprocess mode with local vLLM-Omni install that includes onnxruntime
-        'audio-tts-light': {
-            name: 'Qwen3 TTS Base (12GB)',
-            model: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base',
-            model_type: 'audio',
-            gpu_memory: 0.9,
-            cpu_offload: false,
-            torch_compile: false,
-            speed: 1.0,
-            container_limitation: 'onnxruntime'  // Flag for container mode warning
-        },
-        'audio-tts-quality': {
-            name: 'Qwen3 TTS Voice Design (24GB+)',
-            model: 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign',
-            model_type: 'audio',
-            gpu_memory: 0.9,
-            cpu_offload: false,
-            torch_compile: false,
-            speed: 1.0,
-            container_limitation: 'onnxruntime'
-        },
-        'audio-tts-custom': {
-            name: 'Qwen3 TTS Custom Voice (24GB+)',
-            model: 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',
-            model_type: 'audio',
-            gpu_memory: 0.9,
-            cpu_offload: false,
-            torch_compile: false,
-            speed: 1.0,
-            container_limitation: 'onnxruntime'
         }
     },
 
@@ -766,6 +832,8 @@ export const OmniModule = {
         document.getElementById('omni-generate-btn')?.addEventListener('click', () => {
             if (this.currentModelType === 'video') {
                 this.generateVideo();
+            } else if (this.currentModelType === 'tts') {
+                this.generateTTS();
             } else if (this.currentModelType === 'audio') {
                 this.generateAudio();
             } else {
@@ -851,6 +919,11 @@ export const OmniModule = {
         });
         document.getElementById('omni-guidance')?.addEventListener('input', (e) => {
             document.getElementById('omni-guidance-value').textContent = e.target.value;
+        });
+
+        // TTS parameter slider (for Qwen3-TTS)
+        document.getElementById('omni-tts-speed')?.addEventListener('input', (e) => {
+            document.getElementById('omni-tts-speed-value').textContent = e.target.value;
         });
 
         // Audio parameter sliders (for Stable Audio)
@@ -1198,19 +1271,22 @@ export const OmniModule = {
         const guidanceGroup = document.getElementById('omni-guidance-group');
         const imageUpload = document.getElementById('omni-image-upload');
         const tipEl = document.getElementById('omni-model-type-tip');
+        const ttsParamsGroup = document.getElementById('omni-tts-params-group');
+        const audioParamsGroup = document.getElementById('omni-audio-params-group');
 
         // Update tip text based on model type
         const tipTexts = {
             'image': 'Generate images from text prompts (Text-to-Image)',
             'video': 'Generate videos from text prompts (Text-to-Video)',
-            'audio': 'Generate speech/audio from text (Text-to-Speech)',
+            'tts': 'Convert text to natural speech (Qwen3-TTS)',
+            'audio': 'Generate music and sound effects (Stable Audio)',
             'omni': 'Multimodal chat with text AND audio input/output'
         };
         if (tipEl) {
             tipEl.textContent = tipTexts[modelType] || tipTexts['image'];
         }
 
-        // Update studio UI elements for image/video/audio
+        // Update studio UI elements for image/video/tts/audio
         this.updateStudioUI(modelType);
 
         if (modelType === 'omni') {
@@ -1219,23 +1295,32 @@ export const OmniModule = {
             if (chatPanel) chatPanel.style.display = 'flex';
             if (generationParams) generationParams.style.display = 'none';
         } else {
-            // Show generation studio for image/video models
+            // Show generation studio for image/video/tts/audio models
             if (studioPanel) studioPanel.style.display = 'flex';
             if (chatPanel) chatPanel.style.display = 'none';
 
             // Show/hide generation parameters based on model type:
             // - Image: Show image size, steps, guidance
             // - Video: Show video params (resolution, duration, fps), steps, guidance
+            // - TTS: Show TTS params (voice, instructions, speed)
             // - Audio: Show audio params (duration, steps, guidance) for Stable Audio
-            const audioParamsGroup = document.getElementById('omni-audio-params-group');
 
-            if (modelType === 'audio') {
-                // Show generation params section for audio (Stable Audio has diffusion params)
+            if (modelType === 'tts') {
+                // TTS: Show voice, instructions, speed
                 if (generationParams) generationParams.style.display = 'block';
                 if (imageSizeGroup) imageSizeGroup.style.display = 'none';
                 if (videoParamsGroup) videoParamsGroup.style.display = 'none';
+                if (ttsParamsGroup) ttsParamsGroup.style.display = 'block';
+                if (audioParamsGroup) audioParamsGroup.style.display = 'none';
+                if (stepsGroup) stepsGroup.style.display = 'none';
+                if (guidanceGroup) guidanceGroup.style.display = 'none';
+            } else if (modelType === 'audio') {
+                // Audio (Stable Audio): Show duration, steps, guidance
+                if (generationParams) generationParams.style.display = 'block';
+                if (imageSizeGroup) imageSizeGroup.style.display = 'none';
+                if (videoParamsGroup) videoParamsGroup.style.display = 'none';
+                if (ttsParamsGroup) ttsParamsGroup.style.display = 'none';
                 if (audioParamsGroup) audioParamsGroup.style.display = 'block';
-                // Hide general steps/guidance (we have audio-specific ones)
                 if (stepsGroup) stepsGroup.style.display = 'none';
                 if (guidanceGroup) guidanceGroup.style.display = 'none';
             } else {
@@ -1244,7 +1329,8 @@ export const OmniModule = {
                 if (imageSizeGroup) imageSizeGroup.style.display = modelType === 'image' ? 'block' : 'none';
                 // Video params (resolution, duration, fps) only for video generation
                 if (videoParamsGroup) videoParamsGroup.style.display = modelType === 'video' ? 'block' : 'none';
-                // Hide audio params for non-audio models
+                // Hide TTS/audio params for non-audio models
+                if (ttsParamsGroup) ttsParamsGroup.style.display = 'none';
                 if (audioParamsGroup) audioParamsGroup.style.display = 'none';
                 // Inference Steps and Guidance Scale for both image and video
                 if (stepsGroup) stepsGroup.style.display = 'block';
@@ -1252,7 +1338,7 @@ export const OmniModule = {
             }
 
             // Image upload is only available for image models that support image editing
-            // Hide for video/audio model types; visibility for image models is handled by updateImageUploadVisibility
+            // Hide for video/audio/tts model types; visibility for image models is handled by updateImageUploadVisibility
             if (imageUpload && modelType !== 'image') {
                 imageUpload.style.display = 'none';
                 this.clearUploadedImage();
@@ -1264,6 +1350,17 @@ export const OmniModule = {
 
         // Update prompt templates for the selected model type
         this.updatePromptTemplates(modelType);
+
+        // Clear prompt and negative prompt when switching model types
+        // (templates are type-specific, so old prompts may not be relevant)
+        const promptTextarea = document.getElementById('omni-prompt');
+        const negativePromptTextarea = document.getElementById('omni-negative-prompt');
+        if (promptTextarea) {
+            promptTextarea.value = '';
+        }
+        if (negativePromptTextarea) {
+            negativePromptTextarea.value = '';
+        }
     },
 
     /**
@@ -1575,16 +1672,27 @@ export const OmniModule = {
                 showImageUpload: false,
                 showNegativePrompt: true
             },
-            'audio': {
-                icon: '🔊',
-                title: 'Audio Generation (TTS)',
-                buttonText: 'Generate Audio',
+            'tts': {
+                icon: '🎙️',
+                title: 'Text-to-Speech',
+                buttonText: 'Generate Speech',
                 placeholder: 'Enter the text you want to convert to speech...',
-                galleryIcon: '🔊',
-                galleryText: 'Generated audio will appear here',
+                galleryIcon: '🎙️',
+                galleryText: 'Generated speech will appear here',
                 galleryHint: 'Start the server and enter text to synthesize',
                 showImageUpload: false,
                 showNegativePrompt: false
+            },
+            'audio': {
+                icon: '🎵',
+                title: 'Audio Generation (Music/SFX)',
+                buttonText: 'Generate Audio',
+                placeholder: 'Describe the music or sound you want to generate...',
+                galleryIcon: '🎵',
+                galleryText: 'Generated audio will appear here',
+                galleryHint: 'Start the server and enter a prompt to generate',
+                showImageUpload: false,
+                showNegativePrompt: true
             }
         };
 
@@ -1606,9 +1714,11 @@ export const OmniModule = {
 
     async loadModelList() {
         try {
-            const response = await fetch('/api/omni/models');
+            // Add cache-busting parameter to ensure fresh data
+            const response = await fetch(`/api/omni/models?_=${Date.now()}`);
             if (response.ok) {
                 this.modelList = await response.json();
+                console.log('[Omni] Loaded model list:', Object.keys(this.modelList));
                 this.updateModelOptions(this.currentModelType);
             }
         } catch (error) {
@@ -1618,9 +1728,14 @@ export const OmniModule = {
 
     updateModelOptions(modelType) {
         const select = document.getElementById('omni-model-select');
-        if (!select || !this.modelList) return;
+        if (!select || !this.modelList) {
+            console.warn('[Omni] updateModelOptions: select element or modelList not available');
+            return;
+        }
 
         const models = this.modelList[modelType] || [];
+        console.log(`[Omni] updateModelOptions: type=${modelType}, found ${models.length} models`);
+
         select.innerHTML = models.map(m =>
             `<option value="${m.id}" title="${m.description || ''}">${m.name} (${m.vram})</option>`
         ).join('');
@@ -2290,7 +2405,7 @@ export const OmniModule = {
         }
     },
 
-    async generateAudio() {
+    async generateTTS() {
         // Check if server is ready
         if (!this.serverReady) {
             if (this.serverRunning) {
@@ -2307,29 +2422,86 @@ export const OmniModule = {
             return;
         }
 
-        // Build request with both TTS and Stable Audio parameters
-        // Backend will use appropriate params based on model type
+        // Build request with TTS-specific parameters (Qwen3-TTS)
         const voice = document.getElementById('omni-tts-voice')?.value || 'Vivian';
         const instructions = document.getElementById('omni-tts-instructions')?.value?.trim() || null;
-        const audioDuration = parseFloat(document.getElementById('omni-audio-duration')?.value) || 10.0;
-        const audioSteps = parseInt(document.getElementById('omni-audio-steps')?.value) || 50;
-        const audioGuidance = parseFloat(document.getElementById('omni-audio-guidance')?.value) || 7.0;
+        const speed = parseFloat(document.getElementById('omni-tts-speed')?.value) || 1.0;
 
         const request = {
             text: prompt,
-            // TTS parameters (Qwen3-TTS)
             voice: voice,
-            instructions: instructions,
-            // Stable Audio parameters (diffusion)
+            speed: speed,
+            instructions: instructions
+        };
+
+        this.ui.showNotification('Generating speech...', 'info');
+        this.addLog(`Generating speech: "${prompt.substring(0, 50)}..." (voice: ${voice}, speed: ${speed}x)`);
+
+        const generateBtn = document.getElementById('omni-generate-btn');
+        const generateBtnText = document.getElementById('omni-generate-btn-text');
+        if (generateBtn) generateBtn.disabled = true;
+        if (generateBtnText) generateBtnText.textContent = 'Generating...';
+
+        try {
+            const response = await fetch('/api/omni/generate-tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(request)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.addAudioToGallery(result.audio_base64, prompt, result.duration, result.audio_format);
+                this.ui.showNotification(`Speech generated in ${result.generation_time?.toFixed(1)}s`, 'success');
+                this.addLog(`Speech generated in ${result.generation_time?.toFixed(1)}s`);
+            } else {
+                this.ui.showNotification(`Generation failed: ${result.error}`, 'error');
+                this.addLog(`ERROR: ${result.error}`);
+            }
+        } catch (error) {
+            this.ui.showNotification(`Error: ${error.message}`, 'error');
+            this.addLog(`ERROR: ${error.message}`);
+        } finally {
+            if (generateBtn) generateBtn.disabled = false;
+            if (generateBtnText) generateBtnText.textContent = 'Generate Speech';
+        }
+    },
+
+    async generateAudio() {
+        // Check if server is ready (Stable Audio - music/SFX generation)
+        if (!this.serverReady) {
+            if (this.serverRunning) {
+                this.ui.showNotification('Server is still loading, please wait...', 'warning');
+            } else {
+                this.ui.showNotification('Please start the server first', 'warning');
+            }
+            return;
+        }
+
+        const prompt = document.getElementById('omni-prompt')?.value?.trim();
+        if (!prompt) {
+            this.ui.showNotification('Please enter a description for the audio', 'warning');
+            return;
+        }
+
+        // Build request with Stable Audio parameters (diffusion-based)
+        const audioDuration = parseFloat(document.getElementById('omni-audio-duration')?.value) || 10.0;
+        const audioSteps = parseInt(document.getElementById('omni-audio-steps')?.value) || 50;
+        const audioGuidance = parseFloat(document.getElementById('omni-audio-guidance')?.value) || 7.0;
+        const negativePrompt = document.getElementById('omni-negative-prompt')?.value?.trim() || 'low quality, average quality';
+
+        const request = {
+            text: prompt,
             audio_duration: audioDuration,
             num_inference_steps: audioSteps,
             guidance_scale: audioGuidance,
-            negative_prompt: "low quality, average quality",
+            negative_prompt: negativePrompt,
             seed: document.getElementById('omni-seed')?.value ? parseInt(document.getElementById('omni-seed').value) : null,
         };
 
         this.ui.showNotification('Generating audio...', 'info');
-        this.addLog(`Generating audio: "${prompt.substring(0, 50)}..." (voice: ${voice}, ${audioDuration}s, ${audioSteps} steps)`);
+        this.addLog(`Generating audio: "${prompt.substring(0, 50)}..." (${audioDuration}s, ${audioSteps} steps, guidance: ${audioGuidance})`);
 
         const generateBtn = document.getElementById('omni-generate-btn');
         const generateBtnText = document.getElementById('omni-generate-btn-text');
