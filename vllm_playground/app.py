@@ -185,7 +185,7 @@ class OmniConfig(BaseModel):
     model: str = "Tongyi-MAI/Z-Image-Turbo"  # Default image generation model
     host: str = "0.0.0.0"
     port: int = 8091  # Different default port from vLLM (8000)
-    model_type: Literal["image", "omni", "video", "audio"] = "image"
+    model_type: Literal["image", "omni", "video", "tts", "audio"] = "image"
 
     # Image generation defaults
     default_height: int = 1024
