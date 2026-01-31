@@ -1,0 +1,42 @@
+# Stage config for Stable Audio Open (stabilityai/stable-audio-open-1.0)
+# This configures the diffusion pipeline for audio output instead of image
+
+stage_args:
+  - stage_id: 0
+    stage_type: diffusion
+    runtime:
+      process: true
+      devices: "0"
+      max_batch_size: 1
+    engine_args:
+      model_stage: diffusion
+      model_arch: StableAudioPipeline
+      gpu_memory_utilization: 0.8
+      enforce_eager: true
+      trust_remote_code: true
+      engine_output_type: audio
+      distributed_executor_backend: "mp"
+      enable_prefix_caching: false
+      # Diffusion-specific settings
+      parallel_config:
+        pipeline_parallel_size: 1
+        data_parallel_size: 1
+        tensor_parallel_size: 1
+      vae_use_slicing: false
+      vae_use_tiling: false
+      cache_backend: none
+      enable_cpu_offload: false
+    final_output: true
+    final_output_type: audio
+    is_comprehension: false
+    default_sampling_params:
+      num_inference_steps: 100
+      guidance_scale: 7.0
+      seed: 42
+
+# Runtime configuration
+runtime:
+  enabled: true
+  defaults:
+    window_size: -1
+    max_inflight: 1

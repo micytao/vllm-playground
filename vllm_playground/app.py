@@ -5060,6 +5060,13 @@ async def start_omni_server(config: OmniConfig):
                 # Disable torch.compile for faster startup and lower memory usage
                 cmd.append("--enforce-eager")
 
+            # Add stage configs for Stable Audio (configures audio output type)
+            if "stable-audio" in config.model.lower():
+                stage_config_path = Path(__file__).parent / "config" / "stable_audio.yaml"
+                if stage_config_path.exists():
+                    cmd.extend(["--stage-configs-path", str(stage_config_path)])
+                    logger.info(f"Using Stable Audio stage config: {stage_config_path}")
+
             # Set environment
             env = os.environ.copy()
             if config.gpu_device:
@@ -5541,35 +5548,35 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
     if not omni_config:
         return AudioGenerationResponse(success=False, error="vLLM-Omni configuration not available")
 
+    # Use /v1/chat/completions endpoint with extra_body for diffusion parameters
+    # Requires proper stage config with final_output_type: audio
     omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
 
     messages = [{"role": "user", "content": request.text}]
 
-    # vLLM-Omni diffusion expects parameters at top level, NOT in extra_body
-    # See: https://docs.vllm.ai/projects/vllm-omni/en/latest/getting_started/quickstart/
+    # Build payload with extra_body for Stable Audio parameters
     payload = {
         "model": omni_config.model,
         "messages": messages,
-        # Diffusion parameters at top level
-        "modality": "audio",
+        "extra_body": {},
     }
 
-    # Add Stable Audio specific parameters at top level
+    # Add Stable Audio specific parameters in extra_body
     if request.audio_duration is not None:
-        payload["audio_end_in_s"] = request.audio_duration
-        payload["audio_start_in_s"] = 0.0
+        payload["extra_body"]["audio_end_in_s"] = request.audio_duration
+        payload["extra_body"]["audio_start_in_s"] = 0.0
 
     if request.num_inference_steps is not None:
-        payload["num_inference_steps"] = request.num_inference_steps
+        payload["extra_body"]["num_inference_steps"] = request.num_inference_steps
 
     if request.guidance_scale is not None:
-        payload["guidance_scale"] = request.guidance_scale
+        payload["extra_body"]["guidance_scale"] = request.guidance_scale
 
     if request.negative_prompt:
-        payload["negative_prompt"] = request.negative_prompt
+        payload["extra_body"]["negative_prompt"] = request.negative_prompt
 
     if request.seed is not None:
-        payload["seed"] = request.seed
+        payload["extra_body"]["seed"] = request.seed
 
     duration_str = f"{request.audio_duration}s" if request.audio_duration else "default"
     steps_str = f"{request.num_inference_steps} steps" if request.num_inference_steps else "default"
@@ -5593,14 +5600,6 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
 
                 # Debug: Log the response structure to understand the format
                 logger.info(f"Audio response keys: {list(result.keys())}")
-                if "choices" in result and result["choices"]:
-                    msg = result["choices"][0].get("message", {})
-                    logger.info(f"Message keys: {list(msg.keys())}")
-                    logger.info(f"Message content type: {type(msg.get('content'))}")
-                    if isinstance(msg.get("content"), list) and msg.get("content"):
-                        logger.info(
-                            f"Content[0] keys: {list(msg['content'][0].keys()) if isinstance(msg['content'][0], dict) else 'not a dict'}"
-                        )
 
                 # Check for error in response
                 if "error" in result:
@@ -5609,71 +5608,111 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
                         error_msg = error_msg.get("message", str(error_msg))
                     return AudioGenerationResponse(success=False, error=f"Generation failed: {error_msg}")
 
-                # Extract audio from diffusion response
-                choices = result.get("choices", [])
-                if not choices:
-                    return AudioGenerationResponse(success=False, error="No choices in response")
-
-                message = choices[0].get("message", {})
                 base64_data = None
                 audio_format = "audio/wav"
 
-                # Check message.audio (Qwen3-Omni format)
-                audio_obj = message.get("audio")
-                if audio_obj:
-                    if isinstance(audio_obj, dict):
-                        base64_data = audio_obj.get("data")
-                        audio_format = f"audio/{audio_obj.get('format', 'wav')}"
-                    elif isinstance(audio_obj, str):
-                        base64_data = audio_obj
+                # ═══════════════════════════════════════════════════════════════
+                # Format 1: /v1/images/generations response format
+                # { "data": [{"url": "data:audio/wav;base64,..."} or {"b64_json": "..."}] }
+                # ═══════════════════════════════════════════════════════════════
+                if "data" in result and result["data"]:
+                    logger.info(f"Found 'data' array with {len(result['data'])} items")
+                    for item in result["data"]:
+                        # Check for b64_json format
+                        if "b64_json" in item:
+                            base64_data = item["b64_json"]
+                            logger.info("Extracted audio from b64_json field")
+                            break
+                        # Check for url format (data URL)
+                        if "url" in item:
+                            url = item["url"]
+                            logger.info(f"Found URL field, prefix: {url[:50] if url else 'empty'}...")
+                            if url.startswith("data:audio"):
+                                try:
+                                    mime_part = url.split(";")[0]
+                                    audio_format = mime_part.replace("data:", "")
+                                except (IndexError, ValueError):
+                                    audio_format = "audio/wav"
+                                base64_data = url.split(",", 1)[1] if "," in url else url
+                                logger.info(f"Extracted audio from URL, format: {audio_format}")
+                                break
+                            elif url.startswith("data:"):
+                                # Some other data format, try to extract
+                                base64_data = url.split(",", 1)[1] if "," in url else url
+                                logger.info("Extracted data from URL (non-audio mime type)")
+                                break
 
-                # Check content list for audio (diffusion format)
-                # vLLM-Omni diffusion uses: .choices[0].message.content[0].image_url.url
-                # Even for audio, the format uses "image_url" key!
-                if not base64_data:
-                    content = message.get("content", [])
-                    if isinstance(content, list):
-                        for item in content:
-                            if isinstance(item, dict):
-                                item_type = item.get("type", "")
-                                # Check for audio type
-                                if item_type == "audio":
-                                    audio_url = item.get("audio_url", {}).get("url", "")
-                                    if audio_url.startswith("data:audio"):
-                                        try:
-                                            mime_part = audio_url.split(";")[0]
-                                            audio_format = mime_part.replace("data:", "")
-                                        except (IndexError, ValueError):
-                                            audio_format = "audio/wav"
-                                        base64_data = audio_url.split(",", 1)[1] if "," in audio_url else audio_url
-                                    elif audio_url:
-                                        base64_data = audio_url
-                                    break
-                                # vLLM-Omni diffusion uses image_url format for ALL outputs (including audio!)
-                                elif item_type == "image_url":
-                                    image_url = item.get("image_url", {}).get("url", "")
-                                    logger.info(
-                                        f"Found image_url type content, URL prefix: {image_url[:50] if image_url else 'empty'}..."
-                                    )
-                                    # Check if it's audio data (Stable Audio returns audio in image_url format)
-                                    if image_url.startswith("data:audio"):
-                                        try:
-                                            mime_part = image_url.split(";")[0]
-                                            audio_format = mime_part.replace("data:", "")
-                                        except (IndexError, ValueError):
-                                            audio_format = "audio/wav"
-                                        base64_data = image_url.split(",", 1)[1] if "," in image_url else image_url
-                                        logger.info(f"Extracted audio from image_url format, format: {audio_format}")
-                                        break
-                                    # Could be raw base64 without data: prefix
-                                    elif image_url and not image_url.startswith("data:image"):
-                                        # Assume it's audio data
-                                        base64_data = image_url.split(",", 1)[1] if "," in image_url else image_url
-                                        audio_format = "audio/wav"
-                                        logger.info(f"Extracted raw base64 from image_url, assuming audio/wav")
-                                        break
-                    elif isinstance(content, str) and content:
-                        base64_data = content
+                # ═══════════════════════════════════════════════════════════════
+                # Format 2: /v1/chat/completions response format (fallback)
+                # ═══════════════════════════════════════════════════════════════
+                if not base64_data and "choices" in result and result["choices"]:
+                    msg = result["choices"][0].get("message", {})
+                    logger.info(f"Message keys: {list(msg.keys())}")
+
+                    # Check message.audio (Qwen3-Omni format)
+                    audio_obj = msg.get("audio")
+                    if audio_obj:
+                        if isinstance(audio_obj, dict):
+                            base64_data = audio_obj.get("data")
+                            audio_format = f"audio/{audio_obj.get('format', 'wav')}"
+                        elif isinstance(audio_obj, str):
+                            base64_data = audio_obj
+
+                    # Check content list
+                    if not base64_data:
+                        content = msg.get("content", [])
+                        logger.info(
+                            f"Content type: {type(content)}, content: {str(content)[:200] if content else 'empty'}..."
+                        )
+                        if isinstance(content, list):
+                            for item in content:
+                                if isinstance(item, dict):
+                                    item_type = item.get("type", "")
+                                    logger.info(f"Content item type: {item_type}")
+                                    # Check for audio_url type (used when final_output_type: audio)
+                                    if item_type == "audio_url":
+                                        audio_url = item.get("audio_url", {}).get("url", "")
+                                        logger.info(f"Found audio_url: {audio_url[:50] if audio_url else 'empty'}...")
+                                        if audio_url:
+                                            if audio_url.startswith("data:audio"):
+                                                try:
+                                                    mime_part = audio_url.split(";")[0]
+                                                    audio_format = mime_part.replace("data:", "")
+                                                except (IndexError, ValueError):
+                                                    audio_format = "audio/wav"
+                                                base64_data = (
+                                                    audio_url.split(",", 1)[1] if "," in audio_url else audio_url
+                                                )
+                                                logger.info(f"Extracted audio from audio_url, format: {audio_format}")
+                                                break
+                                            else:
+                                                # Raw base64 data
+                                                base64_data = (
+                                                    audio_url.split(",", 1)[1] if "," in audio_url else audio_url
+                                                )
+                                                logger.info("Extracted raw base64 from audio_url")
+                                                break
+                                    # Check for image_url type (fallback for diffusion models)
+                                    elif item_type == "image_url":
+                                        image_url = item.get("image_url", {}).get("url", "")
+                                        if image_url:
+                                            if image_url.startswith("data:audio"):
+                                                try:
+                                                    mime_part = image_url.split(";")[0]
+                                                    audio_format = mime_part.replace("data:", "")
+                                                except (IndexError, ValueError):
+                                                    audio_format = "audio/wav"
+                                                base64_data = (
+                                                    image_url.split(",", 1)[1] if "," in image_url else image_url
+                                                )
+                                                break
+                                            elif not image_url.startswith("data:image"):
+                                                base64_data = (
+                                                    image_url.split(",", 1)[1] if "," in image_url else image_url
+                                                )
+                                                break
+                        elif isinstance(content, str) and content:
+                            base64_data = content
 
                 # Also check for audio at the response level (some models return it there)
                 if not base64_data and "audio" in result:

@@ -2194,6 +2194,11 @@ export const OmniModule = {
             if (!config.enable_torch_compile) {
                 command += ` \\\n  --enforce-eager`;  // Disable torch.compile for faster startup
             }
+            // Add stage config for Stable Audio models (configures audio output)
+            if (config.model && config.model.toLowerCase().includes('stable-audio')) {
+                command += ` \\\n  --stage-configs-path <path-to>/stable_audio.yaml`;
+                command += `\n# Note: Stable Audio requires custom stage config for audio output`;
+            }
         }
 
         commandText.value = command;
