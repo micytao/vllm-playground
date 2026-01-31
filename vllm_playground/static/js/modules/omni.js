@@ -857,6 +857,20 @@ export const OmniModule = {
             this.updateModelIdDisplay(e.target.value);
         });
 
+        // Custom model input - also check container mode availability
+        document.getElementById('omni-custom-model')?.addEventListener('input', (e) => {
+            const customModel = e.target.value.trim();
+            if (customModel) {
+                this.updateContainerModeForModel(customModel);
+            } else {
+                // If custom model cleared, check the dropdown selection
+                const modelSelect = document.getElementById('omni-model-select');
+                if (modelSelect) {
+                    this.updateContainerModeForModel(modelSelect.value);
+                }
+            }
+        });
+
         // Note: Recipes modal handlers are attached via onclick in HTML for consistency
         // with main vLLM Server pattern (window.vllmUI.openOmniRecipesModal, etc.)
 
@@ -1628,6 +1642,7 @@ export const OmniModule = {
                 this.addLog('  Install: pip install onnxruntime', 'info');
             }
         }
+
         } catch (error) {
             console.error('[Omni] Error applying recipe:', error);
             alert('Error applying recipe: ' + error.message);
@@ -1758,6 +1773,49 @@ export const OmniModule = {
         }
         // Update image upload visibility based on model's image edit support
         this.updateImageUploadVisibility(modelId);
+        // Update container mode availability based on model
+        this.updateContainerModeForModel(modelId);
+    },
+
+    /**
+     * Update container mode availability based on selected model.
+     * Stable Audio requires in-process mode due to vLLM-Omni serving bug.
+     */
+    updateContainerModeForModel(modelId) {
+        const isStableAudio = modelId && modelId.toLowerCase().includes('stable-audio');
+        const containerRadio = document.getElementById('omni-run-mode-container');
+        const containerLabel = document.getElementById('omni-run-mode-container-label');
+        const subprocessRadio = document.getElementById('omni-run-mode-subprocess');
+
+        if (isStableAudio) {
+            // Disable container mode for Stable Audio
+            if (containerRadio) {
+                containerRadio.disabled = true;
+            }
+            if (containerLabel) {
+                containerLabel.classList.add('mode-unavailable');
+                containerLabel.title = 'Container mode unavailable for Stable Audio (uses in-process mode)';
+            }
+            // Switch to subprocess if container was selected
+            if (containerRadio?.checked && subprocessRadio) {
+                subprocessRadio.checked = true;
+                this.onRunModeChange('subprocess');
+            }
+        } else {
+            // Re-enable container mode for other models (if container runtime is available)
+            if (this.containerModeAvailable) {
+                if (containerRadio) {
+                    containerRadio.disabled = false;
+                }
+                if (containerLabel) {
+                    containerLabel.classList.remove('mode-unavailable');
+                    containerLabel.title = 'Container mode available';
+                }
+            }
+        }
+
+        // Update command preview to reflect the mode change
+        this.updateCommandPreview();
     },
 
     /**
@@ -2127,7 +2185,30 @@ export const OmniModule = {
 
         let command = '';
 
-        if (runMode === 'container') {
+        // Check if Stable Audio model (uses in-process mode)
+        const isStableAudio = config.model && config.model.toLowerCase().includes('stable-audio');
+
+        if (isStableAudio) {
+            // In-process mode for Stable Audio (bypasses vLLM-Omni serving bug)
+            command = `# In-Process Mode (Stable Audio)\n`;
+            command += `# Uses offline inference to bypass vLLM-Omni serving bug\n\n`;
+            command += `# Python equivalent:\n`;
+            command += `from vllm_omni.entrypoints.omni import Omni\n\n`;
+            command += `model = Omni(\n`;
+            command += `    model="${config.model}",\n`;
+            command += `    gpu_memory_utilization=${config.gpu_memory_utilization},\n`;
+            command += `    enforce_eager=${!config.enable_torch_compile ? 'True' : 'False'},\n`;
+            command += `    trust_remote_code=True,\n`;
+            command += `)\n\n`;
+            command += `# Generate audio:\n`;
+            command += `output = model.generate(\n`;
+            command += `    "your prompt here",\n`;
+            command += `    negative_prompt="Low quality.",\n`;
+            command += `    guidance_scale=7.0,\n`;
+            command += `    num_inference_steps=100,\n`;
+            command += `    extra={"audio_start_in_s": 0.0, "audio_end_in_s": 10.0},\n`;
+            command += `)\n`;
+        } else if (runMode === 'container') {
             // Container mode - podman/docker command
             // Note: Actual runtime (podman/docker) is auto-detected at startup
             const runtime = 'podman';  // or 'docker'
@@ -2193,11 +2274,6 @@ export const OmniModule = {
             }
             if (!config.enable_torch_compile) {
                 command += ` \\\n  --enforce-eager`;  // Disable torch.compile for faster startup
-            }
-            // Add stage config for Stable Audio models (configures audio output)
-            if (config.model && config.model.toLowerCase().includes('stable-audio')) {
-                command += ` \\\n  --stage-configs-path <path-to>/stable_audio.yaml`;
-                command += `\n# Note: Stable Audio requires custom stage config for audio output`;
             }
         }
 

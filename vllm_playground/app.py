@@ -88,11 +88,14 @@ current_served_model_name: Optional[str] = None  # Track the served model name a
 omni_process: Optional[asyncio.subprocess.Process] = None  # For subprocess mode
 omni_container_id: Optional[str] = None  # For container mode
 omni_running: bool = False
-omni_run_mode: Optional[str] = None
+omni_run_mode: Optional[str] = None  # "subprocess", "container", or "inprocess"
 omni_config: Optional["OmniConfig"] = None
 omni_start_time: Optional[datetime] = None
 omni_log_queue: asyncio.Queue = asyncio.Queue()
 omni_websocket_connections: List[WebSocket] = []
+
+# In-process model for Stable Audio (bypasses broken vLLM-Omni serving layer)
+omni_inprocess_model: Optional[Any] = None  # Holds the Omni model when using in-process mode
 
 
 def get_model_name_for_api() -> Optional[str]:
@@ -5012,14 +5015,78 @@ async def check_omni_venv(request: dict):
 async def start_omni_server(config: OmniConfig):
     """Start vLLM-Omni server with --omni flag"""
     global omni_process, omni_container_id, omni_running, omni_config, omni_start_time, omni_run_mode
+    global omni_inprocess_model
 
     # Check if already running
     if omni_running:
         raise HTTPException(status_code=400, detail="vLLM-Omni server is already running")
 
     try:
-        omni_run_mode = config.run_mode
         omni_config = config
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # In-process mode for Stable Audio (bypasses broken vLLM-Omni serving)
+        # The vLLM-Omni serving layer has a bug where it doesn't serialize audio
+        # output. Using offline inference directly works around this issue.
+        # ═══════════════════════════════════════════════════════════════════════
+        if "stable-audio" in config.model.lower() and config.run_mode == "subprocess":
+            logger.info("Detected Stable Audio model - using in-process mode (bypasses serving bug)")
+            await broadcast_omni_log("[OMNI] Detected Stable Audio model")
+            await broadcast_omni_log("[OMNI] Using in-process mode (bypasses vLLM-Omni serving bug)")
+
+            omni_run_mode = "inprocess"
+
+            # Set environment for GPU selection
+            if config.gpu_device:
+                os.environ["CUDA_VISIBLE_DEVICES"] = config.gpu_device
+            if config.hf_token:
+                os.environ["HF_TOKEN"] = config.hf_token
+
+            await broadcast_omni_log(f"[OMNI] Loading model: {config.model}")
+            await broadcast_omni_log("[OMNI] This may take a minute...")
+
+            # Load the model in a thread pool to avoid blocking
+            def load_stable_audio_model():
+                try:
+                    import torch
+                    from vllm_omni.entrypoints.omni import Omni
+
+                    # Create the Omni model
+                    model = Omni(
+                        model=config.model,
+                        gpu_memory_utilization=config.gpu_memory_utilization,
+                        enforce_eager=not config.enable_torch_compile,
+                        trust_remote_code=config.trust_remote_code,
+                    )
+                    return model
+                except Exception as e:
+                    logger.error(f"Failed to load Stable Audio model: {e}")
+                    raise
+
+            import concurrent.futures
+
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                omni_inprocess_model = await loop.run_in_executor(pool, load_stable_audio_model)
+
+            omni_running = True
+            omni_start_time = datetime.now()
+
+            await broadcast_omni_log("[OMNI] ✅ Stable Audio model loaded successfully")
+            await broadcast_omni_log(f"[OMNI] Model: {config.model}")
+            await broadcast_omni_log("[OMNI] Ready for audio generation")
+
+            return {
+                "status": "started",
+                "mode": "inprocess",
+                "model": config.model,
+                "message": "Stable Audio loaded in-process (bypasses serving bug)",
+            }
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # Standard subprocess mode for other models
+        # ═══════════════════════════════════════════════════════════════════════
+        omni_run_mode = config.run_mode
 
         if config.run_mode == "subprocess":
             # Build command for subprocess mode
@@ -5154,6 +5221,7 @@ async def start_omni_server(config: OmniConfig):
 async def stop_omni_server():
     """Stop vLLM-Omni server"""
     global omni_process, omni_container_id, omni_running, omni_config, omni_start_time, omni_run_mode
+    global omni_inprocess_model
 
     if not omni_running:
         raise HTTPException(status_code=400, detail="vLLM-Omni server is not running")
@@ -5161,7 +5229,43 @@ async def stop_omni_server():
     try:
         stopped_something = False
 
-        if omni_run_mode == "subprocess" and omni_process:
+        # Handle in-process mode (Stable Audio)
+        if omni_run_mode == "inprocess" and omni_inprocess_model:
+            logger.info("Stopping in-process Stable Audio model...")
+            await broadcast_omni_log("[OMNI] Stopping Stable Audio model...")
+
+            # Unload model and release GPU memory
+            def unload_model():
+                global omni_inprocess_model
+                try:
+                    import torch
+
+                    del omni_inprocess_model
+                    omni_inprocess_model = None
+
+                    # Clear CUDA cache to release GPU memory
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        torch.cuda.synchronize()
+
+                    import gc
+
+                    gc.collect()
+                    logger.info("Stable Audio model unloaded, GPU memory released")
+                except Exception as e:
+                    logger.error(f"Error unloading model: {e}")
+
+            import concurrent.futures
+
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                await loop.run_in_executor(pool, unload_model)
+
+            omni_inprocess_model = None
+            stopped_something = True
+            await broadcast_omni_log("[OMNI] ✅ Stable Audio model stopped, GPU memory released")
+
+        elif omni_run_mode == "subprocess" and omni_process:
             # Terminate subprocess
             omni_process.terminate()
             try:
@@ -5535,12 +5639,13 @@ async def generate_tts(request: TTSGenerationRequest) -> AudioGenerationResponse
 async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResponse:
     """Generate audio (music/SFX) using Stable Audio models.
 
-    Uses /v1/chat/completions endpoint with diffusion-based generation.
+    Uses in-process mode for Stable Audio (bypasses broken vLLM-Omni serving),
+    or falls back to API mode for other models.
 
     Reference:
-    - Stable Audio: Uses diffusion API like image generation
+    - Stable Audio: Uses offline inference via vllm_omni.entrypoints.omni.Omni
     """
-    global omni_running, omni_config
+    global omni_running, omni_config, omni_run_mode, omni_inprocess_model
 
     if not omni_running:
         return AudioGenerationResponse(success=False, error="vLLM-Omni server is not running")
@@ -5548,9 +5653,109 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
     if not omni_config:
         return AudioGenerationResponse(success=False, error="vLLM-Omni configuration not available")
 
-    # Try /v1/images/generations endpoint with response_format: b64_json
-    # This uses a different code path (serving_images.py) that may handle audio output
-    # better than serving_chat.py which only serializes images.
+    # ═══════════════════════════════════════════════════════════════════════════
+    # In-process mode for Stable Audio (bypasses broken vLLM-Omni serving layer)
+    # ═══════════════════════════════════════════════════════════════════════════
+    if omni_run_mode == "inprocess" and omni_inprocess_model is not None:
+        duration_str = f"{request.audio_duration}s" if request.audio_duration else "10s"
+        steps_str = f"{request.num_inference_steps} steps" if request.num_inference_steps else "100 steps"
+        guidance_str = f"guidance: {request.guidance_scale}" if request.guidance_scale else "guidance: 7.0"
+        logger.info(
+            f"Generating Stable Audio (in-process): {request.text[:50]}... ({duration_str}, {steps_str}, {guidance_str})"
+        )
+
+        start_time = time.time()
+
+        try:
+            # Run generation in thread pool to avoid blocking
+            def generate_audio_inprocess():
+                import torch
+                import base64
+                import io
+                import numpy as np
+
+                # Set up generator for reproducibility
+                generator = None
+                if request.seed is not None:
+                    generator = torch.Generator(device="cuda").manual_seed(request.seed)
+
+                # Build extra parameters
+                extra = {
+                    "audio_start_in_s": 0.0,
+                    "audio_end_in_s": request.audio_duration if request.audio_duration else 10.0,
+                }
+
+                # Generate audio using offline inference
+                audio_output = omni_inprocess_model.generate(
+                    request.text,
+                    negative_prompt=request.negative_prompt or "Low quality.",
+                    generator=generator,
+                    guidance_scale=request.guidance_scale if request.guidance_scale else 7.0,
+                    num_inference_steps=request.num_inference_steps if request.num_inference_steps else 100,
+                    extra=extra,
+                )
+
+                # Convert output to WAV bytes
+                # audio_output is a list with tensor, get the first one
+                audio_tensor = audio_output[0]
+
+                # Convert to numpy: [samples, channels] for soundfile
+                audio_np = audio_tensor.cpu().float().numpy().T
+
+                # Normalize audio
+                max_val = np.max(np.abs(audio_np))
+                if max_val > 0:
+                    audio_np = audio_np / max_val
+
+                # Convert to int16 for WAV
+                audio_int16 = (audio_np * 32767).astype(np.int16)
+
+                # Write to WAV bytes using soundfile or scipy
+                try:
+                    import soundfile as sf
+
+                    wav_buffer = io.BytesIO()
+                    sf.write(wav_buffer, audio_int16, 44100, format="WAV")
+                    wav_bytes = wav_buffer.getvalue()
+                except ImportError:
+                    # Fallback to scipy
+                    from scipy.io import wavfile
+
+                    wav_buffer = io.BytesIO()
+                    wavfile.write(wav_buffer, 44100, audio_int16)
+                    wav_bytes = wav_buffer.getvalue()
+
+                # Encode to base64
+                audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")
+                return audio_base64
+
+            import concurrent.futures
+
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                audio_base64 = await loop.run_in_executor(pool, generate_audio_inprocess)
+
+            generation_time = time.time() - start_time
+            logger.info(f"Stable Audio generated in {generation_time:.2f}s (in-process mode)")
+
+            return AudioGenerationResponse(
+                success=True,
+                audio_base64=audio_base64,
+                audio_format="audio/wav",
+                duration=request.audio_duration,
+                generation_time=generation_time,
+            )
+
+        except Exception as e:
+            logger.error(f"In-process audio generation error: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return AudioGenerationResponse(success=False, error=f"Audio generation failed: {str(e)}")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # API mode for other models (fallback, has bug for Stable Audio)
+    # ═══════════════════════════════════════════════════════════════════════════
     omni_url = f"http://localhost:{omni_config.port}/v1/images/generations"
 
     # Build payload for images/generations endpoint
