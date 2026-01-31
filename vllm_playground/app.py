@@ -4823,12 +4823,19 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
 @app.get("/api/omni/health")
 async def check_omni_health():
     """Check if the vLLM-Omni server is healthy and ready to serve requests"""
-    global omni_running, omni_config
+    global omni_running, omni_config, omni_run_mode, omni_inprocess_model
 
     if not omni_running or not omni_config:
         return {"success": False, "ready": False, "error": "Server not running"}
 
-    # Try to call vLLM-Omni's health endpoint
+    # In-process mode: check if model is loaded
+    if omni_run_mode == "inprocess":
+        if omni_inprocess_model is not None:
+            return {"success": True, "ready": True, "message": "In-process model is ready"}
+        else:
+            return {"success": False, "ready": False, "error": "In-process model not loaded"}
+
+    # API server modes: try to call vLLM-Omni's health endpoint
     try:
         import aiohttp
 
@@ -5045,8 +5052,37 @@ async def start_omni_server(config: OmniConfig):
             await broadcast_omni_log(f"[OMNI] Loading model: {config.model}")
             await broadcast_omni_log("[OMNI] This may take a minute...")
 
+            import queue as thread_queue
+
+            # Thread-safe queue for capturing vllm_omni logs
+            shared_log_queue = thread_queue.Queue()
+
             # Load the model in a thread pool to avoid blocking
             def load_stable_audio_model():
+                import logging
+
+                # Custom handler to capture vllm_omni logs
+                class QueueHandler(logging.Handler):
+                    def emit(self, record):
+                        try:
+                            msg = self.format(record)
+                            shared_log_queue.put(msg)
+                        except Exception:
+                            pass
+
+                # Add handler to capture vllm/vllm_omni logs
+                queue_handler = QueueHandler()
+                queue_handler.setFormatter(logging.Formatter("[OMNI] %(message)s"))
+                queue_handler.setLevel(logging.INFO)
+
+                loggers_to_capture = ["vllm", "vllm_omni"]
+                for logger_name in loggers_to_capture:
+                    try:
+                        log = logging.getLogger(logger_name)
+                        log.addHandler(queue_handler)
+                    except Exception:
+                        pass
+
                 try:
                     import torch
                     from vllm_omni.entrypoints.omni import Omni
@@ -5062,12 +5098,44 @@ async def start_omni_server(config: OmniConfig):
                 except Exception as e:
                     logger.error(f"Failed to load Stable Audio model: {e}")
                     raise
+                finally:
+                    # Remove handler after loading
+                    for logger_name in loggers_to_capture:
+                        try:
+                            log = logging.getLogger(logger_name)
+                            log.removeHandler(queue_handler)
+                        except Exception:
+                            pass
 
             import concurrent.futures
 
-            loop = asyncio.get_event_loop()
+            # Start model loading in background thread
             with concurrent.futures.ThreadPoolExecutor() as pool:
-                omni_inprocess_model = await loop.run_in_executor(pool, load_stable_audio_model)
+                future = pool.submit(load_stable_audio_model)
+
+                # Stream logs while model is loading
+                while not future.done():
+                    # Drain log queue
+                    while True:
+                        try:
+                            msg = shared_log_queue.get_nowait()
+                            if msg:
+                                await broadcast_omni_log(msg)
+                        except thread_queue.Empty:
+                            break
+                    await asyncio.sleep(0.1)
+
+                # Get result (raises if there was an error)
+                omni_inprocess_model = future.result()
+
+                # Drain any remaining logs
+                while True:
+                    try:
+                        msg = shared_log_queue.get_nowait()
+                        if msg:
+                            await broadcast_omni_log(msg)
+                    except thread_queue.Empty:
+                        break
 
             omni_running = True
             omni_start_time = datetime.now()
