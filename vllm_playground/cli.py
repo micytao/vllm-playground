@@ -122,6 +122,7 @@ Examples:
   vllm-playground --host localhost   # Bind to localhost only
   vllm-playground pull               # Pre-download GPU container image (~10GB)
   vllm-playground pull --cpu         # Pre-download CPU container image
+  vllm-playground pull --omni        # Pre-download vLLM-Omni image (~20GB)
   vllm-playground pull --all         # Pre-download all container images
   vllm-playground stop               # Stop running instance
   vllm-playground status             # Check if running
@@ -150,7 +151,8 @@ Examples:
     pull_parser.add_argument("--amd", action="store_true", help="Pull AMD ROCm GPU image")
     pull_parser.add_argument("--tpu", action="store_true", help="Pull Google Cloud TPU image")
     pull_parser.add_argument("--cpu", action="store_true", help="Pull CPU image")
-    pull_parser.add_argument("--all", action="store_true", help="Pull all images (CPU + NVIDIA + AMD + TPU)")
+    pull_parser.add_argument("--omni", action="store_true", help="Pull vLLM-Omni image (for image/video generation)")
+    pull_parser.add_argument("--all", action="store_true", help="Pull all images (CPU + NVIDIA + AMD + TPU + Omni)")
     # Keep --gpu as alias for --nvidia for backward compatibility
     pull_parser.add_argument("--gpu", action="store_true", help=argparse.SUPPRESS)
 
@@ -275,12 +277,12 @@ def cmd_pull(args):
 
     # Determine which images to pull
     # --gpu is alias for --nvidia for backward compatibility
-    pull_nvidia = (
-        args.nvidia or args.gpu or args.all or (not args.cpu and not args.amd and not args.tpu and not args.all)
-    )  # Default to NVIDIA
+    has_specific_flag = args.cpu or args.amd or args.tpu or args.omni
+    pull_nvidia = args.nvidia or args.gpu or args.all or (not has_specific_flag)  # Default to NVIDIA
     pull_amd = args.amd or args.all
     pull_tpu = args.tpu or args.all
     pull_cpu = args.cpu or args.all
+    pull_omni = args.omni or args.all
 
     # Image definitions (must match container_manager.py)
     # Note: v0.12.0+ required for Anthropic Messages API (Claude Code support)
@@ -289,6 +291,9 @@ def cmd_pull(args):
     TPU_IMAGE = "docker.io/vllm/vllm-tpu:latest"
     CPU_IMAGE_MACOS = "quay.io/rh_ee_micyang/vllm-mac:v0.11.0"
     CPU_IMAGE_X86 = "quay.io/rh_ee_micyang/vllm-cpu:v0.11.0"
+    # vLLM-Omni images for image/video/audio generation
+    OMNI_NVIDIA_IMAGE = "docker.io/vllm/vllm-omni:v0.14.0rc1"
+    OMNI_AMD_IMAGE = "docker.io/vllm/vllm-omni-rocm:v0.14.0rc1"
 
     # Detect platform for CPU image
     import platform
@@ -410,6 +415,62 @@ def cmd_pull(args):
             print(f"❌ Error pulling CPU image: {e}")
             success = False
         print()
+
+    if pull_omni:
+        print("=" * 60)
+        print(f"📥 Pulling vLLM-Omni NVIDIA image: {OMNI_NVIDIA_IMAGE}")
+        print("⏳ This may take 10-20 minutes for the first download (~20GB)...")
+        print("   Note: vLLM-Omni is for image/video/audio generation")
+        print("=" * 60)
+        try:
+            # Use sudo for GPU image pull (needed for GPU access later)
+            cmd = (
+                ["sudo", "-n", runtime, "pull", OMNI_NVIDIA_IMAGE]
+                if runtime == "podman"
+                else [runtime, "pull", OMNI_NVIDIA_IMAGE]
+            )
+            result = subprocess.run(cmd, check=False)
+            if result.returncode == 0:
+                print(f"✅ vLLM-Omni NVIDIA image pulled successfully!")
+            else:
+                # Try without sudo
+                result = subprocess.run([runtime, "pull", OMNI_NVIDIA_IMAGE], check=False)
+                if result.returncode == 0:
+                    print(f"✅ vLLM-Omni NVIDIA image pulled successfully!")
+                else:
+                    print(f"❌ Failed to pull vLLM-Omni NVIDIA image")
+                    success = False
+        except Exception as e:
+            print(f"❌ Error pulling vLLM-Omni NVIDIA image: {e}")
+            success = False
+        print()
+
+        # Also pull AMD version if --amd or --all was specified
+        if pull_amd:
+            print("=" * 60)
+            print(f"📥 Pulling vLLM-Omni AMD ROCm image: {OMNI_AMD_IMAGE}")
+            print("⏳ This may take 10-20 minutes for the first download...")
+            print("=" * 60)
+            try:
+                cmd = (
+                    ["sudo", "-n", runtime, "pull", OMNI_AMD_IMAGE]
+                    if runtime == "podman"
+                    else [runtime, "pull", OMNI_AMD_IMAGE]
+                )
+                result = subprocess.run(cmd, check=False)
+                if result.returncode == 0:
+                    print(f"✅ vLLM-Omni AMD ROCm image pulled successfully!")
+                else:
+                    result = subprocess.run([runtime, "pull", OMNI_AMD_IMAGE], check=False)
+                    if result.returncode == 0:
+                        print(f"✅ vLLM-Omni AMD ROCm image pulled successfully!")
+                    else:
+                        print(f"❌ Failed to pull vLLM-Omni AMD ROCm image")
+                        success = False
+            except Exception as e:
+                print(f"❌ Error pulling vLLM-Omni AMD ROCm image: {e}")
+                success = False
+            print()
 
     if success:
         print("=" * 60)

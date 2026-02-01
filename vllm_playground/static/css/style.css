@@ -506,8 +506,9 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .view-title-logo {
-    width: 24px;
     height: 24px;
+    width: auto;
+    max-width: 150px;
     object-fit: contain;
 }
 .header-right {

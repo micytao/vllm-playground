@@ -11,6 +11,7 @@ import sys
 import subprocess
 import tempfile
 import shutil
+import time
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Literal, Union
 from pathlib import Path
@@ -82,6 +83,19 @@ latest_vllm_metrics: Dict[str, Any] = {}  # Store latest metrics from logs
 metrics_timestamp: Optional[datetime] = None  # Track when metrics were last updated
 current_model_identifier: Optional[str] = None  # Track the actual model identifier passed to vLLM
 current_served_model_name: Optional[str] = None  # Track the served model name alias (for API calls)
+
+# vLLM-Omni global state (separate from vLLM)
+omni_process: Optional[asyncio.subprocess.Process] = None  # For subprocess mode
+omni_container_id: Optional[str] = None  # For container mode
+omni_running: bool = False
+omni_run_mode: Optional[str] = None  # "subprocess", "container", or "inprocess"
+omni_config: Optional["OmniConfig"] = None
+omni_start_time: Optional[datetime] = None
+omni_log_queue: asyncio.Queue = asyncio.Queue()
+omni_websocket_connections: List[WebSocket] = []
+
+# In-process model for Stable Audio (bypasses broken vLLM-Omni serving layer)
+omni_inprocess_model: Optional[Any] = None  # Holds the Omni model when using in-process mode
 
 
 def get_model_name_for_api() -> Optional[str]:
@@ -161,6 +175,184 @@ class VLLMConfig(BaseModel):
     # Custom virtual environment path for subprocess mode
     # Allows using specific vLLM installations (e.g., vllm-metal)
     venv_path: Optional[str] = None
+
+
+# =============================================================================
+# vLLM-Omni Configuration (Separate from VLLMConfig)
+# =============================================================================
+
+
+class OmniConfig(BaseModel):
+    """Configuration for vLLM-Omni server (separate from VLLMConfig for omni-modality generation)"""
+
+    model: str = "Tongyi-MAI/Z-Image-Turbo"  # Default image generation model
+    host: str = "0.0.0.0"
+    port: int = 8091  # Different default port from vLLM (8000)
+    model_type: Literal["image", "omni", "video", "tts", "audio"] = "image"
+
+    # Image generation defaults
+    default_height: int = 1024
+    default_width: int = 1024
+    num_inference_steps: int = 50
+    guidance_scale: float = 4.0
+
+    # GPU settings (same pattern as VLLMConfig)
+    tensor_parallel_size: int = 1
+    gpu_memory_utilization: float = 0.9
+    gpu_device: Optional[str] = None
+    accelerator: Literal["nvidia", "amd"] = "nvidia"  # GPU accelerator type
+
+    # Memory optimization
+    # Enable CPU offloading to reduce GPU memory usage (increases latency)
+    enable_cpu_offload: bool = False
+
+    # Enable torch.compile for faster inference (but slower startup and more memory)
+    # When False, uses --enforce-eager mode which is faster to start and uses less memory
+    enable_torch_compile: bool = False
+
+    # Run mode: subprocess (CLI) or container (same as vLLM Server)
+    run_mode: Literal["subprocess", "container"] = "subprocess"
+    venv_path: Optional[str] = None  # Path to vLLM-Omni venv (for subprocess mode)
+
+    # HuggingFace token for gated models
+    hf_token: Optional[str] = None
+
+    # Model source option
+    # ModelScope support - for users in China who can't access HuggingFace
+    # When enabled, models are downloaded from modelscope.cn instead of huggingface.co
+    use_modelscope: bool = False
+
+    # Trust remote code (required for some models)
+    trust_remote_code: bool = False
+
+
+# Image-Edit models that support image-to-image generation
+# Text-to-image models (like Z-Image-Turbo) do NOT support input images
+IMAGE_EDIT_MODELS = {
+    "Qwen/Qwen-Image-Edit",
+    "Qwen/Qwen-Image-Edit-2509",
+    "Qwen/Qwen-Image-Edit-2511",
+    "meituan-longcat/LongCat-Image-Edit",
+}
+
+
+def is_image_edit_model(model_id: str) -> bool:
+    """Check if a model supports image-to-image editing.
+
+    Only image-edit models (like Qwen-Image-Edit) support input images.
+    Text-to-image models (like Z-Image-Turbo) will ignore input images.
+    """
+    return model_id in IMAGE_EDIT_MODELS
+
+
+class ImageGenerationRequest(BaseModel):
+    """Request for image generation via vLLM-Omni"""
+
+    prompt: str
+    negative_prompt: Optional[str] = None
+    height: int = 1024
+    width: int = 1024
+    num_inference_steps: int = 50
+    guidance_scale: float = 4.0
+    seed: Optional[int] = None
+    input_image: Optional[str] = None  # Base64 image for image-to-image generation
+
+
+class ImageGenerationResponse(BaseModel):
+    """Response from image generation"""
+
+    success: bool
+    image_base64: Optional[str] = None
+    error: Optional[str] = None
+    generation_time: Optional[float] = None
+
+
+class VideoGenerationRequest(BaseModel):
+    """Request for video generation via vLLM-Omni"""
+
+    prompt: str
+    negative_prompt: Optional[str] = None
+    duration: int = 4  # Duration in seconds
+    fps: int = 16  # Frames per second (default 16 for lower memory)
+    height: int = 480  # Video height (default 480 for lower memory)
+    width: int = 640  # Video width (default 640 for lower memory)
+    num_inference_steps: int = 30
+    guidance_scale: float = 4.0
+    seed: Optional[int] = None
+
+
+class VideoGenerationResponse(BaseModel):
+    """Response from video generation"""
+
+    success: bool
+    video_base64: Optional[str] = None
+    duration: Optional[float] = None
+    error: Optional[str] = None
+    generation_time: Optional[float] = None
+
+
+class TTSGenerationRequest(BaseModel):
+    """Request for TTS (Text-to-Speech) generation via vLLM-Omni.
+
+    Uses Qwen3-TTS models via /v1/audio/speech endpoint.
+
+    Reference:
+    - Qwen3-TTS: https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/examples/online_serving/qwen3_tts/
+    """
+
+    text: str
+    voice: Optional[str] = "Vivian"  # Voice ID: Vivian, Serena, Ono_Anna, Sohee, Ryan, Aiden, Dylan, Eric, Uncle_Fu
+    speed: float = 1.0  # Speech speed (0.25-4.0)
+    instructions: Optional[str] = None  # Voice style/emotion instructions
+
+
+class AudioGenerationRequest(BaseModel):
+    """Request for audio (music/SFX) generation via vLLM-Omni.
+
+    Uses Stable Audio models via /v1/chat/completions endpoint (diffusion-based).
+
+    Reference:
+    - Stable Audio: Uses diffusion API like image generation
+    """
+
+    text: str
+    audio_duration: Optional[float] = 10.0  # Duration in seconds (max 47s)
+    num_inference_steps: Optional[int] = 50  # Quality vs speed (20-200)
+    guidance_scale: Optional[float] = 7.0  # Prompt adherence (1-15)
+    negative_prompt: Optional[str] = "low quality, average quality"
+    seed: Optional[int] = None
+
+
+class AudioGenerationResponse(BaseModel):
+    """Response from audio generation"""
+
+    success: bool
+    audio_base64: Optional[str] = None
+    audio_format: Optional[str] = None  # MIME type like "audio/wav", "audio/flac", "audio/mp3"
+    duration: Optional[float] = None
+    error: Optional[str] = None
+    generation_time: Optional[float] = None
+
+
+class OmniChatRequest(BaseModel):
+    """Chat request for Omni models (Qwen-Omni with text/audio)"""
+
+    messages: List[Dict[str, Any]]  # Simple dict format for chat messages
+    temperature: float = 0.7
+    max_tokens: int = 512
+    stream: bool = True
+
+
+class OmniServerStatus(BaseModel):
+    """vLLM-Omni server status"""
+
+    running: bool
+    ready: bool = False  # True when API endpoint is actually responding
+    model: Optional[str] = None
+    model_type: Optional[str] = None
+    port: Optional[int] = None
+    run_mode: Optional[str] = None
+    uptime: Optional[str] = None
 
 
 def detect_tool_call_parser(model_name: str) -> Optional[str]:
@@ -704,8 +896,11 @@ async def read_root():
 
 
 @app.get("/api/status")
-async def get_status() -> ServerStatus:
-    """Get current server status"""
+async def get_status():
+    """Get current server status.
+
+    Returns with no-cache headers to ensure fresh state after backend restart.
+    """
     global vllm_running, current_config, server_start_time, current_run_mode, container_id, vllm_process
 
     # Check status based on run mode
@@ -752,7 +947,10 @@ async def get_status() -> ServerStatus:
         minutes, seconds = divmod(remainder, 60)
         uptime = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    return ServerStatus(running=running, uptime=uptime, config=current_config)
+    server_status = ServerStatus(running=running, uptime=uptime, config=current_config)
+
+    # Return with no-cache header - allows 304 responses but ensures validation
+    return JSONResponse(content=server_status.model_dump(), headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/debug/connection")
@@ -843,7 +1041,10 @@ async def test_vllm_connection():
 
 @app.get("/api/features")
 async def get_features():
-    """Check which optional features are available"""
+    """Check which optional features are available.
+
+    Returns with no-cache headers to ensure fresh data after backend restart.
+    """
     # Get version from package or local file
     version = None
 
@@ -877,6 +1078,8 @@ async def get_features():
         "version": version,
         "vllm_installed": False,  # Whether vLLM is installed (for subprocess mode)
         "vllm_version": None,
+        "vllm_omni_installed": False,  # Whether vLLM-Omni is installed
+        "vllm_omni_version": None,
         "guidellm": False,
         "mcp": False,
         "modelscope_installed": False,  # Whether modelscope SDK is installed
@@ -919,6 +1122,32 @@ async def get_features():
     except ImportError:
         pass
 
+    # Check vLLM-Omni installation (for omni-modality generation)
+    try:
+        import vllm_omni
+
+        features["vllm_omni_installed"] = True
+
+        # Try to get vLLM-Omni version
+        omni_ver = getattr(vllm_omni, "__version__", None)
+        if omni_ver is None:
+            try:
+                from importlib.metadata import version
+
+                omni_ver = version("vllm-omni")
+            except Exception:
+                pass
+
+        features["vllm_omni_version"] = omni_ver
+
+        if omni_ver:
+            logger.info(f"vLLM-Omni v{omni_ver} detected")
+        else:
+            logger.info("vLLM-Omni installed (version unknown)")
+    except ImportError:
+        features["vllm_omni_installed"] = False
+        logger.debug("vLLM-Omni not installed")
+
     # Check modelscope SDK (required for ModelScope model source)
     try:
         import modelscope
@@ -943,7 +1172,8 @@ async def get_features():
     if CONTAINER_MODE_AVAILABLE and container_manager:
         features["container_runtime"] = container_manager.runtime
 
-    return features
+    # Return with no-cache header - allows 304 responses but ensures validation
+    return JSONResponse(content=features, headers={"Cache-Control": "no-cache"})
 
 
 # =============================================================================
@@ -2429,6 +2659,93 @@ async def websocket_logs(websocket: WebSocket):
     finally:
         if websocket in websocket_connections:
             websocket_connections.remove(websocket)
+
+
+# =============================================================================
+# vLLM-Omni WebSocket and Log Streaming
+# =============================================================================
+
+
+async def broadcast_omni_log(message: str):
+    """Broadcast log message to all connected omni websockets"""
+    global omni_websocket_connections
+
+    if not message:
+        return
+
+    disconnected = []
+    for ws in omni_websocket_connections:
+        try:
+            await ws.send_text(message)
+        except Exception as e:
+            logger.error(f"Error sending to omni websocket: {e}")
+            disconnected.append(ws)
+
+    # Remove disconnected websockets
+    for ws in disconnected:
+        omni_websocket_connections.remove(ws)
+
+
+@app.websocket("/ws/omni/logs")
+async def websocket_omni_logs(websocket: WebSocket):
+    """WebSocket endpoint for streaming vLLM-Omni logs"""
+    await websocket.accept()
+    omni_websocket_connections.append(websocket)
+
+    try:
+        await websocket.send_text("[OMNI] Connected to vLLM-Omni log stream")
+
+        # Keep connection alive
+        while True:
+            try:
+                # Wait for messages (ping/pong)
+                await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                # Send ping to keep connection alive
+                await websocket.send_text("")
+
+    except WebSocketDisconnect:
+        logger.info("Omni WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Omni WebSocket error: {e}")
+    finally:
+        if websocket in omni_websocket_connections:
+            omni_websocket_connections.remove(websocket)
+
+
+async def read_omni_logs_container():
+    """Read logs from vLLM-Omni container"""
+    global omni_running, omni_container_id
+
+    if not container_manager:
+        logger.error("read_omni_logs_container called but container_manager is not available")
+        return
+
+    try:
+        # Wait a moment for container to be fully started before streaming logs
+        await asyncio.sleep(1)
+
+        await broadcast_omni_log("[OMNI] Starting log stream from container...")
+
+        # Stream logs from container using container_manager
+        # We need to use the omni container name
+        async for log_line in container_manager.stream_logs(container_name="vllm-omni-service"):
+            if log_line:
+                line = log_line.strip()
+                if line:  # Only send non-empty lines
+                    await broadcast_omni_log(line)
+
+            # Check if container is still running
+            if not omni_running:
+                break
+
+            await asyncio.sleep(0.01)  # Small delay to prevent busy loop
+
+        await broadcast_omni_log("[OMNI] Container log stream ended")
+
+    except Exception as e:
+        logger.error(f"Error reading omni container logs: {e}")
+        await broadcast_omni_log(f"[OMNI] Error reading logs: {e}")
 
 
 class ToolChoice(BaseModel):
@@ -4496,6 +4813,1593 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
         logger.error(f"GuideLLM benchmark error: {e}")
         await broadcast_log(f"[GUIDELLM] Error: {e}")
         benchmark_results = None
+
+
+# =============================================================================
+# vLLM-Omni API Endpoints
+# =============================================================================
+
+
+@app.get("/api/omni/health")
+async def check_omni_health():
+    """Check if the vLLM-Omni server is healthy and ready to serve requests"""
+    global omni_running, omni_config, omni_run_mode, omni_inprocess_model
+
+    if not omni_running or not omni_config:
+        return {"success": False, "ready": False, "error": "Server not running"}
+
+    # In-process mode: check if model is loaded
+    if omni_run_mode == "inprocess":
+        if omni_inprocess_model is not None:
+            return {"success": True, "ready": True, "message": "In-process model is ready"}
+        else:
+            return {"success": False, "ready": False, "error": "In-process model not loaded"}
+
+    # API server modes: try to call vLLM-Omni's health endpoint
+    try:
+        import aiohttp
+
+        base_url = f"http://localhost:{omni_config.port}"
+        health_url = f"{base_url}/health"
+
+        timeout = aiohttp.ClientTimeout(total=3)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(health_url) as response:
+                if response.status == 200:
+                    return {"success": True, "ready": True, "message": "Server is healthy"}
+                else:
+                    return {"success": False, "ready": False, "error": f"Health check returned {response.status}"}
+    except Exception as e:
+        return {"success": False, "ready": False, "error": str(e)}
+
+
+@app.get("/api/omni/status")
+async def get_omni_status():
+    """Get vLLM-Omni server status.
+
+    Returns with no-cache headers to ensure fresh state after backend restart.
+    """
+    global omni_running, omni_config, omni_start_time, omni_run_mode
+
+    uptime = None
+    ready = False
+
+    if omni_running and omni_start_time:
+        delta = datetime.now() - omni_start_time
+        hours, remainder = divmod(int(delta.total_seconds()), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        uptime = f"{hours}h {minutes}m {seconds}s"
+
+        # Check if server is actually ready
+        health_result = await check_omni_health()
+        ready = health_result.get("ready", False)
+
+    status = OmniServerStatus(
+        running=omni_running,
+        ready=ready,
+        model=omni_config.model if omni_config else None,
+        model_type=omni_config.model_type if omni_config else None,
+        port=omni_config.port if omni_config else None,
+        run_mode=omni_run_mode,
+        uptime=uptime,
+    )
+
+    # Return with no-cache header - allows 304 responses but ensures validation
+    return JSONResponse(content=status.model_dump(), headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/api/omni/check-venv")
+async def check_omni_venv(request: dict):
+    """Check if vLLM-Omni is installed in the specified virtual environment.
+
+    Uses multiple detection methods (like main vLLM Server):
+    1. Python import
+    2. pip list
+    3. uv pip list (for vllm-metal style installations)
+    """
+    venv_path = request.get("venv_path")
+
+    if not venv_path:
+        return {"vllm_omni_installed": False, "vllm_omni_version": None, "error": "No venv path provided"}
+
+    try:
+        # Expand and resolve path
+        venv_path = Path(venv_path).expanduser().resolve(strict=False)
+
+        if not venv_path.exists():
+            return {
+                "vllm_omni_installed": False,
+                "vllm_omni_version": None,
+                "error": f"Path does not exist: {venv_path}",
+            }
+
+        if not venv_path.is_dir():
+            return {
+                "vllm_omni_installed": False,
+                "vllm_omni_version": None,
+                "error": f"Path is not a directory: {venv_path}",
+            }
+
+        # Find Python executable
+        import platform
+
+        if platform.system() == "Windows":
+            python_path = venv_path / "Scripts" / "python.exe"
+        else:
+            python_path = venv_path / "bin" / "python"
+
+        if not python_path.exists():
+            return {
+                "vllm_omni_installed": False,
+                "vllm_omni_version": None,
+                "error": f"Python executable not found: {python_path}",
+            }
+
+        omni_found = False
+        omni_version = None
+        detection_method = None
+
+        # Method 1: Try direct Python import
+        try:
+            result = subprocess.run(
+                [str(python_path), "-c", "import vllm_omni; print(getattr(vllm_omni, '__version__', 'unknown'))"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                omni_found = True
+                version_output = result.stdout.strip()
+                if version_output and version_output != "unknown":
+                    omni_version = version_output
+                detection_method = "python import"
+        except Exception:
+            pass
+
+        # Method 2: Try pip list
+        if not omni_found:
+            try:
+                result = subprocess.run(
+                    [str(python_path), "-m", "pip", "list", "--format=freeze"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split("\n"):
+                        if line.lower().startswith("vllm-omni==") or line.lower().startswith("vllm_omni=="):
+                            omni_found = True
+                            parts = line.split("==")
+                            if len(parts) >= 2:
+                                omni_version = parts[1]
+                            detection_method = "pip list"
+                            break
+            except Exception:
+                pass
+
+        # Method 3: Try uv pip list (for vllm-metal style installations)
+        if not omni_found:
+            try:
+                result = subprocess.run(
+                    ["uv", "pip", "list", "--python", str(python_path)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split("\n"):
+                        lower_line = line.lower()
+                        if "vllm-omni" in lower_line or "vllm_omni" in lower_line:
+                            omni_found = True
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                omni_version = parts[1]
+                            detection_method = "uv pip list"
+                            break
+            except FileNotFoundError:
+                # uv not installed, skip
+                pass
+            except Exception:
+                pass
+
+        if omni_found:
+            logger.info(f"vLLM-Omni detected via {detection_method}: v{omni_version}")
+        else:
+            logger.debug(f"vLLM-Omni not found in venv: {venv_path}")
+
+        return {
+            "vllm_omni_installed": omni_found,
+            "vllm_omni_version": omni_version,
+            "detection_method": detection_method,
+        }
+
+    except Exception as e:
+        logger.error(f"Error checking vLLM-Omni in venv: {e}")
+        return {"vllm_omni_installed": False, "vllm_omni_version": None, "error": str(e)}
+
+
+@app.post("/api/omni/start")
+async def start_omni_server(config: OmniConfig):
+    """Start vLLM-Omni server with --omni flag"""
+    global omni_process, omni_container_id, omni_running, omni_config, omni_start_time, omni_run_mode
+    global omni_inprocess_model
+
+    # Check if already running
+    if omni_running:
+        raise HTTPException(status_code=400, detail="vLLM-Omni server is already running")
+
+    try:
+        omni_config = config
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # In-process mode for Stable Audio (bypasses broken vLLM-Omni serving)
+        # The vLLM-Omni serving layer has a bug where it doesn't serialize audio
+        # output. Using offline inference directly works around this issue.
+        # ═══════════════════════════════════════════════════════════════════════
+        if "stable-audio" in config.model.lower() and config.run_mode == "subprocess":
+            logger.info("Detected Stable Audio model - using in-process mode (bypasses serving bug)")
+            await broadcast_omni_log("[OMNI] Detected Stable Audio model")
+            await broadcast_omni_log("[OMNI] Using in-process mode (bypasses vLLM-Omni serving bug)")
+
+            omni_run_mode = "inprocess"
+
+            # Set environment for GPU selection
+            if config.gpu_device:
+                os.environ["CUDA_VISIBLE_DEVICES"] = config.gpu_device
+            if config.hf_token:
+                os.environ["HF_TOKEN"] = config.hf_token
+
+            await broadcast_omni_log(f"[OMNI] Loading model: {config.model}")
+            await broadcast_omni_log("[OMNI] This may take a minute...")
+
+            import queue as thread_queue
+
+            # Thread-safe queue for capturing vllm_omni logs
+            shared_log_queue = thread_queue.Queue()
+
+            # Load the model in a thread pool to avoid blocking
+            def load_stable_audio_model():
+                import logging
+
+                # Custom handler to capture vllm_omni logs
+                class QueueHandler(logging.Handler):
+                    def emit(self, record):
+                        try:
+                            msg = self.format(record)
+                            shared_log_queue.put(msg)
+                        except Exception:
+                            pass
+
+                # Add handler to capture vllm/vllm_omni logs
+                queue_handler = QueueHandler()
+                queue_handler.setFormatter(logging.Formatter("[OMNI] %(message)s"))
+                queue_handler.setLevel(logging.INFO)
+
+                loggers_to_capture = ["vllm", "vllm_omni"]
+                for logger_name in loggers_to_capture:
+                    try:
+                        log = logging.getLogger(logger_name)
+                        log.addHandler(queue_handler)
+                    except Exception:
+                        pass
+
+                try:
+                    import torch
+                    from vllm_omni.entrypoints.omni import Omni
+
+                    # Create the Omni model
+                    model = Omni(
+                        model=config.model,
+                        gpu_memory_utilization=config.gpu_memory_utilization,
+                        enforce_eager=not config.enable_torch_compile,
+                        trust_remote_code=config.trust_remote_code,
+                    )
+                    return model
+                except Exception as e:
+                    logger.error(f"Failed to load Stable Audio model: {e}")
+                    raise
+                finally:
+                    # Remove handler after loading
+                    for logger_name in loggers_to_capture:
+                        try:
+                            log = logging.getLogger(logger_name)
+                            log.removeHandler(queue_handler)
+                        except Exception:
+                            pass
+
+            import concurrent.futures
+
+            # Start model loading in background thread
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(load_stable_audio_model)
+
+                # Stream logs while model is loading
+                while not future.done():
+                    # Drain log queue
+                    while True:
+                        try:
+                            msg = shared_log_queue.get_nowait()
+                            if msg:
+                                await broadcast_omni_log(msg)
+                        except thread_queue.Empty:
+                            break
+                    await asyncio.sleep(0.1)
+
+                # Get result (raises if there was an error)
+                omni_inprocess_model = future.result()
+
+                # Drain any remaining logs
+                while True:
+                    try:
+                        msg = shared_log_queue.get_nowait()
+                        if msg:
+                            await broadcast_omni_log(msg)
+                    except thread_queue.Empty:
+                        break
+
+            omni_running = True
+            omni_start_time = datetime.now()
+
+            await broadcast_omni_log("[OMNI] ✅ Stable Audio model loaded successfully")
+            await broadcast_omni_log(f"[OMNI] Model: {config.model}")
+            await broadcast_omni_log("[OMNI] Ready for audio generation")
+
+            return {
+                "status": "started",
+                "mode": "inprocess",
+                "model": config.model,
+                "message": "Stable Audio loaded in-process (bypasses serving bug)",
+            }
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # Standard subprocess mode for other models
+        # ═══════════════════════════════════════════════════════════════════════
+        omni_run_mode = config.run_mode
+
+        if config.run_mode == "subprocess":
+            # Build command for subprocess mode
+            if config.venv_path:
+                # Use custom venv
+                venv_python = Path(config.venv_path).expanduser() / "bin" / "python"
+                cmd = [
+                    str(venv_python),
+                    "-m",
+                    "vllm.entrypoints.openai.api_server",
+                    "--model",
+                    config.model,
+                    "--port",
+                    str(config.port),
+                    "--omni",
+                ]
+            else:
+                # Use system vllm
+                cmd = [
+                    "vllm",
+                    "serve",
+                    config.model,
+                    "--port",
+                    str(config.port),
+                    "--omni",
+                ]
+
+            # Add GPU settings
+            if config.tensor_parallel_size > 1:
+                cmd.extend(["--tensor-parallel-size", str(config.tensor_parallel_size)])
+            if config.gpu_memory_utilization != 0.9:
+                cmd.extend(["--gpu-memory-utilization", str(config.gpu_memory_utilization)])
+            if config.trust_remote_code:
+                cmd.append("--trust-remote-code")
+            if config.enable_cpu_offload:
+                cmd.append("--enable-cpu-offload")
+            if not config.enable_torch_compile:
+                # Disable torch.compile for faster startup and lower memory usage
+                cmd.append("--enforce-eager")
+
+            # Add stage configs for Stable Audio (configures audio output type)
+            if "stable-audio" in config.model.lower():
+                stage_config_path = Path(__file__).parent / "config" / "stable_audio.yaml"
+                if stage_config_path.exists():
+                    cmd.extend(["--stage-configs-path", str(stage_config_path)])
+                    logger.info(f"Using Stable Audio stage config: {stage_config_path}")
+
+            # Set environment
+            env = os.environ.copy()
+            if config.gpu_device:
+                env["CUDA_VISIBLE_DEVICES"] = config.gpu_device
+            if config.hf_token:
+                env["HF_TOKEN"] = config.hf_token
+
+            logger.info(f"Starting vLLM-Omni subprocess: {' '.join(cmd)}")
+
+            omni_process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env=env,
+            )
+
+            omni_running = True
+            omni_start_time = datetime.now()
+
+            # Start log reader task
+            asyncio.create_task(read_omni_logs_subprocess())
+
+            return {
+                "status": "started",
+                "mode": "subprocess",
+                "model": config.model,
+                "port": config.port,
+                "pid": omni_process.pid,
+            }
+
+        elif config.run_mode == "container":
+            # Container mode - use container_manager
+            if not CONTAINER_MODE_AVAILABLE or not container_manager:
+                raise HTTPException(
+                    status_code=400, detail="Container mode is not available. No container runtime found."
+                )
+
+            # Build container config for omni
+            container_config = {
+                "model": config.model,
+                "port": config.port,
+                "enable_omni": True,
+                "accelerator": config.accelerator,
+                "tensor_parallel_size": config.tensor_parallel_size,
+                "gpu_memory_utilization": config.gpu_memory_utilization,
+                "gpu_device": config.gpu_device,
+                "enable_cpu_offload": config.enable_cpu_offload,
+                "trust_remote_code": config.trust_remote_code,
+                "hf_token": config.hf_token,
+            }
+
+            result = await container_manager.start_omni_container(container_config)
+            omni_container_id = result["id"]
+            omni_running = True
+            omni_start_time = datetime.now()
+
+            # Start log reader task for container (with exception handling)
+            task = asyncio.create_task(read_omni_logs_container())
+            task.add_done_callback(
+                lambda t: logger.error(f"Omni log task failed: {t.exception()}") if t.exception() else None
+            )
+
+            # Broadcast initial status
+            await broadcast_omni_log(f"[OMNI] Container started: {omni_container_id[:12]}")
+            await broadcast_omni_log(f"[OMNI] Model: {config.model}")
+            await broadcast_omni_log(f"[OMNI] Port: {config.port}")
+            await broadcast_omni_log(f"[OMNI] Waiting for model to load...")
+
+            return {
+                "status": "started",
+                "mode": "container",
+                "model": config.model,
+                "port": config.port,
+                "container_id": omni_container_id[:12] if omni_container_id else None,
+            }
+
+    except Exception as e:
+        logger.error(f"Failed to start vLLM-Omni: {e}")
+        omni_running = False
+        omni_config = None
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/omni/stop")
+async def stop_omni_server():
+    """Stop vLLM-Omni server"""
+    global omni_process, omni_container_id, omni_running, omni_config, omni_start_time, omni_run_mode
+    global omni_inprocess_model
+
+    if not omni_running:
+        raise HTTPException(status_code=400, detail="vLLM-Omni server is not running")
+
+    try:
+        stopped_something = False
+
+        # Handle in-process mode (Stable Audio)
+        if omni_run_mode == "inprocess" and omni_inprocess_model:
+            logger.info("Stopping in-process Stable Audio model...")
+            await broadcast_omni_log("[OMNI] Stopping Stable Audio model...")
+
+            # Unload model and release GPU memory
+            def unload_model():
+                global omni_inprocess_model
+                try:
+                    import torch
+
+                    del omni_inprocess_model
+                    omni_inprocess_model = None
+
+                    # Clear CUDA cache to release GPU memory
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        torch.cuda.synchronize()
+
+                    import gc
+
+                    gc.collect()
+                    logger.info("Stable Audio model unloaded, GPU memory released")
+                except Exception as e:
+                    logger.error(f"Error unloading model: {e}")
+
+            import concurrent.futures
+
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                await loop.run_in_executor(pool, unload_model)
+
+            omni_inprocess_model = None
+            stopped_something = True
+            await broadcast_omni_log("[OMNI] ✅ Stable Audio model stopped, GPU memory released")
+
+        elif omni_run_mode == "subprocess" and omni_process:
+            # Terminate subprocess
+            omni_process.terminate()
+            try:
+                await asyncio.wait_for(omni_process.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                omni_process.kill()
+                await omni_process.wait()
+
+            omni_process = None
+            stopped_something = True
+            logger.info("vLLM-Omni subprocess stopped")
+
+        elif omni_run_mode == "container" and omni_container_id:
+            # Stop container
+            if container_manager:
+                await container_manager.stop_omni_container(omni_container_id)
+            omni_container_id = None
+            stopped_something = True
+            logger.info("vLLM-Omni container stopped")
+
+        # Handle inconsistent state - omni_running is True but nothing to stop
+        if not stopped_something:
+            logger.warning(
+                f"vLLM-Omni state inconsistent: running={omni_running}, mode={omni_run_mode}, "
+                f"process={omni_process is not None}, container={omni_container_id is not None}"
+            )
+            logger.info("Resetting vLLM-Omni state")
+
+        # Always reset state
+        omni_running = False
+        omni_config = None
+        omni_start_time = None
+        omni_run_mode = None
+        omni_process = None
+        omni_container_id = None
+
+        return {"status": "stopped"}
+
+    except Exception as e:
+        # Reset state even on error to allow recovery
+        omni_running = False
+        omni_config = None
+        omni_start_time = None
+        omni_run_mode = None
+        omni_process = None
+        omni_container_id = None
+
+        error_msg = str(e) if str(e) else "Unknown error during stop"
+        logger.error(f"Failed to stop vLLM-Omni: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
+
+
+@app.post("/api/omni/generate")
+async def generate_omni_image(request: ImageGenerationRequest):
+    """Generate image using vLLM-Omni"""
+    global omni_running, omni_config
+
+    if not omni_running:
+        raise HTTPException(status_code=400, detail="vLLM-Omni server is not running")
+
+    if not omni_config:
+        raise HTTPException(status_code=400, detail="vLLM-Omni configuration not available")
+
+    # Validate image-to-image is only used with image-edit models
+    if request.input_image and not is_image_edit_model(omni_config.model):
+        return ImageGenerationResponse(
+            success=False,
+            error=f"Image-to-image not supported by {omni_config.model}. "
+            f"Use an image-edit model like Qwen/Qwen-Image-Edit instead.",
+        )
+
+    try:
+        import time
+
+        start_time = time.time()
+
+        # Build request to vLLM-Omni's /v1/chat/completions endpoint
+        omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
+
+        # Build message content - supports both text-to-image and image-to-image
+        if request.input_image:
+            # Image-to-image: multimodal message with image + text
+            # Handle both data URL format and raw base64
+            if request.input_image.startswith("data:"):
+                image_url = request.input_image
+            else:
+                image_url = f"data:image/png;base64,{request.input_image}"
+
+            message_content = [
+                {"type": "image_url", "image_url": {"url": image_url}},
+                {"type": "text", "text": request.prompt},
+            ]
+            logger.info("Using image-to-image mode with uploaded image")
+        else:
+            # Text-to-image: simple text message
+            message_content = request.prompt
+
+        payload = {
+            "model": omni_config.model,
+            "messages": [{"role": "user", "content": message_content}],
+            "extra_body": {
+                "height": request.height,
+                "width": request.width,
+                "num_inference_steps": request.num_inference_steps,
+                "guidance_scale": request.guidance_scale,
+            },
+        }
+
+        if request.seed is not None:
+            payload["extra_body"]["seed"] = request.seed
+
+        if request.negative_prompt:
+            payload["extra_body"]["negative_prompt"] = request.negative_prompt
+
+        logger.info(f"Sending image generation request to vLLM-Omni: {omni_url}")
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(omni_url, json=payload, timeout=aiohttp.ClientTimeout(total=300)) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"vLLM-Omni error: {error_text}")
+                    return ImageGenerationResponse(success=False, error=error_text)
+
+                result = await response.json()
+
+                # Extract base64 image from response
+                # vLLM-Omni returns: choices[0].message.content[0].image_url.url (data:image/png;base64,...)
+                try:
+                    content = result["choices"][0]["message"]["content"]
+                    if isinstance(content, list) and len(content) > 0:
+                        image_url = content[0].get("image_url", {}).get("url", "")
+                        if image_url.startswith("data:image"):
+                            # Extract base64 part after the comma
+                            base64_data = image_url.split(",", 1)[1] if "," in image_url else image_url
+                        else:
+                            base64_data = image_url
+                    else:
+                        # Fallback for different response formats
+                        base64_data = str(content)
+
+                    generation_time = time.time() - start_time
+                    logger.info(f"Image generated in {generation_time:.2f}s")
+
+                    return ImageGenerationResponse(
+                        success=True, image_base64=base64_data, generation_time=generation_time
+                    )
+
+                except (KeyError, IndexError, TypeError) as e:
+                    logger.error(f"Failed to parse vLLM-Omni response: {e}")
+                    logger.error(f"Response: {result}")
+                    return ImageGenerationResponse(success=False, error=f"Failed to parse response: {e}")
+
+    except aiohttp.ClientError as e:
+        logger.error(f"Connection error to vLLM-Omni: {e}")
+        return ImageGenerationResponse(success=False, error=f"Connection error: {e}")
+    except Exception as e:
+        logger.error(f"Image generation error: {e}")
+        return ImageGenerationResponse(success=False, error=str(e))
+
+
+@app.post("/api/omni/generate-video")
+async def generate_video(request: VideoGenerationRequest) -> VideoGenerationResponse:
+    """Generate a video using vLLM-Omni (Text-to-Video models like Wan2.2)"""
+    global omni_running, omni_config
+
+    if not omni_running:
+        return VideoGenerationResponse(success=False, error="vLLM-Omni server is not running")
+
+    if not omni_config:
+        return VideoGenerationResponse(success=False, error="vLLM-Omni configuration not available")
+
+    # Build request to vLLM-Omni's /v1/chat/completions endpoint
+    # Video models typically use a chat completions format with specific parameters
+    omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
+
+    # Calculate number of frames based on duration and fps
+    num_frames = request.duration * request.fps
+
+    # Build the message with video generation parameters
+    messages = [
+        {
+            "role": "user",
+            "content": request.prompt,
+        }
+    ]
+
+    payload = {
+        "model": omni_config.model,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 1024,
+        "extra_body": {
+            "modality": "video",
+            "num_frames": num_frames,
+            "height": request.height,
+            "width": request.width,
+            "fps": request.fps,
+            "num_inference_steps": request.num_inference_steps,
+            "guidance_scale": request.guidance_scale,
+        },
+    }
+
+    if request.negative_prompt:
+        payload["extra_body"]["negative_prompt"] = request.negative_prompt
+
+    if request.seed is not None:
+        payload["extra_body"]["seed"] = request.seed
+
+    if request.negative_prompt:
+        payload["extra_body"]["negative_prompt"] = request.negative_prompt
+
+    logger.info(f"Generating video with vLLM-Omni: {request.prompt[:50]}... ({request.duration}s @ {request.fps}fps)")
+
+    start_time = time.time()
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=600)  # 10 minutes for video generation
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(omni_url, json=payload) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"vLLM-Omni error: {error_text}")
+                    return VideoGenerationResponse(success=False, error=f"vLLM-Omni error: {error_text}")
+
+                result = await response.json()
+
+                try:
+                    # Parse the response to extract video data
+                    choices = result.get("choices", [])
+                    if not choices:
+                        return VideoGenerationResponse(success=False, error="No choices in response")
+
+                    message = choices[0].get("message", {})
+                    content = message.get("content", [])
+
+                    # Handle different response formats
+                    base64_data = None
+                    if isinstance(content, list):
+                        for item in content:
+                            if item.get("type") == "video":
+                                video_url = item.get("video_url", {}).get("url", "")
+                                if video_url.startswith("data:video"):
+                                    base64_data = video_url.split(",", 1)[1] if "," in video_url else video_url
+                                else:
+                                    base64_data = video_url
+                                break
+                    elif isinstance(content, str):
+                        # Some models return base64 directly
+                        base64_data = content
+
+                    if not base64_data:
+                        return VideoGenerationResponse(success=False, error="No video data in response")
+
+                    generation_time = time.time() - start_time
+                    logger.info(f"Video generated in {generation_time:.2f}s")
+
+                    return VideoGenerationResponse(
+                        success=True,
+                        video_base64=base64_data,
+                        duration=request.duration,
+                        generation_time=generation_time,
+                    )
+
+                except (KeyError, IndexError, TypeError) as e:
+                    logger.error(f"Failed to parse vLLM-Omni video response: {e}")
+                    logger.error(f"Response: {result}")
+                    return VideoGenerationResponse(success=False, error=f"Failed to parse response: {e}")
+
+    except aiohttp.ClientError as e:
+        logger.error(f"Connection error to vLLM-Omni: {e}")
+        return VideoGenerationResponse(success=False, error=f"Connection error: {e}")
+    except Exception as e:
+        logger.error(f"Video generation error: {e}")
+        return VideoGenerationResponse(success=False, error=str(e))
+
+
+@app.post("/api/omni/generate-tts")
+async def generate_tts(request: TTSGenerationRequest) -> AudioGenerationResponse:
+    """Generate speech using TTS models (Qwen3-TTS).
+
+    Uses /v1/audio/speech endpoint for text-to-speech synthesis.
+
+    Reference:
+    - Qwen3-TTS: https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/examples/online_serving/qwen3_tts/
+    """
+    global omni_running, omni_config
+
+    if not omni_running:
+        return AudioGenerationResponse(success=False, error="vLLM-Omni server is not running")
+
+    if not omni_config:
+        return AudioGenerationResponse(success=False, error="vLLM-Omni configuration not available")
+
+    omni_url = f"http://localhost:{omni_config.port}/v1/audio/speech"
+
+    payload = {
+        "model": omni_config.model,
+        "input": request.text,
+        "voice": request.voice or "Vivian",
+        "response_format": "wav",
+    }
+
+    if request.speed and request.speed != 1.0:
+        payload["speed"] = request.speed
+
+    if request.instructions:
+        payload["instructions"] = request.instructions
+
+    logger.info(f"Generating TTS audio: {request.text[:50]}... (voice: {request.voice}, speed: {request.speed}x)")
+
+    start_time = time.time()
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=300)  # 5 minutes for audio generation
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(omni_url, json=payload) as response:
+                content_type = response.headers.get("Content-Type", "")
+
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"vLLM-Omni TTS error: {error_text}")
+                    return AudioGenerationResponse(success=False, error=f"vLLM-Omni error: {error_text}")
+
+                # TTS returns raw audio bytes
+                if "audio" in content_type or "application/octet-stream" in content_type:
+                    audio_bytes = await response.read()
+
+                    if not audio_bytes:
+                        return AudioGenerationResponse(success=False, error="No audio data returned")
+
+                    import base64
+
+                    base64_data = base64.b64encode(audio_bytes).decode("utf-8")
+
+                    # Determine format from content type
+                    if "wav" in content_type:
+                        audio_format = "audio/wav"
+                    elif "mp3" in content_type or "mpeg" in content_type:
+                        audio_format = "audio/mpeg"
+                    elif "flac" in content_type:
+                        audio_format = "audio/flac"
+                    else:
+                        audio_format = "audio/wav"
+
+                    generation_time = time.time() - start_time
+                    logger.info(f"TTS audio generated in {generation_time:.2f}s")
+
+                    return AudioGenerationResponse(
+                        success=True,
+                        audio_base64=base64_data,
+                        audio_format=audio_format,
+                        duration=None,
+                        generation_time=generation_time,
+                    )
+                else:
+                    # Unexpected response format
+                    error_text = await response.text()
+                    return AudioGenerationResponse(
+                        success=False,
+                        error=f"Unexpected response format: {content_type}. Response: {error_text[:500]}",
+                    )
+
+    except asyncio.TimeoutError:
+        return AudioGenerationResponse(success=False, error="TTS generation timed out (5 minute limit)")
+    except Exception as e:
+        logger.error(f"TTS generation error: {e}")
+        return AudioGenerationResponse(success=False, error=str(e))
+
+
+@app.post("/api/omni/generate-audio")
+async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResponse:
+    """Generate audio (music/SFX) using Stable Audio models.
+
+    Uses in-process mode for Stable Audio (bypasses broken vLLM-Omni serving),
+    or falls back to API mode for other models.
+
+    Reference:
+    - Stable Audio: Uses offline inference via vllm_omni.entrypoints.omni.Omni
+    """
+    global omni_running, omni_config, omni_run_mode, omni_inprocess_model
+
+    if not omni_running:
+        return AudioGenerationResponse(success=False, error="vLLM-Omni server is not running")
+
+    if not omni_config:
+        return AudioGenerationResponse(success=False, error="vLLM-Omni configuration not available")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # In-process mode for Stable Audio (bypasses broken vLLM-Omni serving layer)
+    # ═══════════════════════════════════════════════════════════════════════════
+    if omni_run_mode == "inprocess" and omni_inprocess_model is not None:
+        duration_str = f"{request.audio_duration}s" if request.audio_duration else "10s"
+        steps_str = f"{request.num_inference_steps} steps" if request.num_inference_steps else "100 steps"
+        guidance_str = f"guidance: {request.guidance_scale}" if request.guidance_scale else "guidance: 7.0"
+        logger.info(
+            f"Generating Stable Audio (in-process): {request.text[:50]}... ({duration_str}, {steps_str}, {guidance_str})"
+        )
+
+        start_time = time.time()
+
+        try:
+            # Run generation in thread pool to avoid blocking
+            def generate_audio_inprocess():
+                import torch
+                import base64
+                import io
+                import numpy as np
+                from vllm_omni.inputs.data import OmniDiffusionSamplingParams
+
+                # Set up generator for reproducibility
+                generator = None
+                if request.seed is not None:
+                    generator = torch.Generator(device="cuda").manual_seed(request.seed)
+
+                # Build sampling params (matches vLLM-Omni example API)
+                # Ref: https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/text_to_audio/text_to_audio.py
+                sampling_params = OmniDiffusionSamplingParams(
+                    generator=generator,
+                    guidance_scale=request.guidance_scale if request.guidance_scale else 7.0,
+                    num_inference_steps=request.num_inference_steps if request.num_inference_steps else 100,
+                    num_outputs_per_prompt=1,
+                    extra_args={
+                        "audio_start_in_s": 0.0,
+                        "audio_end_in_s": request.audio_duration if request.audio_duration else 10.0,
+                    },
+                )
+
+                # Generate audio using offline inference
+                # API: omni.generate({"prompt": ..., "negative_prompt": ...}, OmniDiffusionSamplingParams)
+                outputs = omni_inprocess_model.generate(
+                    {
+                        "prompt": request.text,
+                        "negative_prompt": request.negative_prompt or "Low quality.",
+                    },
+                    sampling_params,
+                )
+
+                # Extract audio from output
+                # Output structure: outputs[0].request_output[0].multimodal_output["audio"]
+                output = outputs[0]
+                request_output = output.request_output[0]
+                audio_tensor = request_output.multimodal_output.get("audio")
+
+                if audio_tensor is None:
+                    raise ValueError("No audio output found in response")
+
+                # Convert to numpy: [samples, channels] for soundfile
+                if isinstance(audio_tensor, torch.Tensor):
+                    audio_tensor = audio_tensor.cpu().float().numpy()
+
+                # Handle different output shapes
+                if audio_tensor.ndim == 3:
+                    # [batch, channels, samples] -> take first batch
+                    audio_np = audio_tensor[0].T  # [samples, channels]
+                elif audio_tensor.ndim == 2:
+                    # [channels, samples]
+                    audio_np = audio_tensor.T  # [samples, channels]
+                else:
+                    # [samples] - mono
+                    audio_np = audio_tensor
+
+                # Normalize audio
+                max_val = np.max(np.abs(audio_np))
+                if max_val > 0:
+                    audio_np = audio_np / max_val
+
+                # Convert to int16 for WAV
+                audio_int16 = (audio_np * 32767).astype(np.int16)
+
+                # Write to WAV bytes using soundfile or scipy
+                try:
+                    import soundfile as sf
+
+                    wav_buffer = io.BytesIO()
+                    sf.write(wav_buffer, audio_int16, 44100, format="WAV")
+                    wav_bytes = wav_buffer.getvalue()
+                except ImportError:
+                    # Fallback to scipy
+                    from scipy.io import wavfile
+
+                    wav_buffer = io.BytesIO()
+                    wavfile.write(wav_buffer, 44100, audio_int16)
+                    wav_bytes = wav_buffer.getvalue()
+
+                # Encode to base64
+                audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")
+                return audio_base64
+
+            import concurrent.futures
+
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                audio_base64 = await loop.run_in_executor(pool, generate_audio_inprocess)
+
+            generation_time = time.time() - start_time
+            logger.info(f"Stable Audio generated in {generation_time:.2f}s (in-process mode)")
+
+            return AudioGenerationResponse(
+                success=True,
+                audio_base64=audio_base64,
+                audio_format="audio/wav",
+                duration=request.audio_duration,
+                generation_time=generation_time,
+            )
+
+        except Exception as e:
+            logger.error(f"In-process audio generation error: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return AudioGenerationResponse(success=False, error=f"Audio generation failed: {str(e)}")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # API mode for other models (fallback, has bug for Stable Audio)
+    # ═══════════════════════════════════════════════════════════════════════════
+    omni_url = f"http://localhost:{omni_config.port}/v1/images/generations"
+
+    # Build payload for images/generations endpoint
+    payload = {
+        "model": omni_config.model,
+        "prompt": request.text,
+        "n": 1,
+        "response_format": "b64_json",  # Request base64 encoded output
+    }
+
+    # Add Stable Audio specific parameters at top level
+    if request.audio_duration is not None:
+        payload["audio_end_in_s"] = request.audio_duration
+        payload["audio_start_in_s"] = 0.0
+
+    if request.num_inference_steps is not None:
+        payload["num_inference_steps"] = request.num_inference_steps
+
+    if request.guidance_scale is not None:
+        payload["guidance_scale"] = request.guidance_scale
+
+    if request.negative_prompt:
+        payload["negative_prompt"] = request.negative_prompt
+
+    if request.seed is not None:
+        payload["seed"] = request.seed
+
+    duration_str = f"{request.audio_duration}s" if request.audio_duration else "default"
+    steps_str = f"{request.num_inference_steps} steps" if request.num_inference_steps else "default"
+    logger.info(f"Generating Stable Audio: {request.text[:50]}... ({duration_str}, {steps_str})")
+
+    start_time = time.time()
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=300)  # 5 minutes for audio generation
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(omni_url, json=payload) as response:
+                content_type = response.headers.get("Content-Type", "")
+
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"vLLM-Omni audio error: {error_text}")
+                    return AudioGenerationResponse(success=False, error=f"vLLM-Omni error: {error_text}")
+
+                # Diffusion returns JSON with audio data
+                result = await response.json()
+
+                # Debug: Log the full response structure to understand the format
+                logger.info(f"Audio response keys: {list(result.keys())}")
+                logger.info(f"Full audio response: {str(result)[:1000]}...")
+
+                # Check for error in response
+                if "error" in result:
+                    error_msg = result["error"]
+                    if isinstance(error_msg, dict):
+                        error_msg = error_msg.get("message", str(error_msg))
+                    return AudioGenerationResponse(success=False, error=f"Generation failed: {error_msg}")
+
+                base64_data = None
+                audio_format = "audio/wav"
+
+                # ═══════════════════════════════════════════════════════════════
+                # Format 1: /v1/images/generations response format
+                # { "data": [{"url": "data:audio/wav;base64,..."} or {"b64_json": "..."}] }
+                # ═══════════════════════════════════════════════════════════════
+                if "data" in result and result["data"]:
+                    logger.info(f"Found 'data' array with {len(result['data'])} items")
+                    for item in result["data"]:
+                        # Check for b64_json format
+                        if "b64_json" in item:
+                            base64_data = item["b64_json"]
+                            logger.info("Extracted audio from b64_json field")
+                            break
+                        # Check for url format (data URL)
+                        if "url" in item:
+                            url = item["url"]
+                            logger.info(f"Found URL field, prefix: {url[:50] if url else 'empty'}...")
+                            if url.startswith("data:audio"):
+                                try:
+                                    mime_part = url.split(";")[0]
+                                    audio_format = mime_part.replace("data:", "")
+                                except (IndexError, ValueError):
+                                    audio_format = "audio/wav"
+                                base64_data = url.split(",", 1)[1] if "," in url else url
+                                logger.info(f"Extracted audio from URL, format: {audio_format}")
+                                break
+                            elif url.startswith("data:"):
+                                # Some other data format, try to extract
+                                base64_data = url.split(",", 1)[1] if "," in url else url
+                                logger.info("Extracted data from URL (non-audio mime type)")
+                                break
+
+                # ═══════════════════════════════════════════════════════════════
+                # Format 2: /v1/chat/completions response format (fallback)
+                # ═══════════════════════════════════════════════════════════════
+                if not base64_data and "choices" in result and result["choices"]:
+                    msg = result["choices"][0].get("message", {})
+                    logger.info(f"Message keys: {list(msg.keys())}")
+
+                    # Check message.audio (Qwen3-Omni format)
+                    audio_obj = msg.get("audio")
+                    if audio_obj:
+                        if isinstance(audio_obj, dict):
+                            base64_data = audio_obj.get("data")
+                            audio_format = f"audio/{audio_obj.get('format', 'wav')}"
+                        elif isinstance(audio_obj, str):
+                            base64_data = audio_obj
+
+                    # Check content list
+                    if not base64_data:
+                        content = msg.get("content", [])
+                        logger.info(
+                            f"Content type: {type(content)}, content: {str(content)[:200] if content else 'empty'}..."
+                        )
+                        if isinstance(content, list):
+                            for item in content:
+                                if isinstance(item, dict):
+                                    item_type = item.get("type", "")
+                                    logger.info(f"Content item type: {item_type}")
+                                    # Check for audio_url type (used when final_output_type: audio)
+                                    if item_type == "audio_url":
+                                        audio_url = item.get("audio_url", {}).get("url", "")
+                                        logger.info(f"Found audio_url: {audio_url[:50] if audio_url else 'empty'}...")
+                                        if audio_url:
+                                            if audio_url.startswith("data:audio"):
+                                                try:
+                                                    mime_part = audio_url.split(";")[0]
+                                                    audio_format = mime_part.replace("data:", "")
+                                                except (IndexError, ValueError):
+                                                    audio_format = "audio/wav"
+                                                base64_data = (
+                                                    audio_url.split(",", 1)[1] if "," in audio_url else audio_url
+                                                )
+                                                logger.info(f"Extracted audio from audio_url, format: {audio_format}")
+                                                break
+                                            else:
+                                                # Raw base64 data
+                                                base64_data = (
+                                                    audio_url.split(",", 1)[1] if "," in audio_url else audio_url
+                                                )
+                                                logger.info("Extracted raw base64 from audio_url")
+                                                break
+                                    # Check for image_url type (fallback for diffusion models)
+                                    elif item_type == "image_url":
+                                        image_url = item.get("image_url", {}).get("url", "")
+                                        if image_url:
+                                            if image_url.startswith("data:audio"):
+                                                try:
+                                                    mime_part = image_url.split(";")[0]
+                                                    audio_format = mime_part.replace("data:", "")
+                                                except (IndexError, ValueError):
+                                                    audio_format = "audio/wav"
+                                                base64_data = (
+                                                    image_url.split(",", 1)[1] if "," in image_url else image_url
+                                                )
+                                                break
+                                            elif not image_url.startswith("data:image"):
+                                                base64_data = (
+                                                    image_url.split(",", 1)[1] if "," in image_url else image_url
+                                                )
+                                                break
+                        elif isinstance(content, str) and content:
+                            base64_data = content
+
+                # Also check for audio at the response level (some models return it there)
+                if not base64_data and "audio" in result:
+                    audio_data = result["audio"]
+                    if isinstance(audio_data, dict):
+                        base64_data = audio_data.get("data") or audio_data.get("url")
+                        audio_format = f"audio/{audio_data.get('format', 'wav')}"
+                    elif isinstance(audio_data, str):
+                        base64_data = audio_data
+
+                if not base64_data:
+                    # Log the full response for debugging
+                    logger.error(f"No audio data found. Full response: {result}")
+                    return AudioGenerationResponse(
+                        success=False,
+                        error="No audio data in response - generation may have failed (check server logs for OOM errors)",
+                    )
+
+                generation_time = time.time() - start_time
+                logger.info(f"Diffusion audio generated in {generation_time:.2f}s, format: {audio_format}")
+
+                return AudioGenerationResponse(
+                    success=True,
+                    audio_base64=base64_data,
+                    audio_format=audio_format,
+                    duration=None,
+                    generation_time=generation_time,
+                )
+
+    except aiohttp.ClientError as e:
+        logger.error(f"Connection error to vLLM-Omni: {e}")
+        return AudioGenerationResponse(success=False, error=f"Connection error: {e}")
+    except Exception as e:
+        logger.error(f"Audio generation error: {e}")
+        return AudioGenerationResponse(success=False, error=str(e))
+
+
+@app.post("/api/omni/chat")
+async def omni_chat(request: OmniChatRequest):
+    """Chat with vLLM-Omni models (Qwen-Omni) with streaming support"""
+    global omni_running, omni_config
+
+    if not omni_running:
+        raise HTTPException(status_code=400, detail="vLLM-Omni server is not running")
+
+    if not omni_config:
+        raise HTTPException(status_code=400, detail="vLLM-Omni configuration not available")
+
+    # Build request to vLLM-Omni's /v1/chat/completions endpoint
+    omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
+
+    payload = {
+        "model": omni_config.model,
+        "messages": request.messages,
+        "temperature": request.temperature,
+        "max_tokens": request.max_tokens,
+        "stream": request.stream,
+    }
+
+    logger.info(f"Sending chat request to vLLM-Omni: {omni_url}")
+
+    async def generate_stream():
+        """Generator for streaming responses"""
+        full_text = ""
+        audio_data = None
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=120)  # 2 minutes for audio generation
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(omni_url, json=payload) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"vLLM-Omni error: {error_text}")
+                        yield f"data: {json.dumps({'error': error_text})}\n\n"
+                        return
+
+                    if request.stream:
+                        # Stream the response
+                        async for line in response.content:
+                            line_text = line.decode("utf-8", errors="replace").strip()
+                            if not line_text:
+                                continue
+
+                            if line_text.startswith("data: "):
+                                data = line_text[6:]
+                                if data == "[DONE]":
+                                    yield "data: [DONE]\n\n"
+                                    continue
+
+                                try:
+                                    parsed = json.loads(data)
+                                    choices = parsed.get("choices", [])
+                                    if choices:
+                                        delta = choices[0].get("delta", {})
+                                        content = delta.get("content", "")
+
+                                        # Handle text content
+                                        if isinstance(content, str) and content:
+                                            full_text += content
+                                            yield f"data: {json.dumps({'text': content})}\n\n"
+
+                                        # Handle multimodal content (list format)
+                                        elif isinstance(content, list):
+                                            for item in content:
+                                                if item.get("type") == "text":
+                                                    text = item.get("text", "")
+                                                    full_text += text
+                                                    yield f"data: {json.dumps({'text': text})}\n\n"
+                                                elif item.get("type") == "audio":
+                                                    audio_url = item.get("audio_url", {}).get("url", "")
+                                                    if audio_url.startswith("data:audio"):
+                                                        # Extract audio format from data URL
+                                                        audio_format = "audio/wav"
+                                                        try:
+                                                            mime_part = audio_url.split(";")[0]
+                                                            audio_format = mime_part.replace("data:", "")
+                                                        except (IndexError, ValueError):
+                                                            pass
+                                                        audio_data = (
+                                                            audio_url.split(",", 1)[1]
+                                                            if "," in audio_url
+                                                            else audio_url
+                                                        )
+                                                        yield f"data: {json.dumps({'audio': audio_data, 'audio_format': audio_format})}\n\n"
+
+                                except json.JSONDecodeError:
+                                    continue
+
+                    else:
+                        # Non-streaming response
+                        result = await response.json()
+                        try:
+                            choices = result.get("choices", [])
+                            if choices:
+                                message = choices[0].get("message", {})
+                                content = message.get("content", "")
+
+                                # Handle string content
+                                if isinstance(content, str):
+                                    yield f"data: {json.dumps({'text': content})}\n\n"
+
+                                # Handle multimodal content (list format)
+                                elif isinstance(content, list):
+                                    for item in content:
+                                        if item.get("type") == "text":
+                                            yield f"data: {json.dumps({'text': item.get('text', '')})}\n\n"
+                                        elif item.get("type") == "audio":
+                                            audio_url = item.get("audio_url", {}).get("url", "")
+                                            if audio_url.startswith("data:audio"):
+                                                # Extract audio format from data URL
+                                                audio_format = "audio/wav"
+                                                try:
+                                                    mime_part = audio_url.split(";")[0]
+                                                    audio_format = mime_part.replace("data:", "")
+                                                except (IndexError, ValueError):
+                                                    pass
+                                                audio_data = (
+                                                    audio_url.split(",", 1)[1] if "," in audio_url else audio_url
+                                                )
+                                                yield f"data: {json.dumps({'audio': audio_data, 'audio_format': audio_format})}\n\n"
+
+                        except (KeyError, IndexError, TypeError) as e:
+                            logger.error(f"Failed to parse vLLM-Omni response: {e}")
+                            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+                        yield "data: [DONE]\n\n"
+
+        except aiohttp.ClientError as e:
+            logger.error(f"Connection error to vLLM-Omni: {e}")
+            yield f"data: {json.dumps({'error': f'Connection error: {e}'})}\n\n"
+        except Exception as e:
+            logger.error(f"Omni chat error: {e}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.get("/api/omni/models")
+async def list_omni_models():
+    """List all vLLM-Omni supported models by category (from official docs)
+
+    Source: https://docs.vllm.ai/projects/vllm-omni/en/latest/models/supported_models/
+    """
+    return {
+        "image": [
+            # Qwen Image Models (Text-to-Image) - require >48GB VRAM
+            {
+                "id": "Qwen/Qwen-Image",
+                "name": "Qwen Image",
+                "vram": ">48GB",
+                "description": "High quality text-to-image",
+                "supports_image_edit": False,
+            },
+            {
+                "id": "Qwen/Qwen-Image-2512",
+                "name": "Qwen Image 2512",
+                "vram": ">48GB",
+                "description": "Higher resolution (2512px)",
+                "supports_image_edit": False,
+            },
+            # Qwen Image-Edit Models (Image-to-Image) - require >48GB VRAM
+            {
+                "id": "Qwen/Qwen-Image-Edit",
+                "name": "Qwen Image Edit",
+                "vram": ">48GB",
+                "description": "Image editing (supports image-to-image)",
+                "supports_image_edit": True,
+            },
+            {
+                "id": "Qwen/Qwen-Image-Edit-2509",
+                "name": "Qwen Image Edit 2509",
+                "vram": ">48GB",
+                "description": "Advanced image editing (supports image-to-image)",
+                "supports_image_edit": True,
+            },
+            {
+                "id": "Qwen/Qwen-Image-Edit-2511",
+                "name": "Qwen Image Edit 2511",
+                "vram": ">48GB",
+                "description": "Latest image editing (supports image-to-image)",
+                "supports_image_edit": True,
+            },
+            {
+                "id": "Qwen/Qwen-Image-Layered",
+                "name": "Qwen Image Layered",
+                "vram": ">48GB",
+                "description": "Layered image generation",
+                "supports_image_edit": False,
+            },
+            # Z-Image (Text-to-Image)
+            {
+                "id": "Tongyi-MAI/Z-Image-Turbo",
+                "name": "Z-Image Turbo",
+                "vram": "16GB",
+                "description": "Fast text-to-image generation",
+                "supports_image_edit": False,
+            },
+            # BAGEL
+            {
+                "id": "ByteDance-Seed/BAGEL-7B-MoT",
+                "name": "BAGEL 7B MoT",
+                "vram": "16GB",
+                "description": "ByteDance DiT model",
+                "supports_image_edit": False,
+            },
+            # Ovis
+            {
+                "id": "OvisAI/Ovis-Image",
+                "name": "Ovis Image",
+                "vram": "16GB",
+                "description": "Ovis image generation",
+                "supports_image_edit": False,
+            },
+            # LongCat
+            {
+                "id": "meituan-longcat/LongCat-Image",
+                "name": "LongCat Image",
+                "vram": "16GB",
+                "description": "Meituan image generation",
+                "supports_image_edit": False,
+            },
+            {
+                "id": "meituan-longcat/LongCat-Image-Edit",
+                "name": "LongCat Image Edit",
+                "vram": "16GB",
+                "description": "Meituan image editing (supports image-to-image)",
+                "supports_image_edit": True,
+            },
+            # Stable Diffusion (Text-to-Image)
+            {
+                "id": "stabilityai/stable-diffusion-3.5-medium",
+                "name": "Stable Diffusion 3.5",
+                "vram": "16GB",
+                "description": "SD3.5 medium model",
+                "supports_image_edit": False,
+            },
+            # FLUX (Text-to-Image)
+            {
+                "id": "black-forest-labs/FLUX.2-klein-4B",
+                "name": "FLUX.2 Klein 4B",
+                "vram": "12GB",
+                "description": "Compact FLUX model",
+                "supports_image_edit": False,
+            },
+            {
+                "id": "black-forest-labs/FLUX.2-klein-9B",
+                "name": "FLUX.2 Klein 9B",
+                "vram": "24GB",
+                "description": "Larger FLUX model",
+                "supports_image_edit": False,
+            },
+        ],
+        "omni": [
+            # Qwen Omni Models (Text + Audio I/O)
+            # Note: Qwen2.5-Omni models removed - they require 2+ GPUs for multi-stage pipeline
+            {
+                "id": "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+                "name": "Qwen3 Omni 30B",
+                "vram": "48GB",
+                "description": "Advanced omni model (MoE)",
+            },
+        ],
+        "video": [
+            # Wan Video Models
+            {
+                "id": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+                "name": "Wan2.2 T2V 14B",
+                "vram": "24GB+",
+                "description": "Text-to-video generation",
+            },
+            {
+                "id": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+                "name": "Wan2.2 TI2V 5B",
+                "vram": "16GB",
+                "description": "Text+Image to video",
+            },
+            {
+                "id": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+                "name": "Wan2.2 I2V 14B",
+                "vram": "24GB+",
+                "description": "Image-to-video generation",
+            },
+        ],
+        "tts": [
+            # Qwen TTS Models (uses /v1/audio/speech)
+            {
+                "id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+                "name": "Qwen3 TTS Base",
+                "vram": "12GB",
+                "description": "Lightweight TTS model (0.6B params)",
+            },
+            {
+                "id": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+                "name": "Qwen3 TTS Voice Design",
+                "vram": "24GB+",
+                "description": "TTS with voice design capabilities (1.7B params)",
+            },
+            {
+                "id": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+                "name": "Qwen3 TTS Custom Voice",
+                "vram": "24GB+",
+                "description": "TTS with custom voice cloning (1.7B params)",
+            },
+        ],
+        "audio": [
+            # Stable Audio (diffusion-based, uses /v1/chat/completions)
+            {
+                "id": "stabilityai/stable-audio-open-1.0",
+                "name": "Stable Audio Open",
+                "vram": "32GB+",
+                "description": "Text-to-audio/music generation (diffusion model, up to 47s)",
+            },
+        ],
+    }
+
+
+async def read_omni_logs_subprocess():
+    """Read logs from vLLM-Omni subprocess"""
+    global omni_process, omni_running
+
+    if not omni_process or not omni_process.stdout:
+        return
+
+    try:
+        while omni_running and omni_process:
+            line = await omni_process.stdout.readline()
+            if not line:
+                break
+
+            log_line = line.decode("utf-8", errors="replace").strip()
+            if log_line:
+                # Broadcast to omni websocket connections with [OMNI] prefix
+                await broadcast_omni_log(f"[OMNI] {log_line}")
+
+    except Exception as e:
+        logger.error(f"Error reading omni logs: {e}")
+
+    # Check if process ended
+    if omni_process and omni_process.returncode is not None:
+        omni_running = False
+        await broadcast_omni_log(f"[OMNI] Process ended with code {omni_process.returncode}")
 
 
 # ============================================

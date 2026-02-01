@@ -1210,6 +1210,108 @@
           ]
         }
       ]
+    },
+    {
+      "id": "vllm-omni-audio",
+      "name": "vLLM-Omni Audio Models",
+      "description": "Audio and TTS models for vLLM-Omni (requires vLLM-Omni installation)",
+      "recipes": [
+        {
+          "id": "stable-audio-open",
+          "name": "Stable Audio Open 1.0",
+          "description": "Text-to-audio/music generation using diffusion (up to 47s stereo at 44.1kHz). Uses /v1/chat/completions endpoint.",
+          "model_id": "stabilityai/stable-audio-open-1.0",
+          "docs_url": "https://docs.vllm.ai/projects/vllm-omni/en/latest/models/supported_models/",
+          "hardware": {
+            "recommended": "1x A100 80GB",
+            "minimum": "1x A100 40GB"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "gpu_memory_utilization": 0.9,
+            "enforce_eager": true
+          },
+          "tags": [
+            "audio",
+            "diffusion",
+            "music",
+            "vllm-omni",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "qwen3-tts-custom-voice",
+          "name": "Qwen3-TTS Custom Voice (1.7B)",
+          "description": "TTS with custom voice cloning capabilities. Uses /v1/audio/speech endpoint.",
+          "model_id": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+          "docs_url": "https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/examples/online_serving/qwen3_tts/",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 4090 24GB"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "gpu_memory_utilization": 0.9,
+            "enforce_eager": true,
+            "stage_configs_path": "vllm_omni/model_executor/stage_configs/qwen3_tts.yaml"
+          },
+          "tags": [
+            "tts",
+            "speech",
+            "voice-cloning",
+            "vllm-omni",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "qwen3-tts-voice-design",
+          "name": "Qwen3-TTS Voice Design (1.7B)",
+          "description": "TTS with voice design capabilities for custom voice creation. Uses /v1/audio/speech endpoint.",
+          "model_id": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+          "docs_url": "https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/examples/online_serving/qwen3_tts/",
+          "hardware": {
+            "recommended": "1x A100 40GB",
+            "minimum": "1x RTX 4090 24GB"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "gpu_memory_utilization": 0.9,
+            "enforce_eager": true,
+            "stage_configs_path": "vllm_omni/model_executor/stage_configs/qwen3_tts.yaml"
+          },
+          "tags": [
+            "tts",
+            "speech",
+            "voice-design",
+            "vllm-omni",
+            "single-gpu"
+          ]
+        },
+        {
+          "id": "qwen3-tts-base",
+          "name": "Qwen3-TTS Base (0.6B)",
+          "description": "Lightweight TTS model for efficient speech synthesis. Uses /v1/audio/speech endpoint.",
+          "model_id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+          "docs_url": "https://docs.vllm.ai/projects/vllm-omni/en/latest/user_guide/examples/online_serving/qwen3_tts/",
+          "hardware": {
+            "recommended": "1x RTX 4090",
+            "minimum": "1x RTX 3090"
+          },
+          "config": {
+            "tensor_parallel_size": 1,
+            "gpu_memory_utilization": 0.9,
+            "enforce_eager": true,
+            "stage_configs_path": "vllm_omni/model_executor/stage_configs/qwen3_tts.yaml"
+          },
+          "tags": [
+            "tts",
+            "speech",
+            "lightweight",
+            "vllm-omni",
+            "single-gpu"
+          ]
+        }
+      ]
     }
   ]
 }

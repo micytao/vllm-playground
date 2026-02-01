@@ -1,0 +1,789 @@
+<!-- vLLM-Omni View Template -->
+<!-- Loaded dynamically by omni.js -->
+
+<!-- vLLM-Omni Installation Section (collapsible, like Server Logs) -->
+<div class="omni-install-section" id="omni-install-section" style="display: none;">
+    <div class="omni-install-header" id="omni-install-toggle">
+        <div class="omni-install-title">
+            <span class="toggle-icon">&#9660;</span>
+            <h3>vLLM-Omni Installation</h3>
+        </div>
+        <span class="install-status-badge not-installed" id="omni-install-badge">Not Installed</span>
+    </div>
+    <div class="omni-install-content" id="omni-install-content">
+        <div class="install-warning-message">
+            <p>vLLM-Omni is required for multimodal generation (text-to-image, omni models).</p>
+            <p>You can still use <strong>Container mode</strong> without local installation.</p>
+        </div>
+        <div class="install-instructions">
+            <p>To use <strong>Subprocess mode</strong>, install vLLM-Omni in a separate virtual environment:</p>
+            <pre><code># Create venv with Python 3.12
+uv venv --python 3.12 --seed ~/.venv-vllm-omni
+source ~/.venv-vllm-omni/bin/activate
+
+# Install vLLM base (CUDA)
+uv pip install vllm==0.14.0 --torch-backend=auto
+
+# Clone and install vLLM-Omni
+git clone https://github.com/vllm-project/vllm-omni.git
+cd vllm-omni && uv pip install -e .
+
+# For Qwen3-TTS models, also install:
+uv pip install onnxruntime</code></pre>
+            <p>Then set the venv path (<code>~/.venv-vllm-omni</code>) in the Run Mode configuration below.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Main Content Wrapper -->
+<div class="omni-content-wrapper" id="omni-content-wrapper">
+    <div class="main-content omni-layout">
+        <!-- Left: Config Panel -->
+        <div class="config-panel resizable" id="omni-config-panel">
+            <h2>&#127912; vLLM-Omni Configuration</h2>
+
+            <!-- Availability Status -->
+            <div class="omni-availability-status" id="omni-availability-status">
+                <span class="status-dot"></span>
+                <span class="status-text">Checking...</span>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Section: Model Selection -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="config-section">
+                <div class="config-section-header">
+                    <span class="section-icon">&#129302;</span>
+                    <h3>Model Selection</h3>
+                </div>
+                <div class="config-section-content">
+                    <!-- Model Source Toggle -->
+                    <div class="form-group mode-toggle-group">
+                        <label>Model Source</label>
+                        <div class="mode-toggle-buttons">
+                            <label class="mode-button active" id="omni-model-source-hub-label">
+                                <input type="radio" name="omni-model-source" id="omni-model-source-hub" value="hub" checked>
+                                <span class="mode-button-content"><span class="mode-icon">🤗</span><span class="mode-label">HuggingFace</span></span>
+                            </label>
+                            <label class="mode-button" id="omni-model-source-modelscope-label">
+                                <input type="radio" name="omni-model-source" id="omni-model-source-modelscope" value="modelscope">
+                                <span class="mode-button-content"><span class="mode-icon">🔮</span><span class="mode-label">ModelScope</span></span>
+                            </label>
+                        </div>
+                        <span class="help-text" id="omni-model-source-help">Download models from HuggingFace or ModelScope (China)</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Model Type</label>
+                        <select id="omni-model-type">
+                            <option value="image">Image Generation</option>
+                            <option value="video" disabled>Video Generation (Coming Soon)</option>
+                            <option value="tts">TTS (Text-to-Speech)</option>
+                            <option value="audio">Audio (Music/SFX)</option>
+                            <option value="omni" disabled>Omni (Text + Audio Chat) (Coming Soon)</option>
+                        </select>
+                        <span class="help-text" id="omni-model-type-tip">Generate images from text prompts (Text-to-Image)</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Model</label>
+                        <select id="omni-model-select">
+                            <!-- Populated dynamically based on model type -->
+                            <option value="Tongyi-MAI/Z-Image-Turbo">Z-Image Turbo (Fast)</option>
+                            <option value="Qwen/Qwen-Image">Qwen Image</option>
+                        </select>
+                        <input type="text" id="omni-custom-model" class="form-control" placeholder="Or enter custom model ID (e.g., your-org/your-model)" style="margin-top: 8px;">
+                        <!-- Omni Recipes Button -->
+                        <button id="omni-browse-recipes-btn" class="btn btn-secondary btn-sm browse-recipes-btn" onclick="window.vllmUI.openOmniRecipesModal()">
+                            📚 Browse Recipes
+                        </button>
+                        <span class="help-text" id="omni-model-edit-tip" style="display: none; color: var(--success-color);">
+                            ✓ This model supports image-to-image editing
+                        </span>
+                    </div>
+
+                    <div class="model-id-display" id="omni-model-id-display">
+                        <span class="model-id-label" id="omni-model-id-label">Model ID:</span>
+                        <code class="model-id-value" id="omni-model-id-value">Tongyi-MAI/Z-Image-Turbo</code>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Section: Server Configuration -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="config-section">
+                <div class="config-section-header">
+                    <span class="section-icon">&#9881;</span>
+                    <h3>Server Configuration</h3>
+                </div>
+                <div class="config-section-content">
+                    <div class="form-group mode-toggle-group">
+                        <label>Run Mode</label>
+                        <div class="mode-toggle-buttons" id="omni-run-mode-toggle">
+                            <label class="mode-button active" id="omni-run-mode-subprocess-label">
+                                <input type="radio" id="omni-run-mode-subprocess" name="omni-run-mode" value="subprocess" checked>
+                                <span>⚡ Subprocess</span>
+                            </label>
+                            <label class="mode-button" id="omni-run-mode-container-label">
+                                <input type="radio" id="omni-run-mode-container" name="omni-run-mode" value="container">
+                                <span>📦 Container</span>
+                            </label>
+                        </div>
+                        <small class="form-help" id="omni-run-mode-help">Subprocess requires local vLLM-Omni installation</small>
+                    </div>
+
+                    <div class="form-group" id="omni-venv-path-group">
+                        <label>vLLM-Omni Venv Path</label>
+                        <input type="text" id="omni-venv-path" placeholder="~/.venv-vllm-omni">
+                        <span class="help-text">Path to virtual environment with vLLM-Omni installed</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Port</label>
+                        <input type="number" id="omni-port" value="8091" min="1024" max="65535">
+                        <span class="help-text">Server port (default: 8091)</span>
+                    </div>
+
+                    <!-- HuggingFace Token for Gated Models (same pattern as main vLLM Server) -->
+                    <div class="form-group" id="omni-hf-token-section">
+                        <label for="omni-hf-token">HuggingFace Token (Optional)</label>
+                        <input type="password" id="omni-hf-token" class="form-control" placeholder="hf_xxxxxxxxxxxxx">
+                        <small class="form-help">Required for gated models (Stable Audio, etc.). Get token from <a href="https://huggingface.co/settings/tokens" target="_blank">HuggingFace Settings</a></small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Section: GPU Settings -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="config-section">
+                <div class="config-section-header">
+                    <span class="section-icon">&#127918;</span>
+                    <h3>GPU Settings</h3>
+                </div>
+                <div class="config-section-content">
+                    <div class="form-group">
+                        <label>GPU Device</label>
+                        <input type="text" id="omni-gpu-device" placeholder="0 (or 0,1 for multi-GPU)">
+                        <span class="help-text">CUDA_VISIBLE_DEVICES setting</span>
+                    </div>
+                    <div class="form-group">
+                        <label>Tensor Parallel Size</label>
+                        <input type="number" id="omni-tensor-parallel" value="1" min="1" max="8" step="1">
+                        <span class="help-text">For LLMs: splits model across GPUs. For diffusion: runs parallel workers (each needs full model memory)</span>
+                    </div>
+                    <div class="form-group">
+                        <label>GPU Memory Utilization</label>
+                        <input type="number" id="omni-gpu-memory" value="0.9" min="0.1" max="1.0" step="0.1">
+                        <span class="help-text">Fraction of GPU memory to use (0.1-1.0)</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="omni-cpu-offload">
+                            <span>Enable CPU Offload</span>
+                        </label>
+                        <span class="help-text">Reduce GPU memory by offloading to CPU (slower but uses less VRAM)</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="omni-torch-compile">
+                            <span>Enable torch.compile</span>
+                        </label>
+                        <span class="help-text">Faster inference but slower startup (2-5 min compilation on first run)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Section: Generation Parameters (for image/video models) -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="config-section" id="omni-generation-params">
+                <div class="config-section-header">
+                    <span class="section-icon">&#9881;</span>
+                    <h3>Generation Parameters</h3>
+                </div>
+                <div class="config-section-content">
+                    <!-- Image Size: Only for image generation -->
+                    <div class="form-group" id="omni-image-size-group">
+                        <label>Image Size</label>
+                        <div class="size-inputs">
+                            <input type="number" id="omni-width" value="1024" min="256" max="2048" step="64">
+                            <span>x</span>
+                            <input type="number" id="omni-height" value="1024" min="256" max="2048" step="64">
+                        </div>
+                    </div>
+
+                    <!-- Video Parameters: Only for video generation -->
+                    <div id="omni-video-params-group" style="display: none;">
+                        <div class="form-group">
+                            <label>Video Resolution</label>
+                            <select id="omni-video-resolution" class="form-select">
+                                <option value="320x512">320x512 (Minimal - 16GB)</option>
+                                <option value="480x640" selected>480x640 (Low - 24GB)</option>
+                                <option value="480x848">480x848 (16:9 - 32GB)</option>
+                                <option value="720x1280">720x1280 (HD - 48GB+)</option>
+                            </select>
+                        </div>
+                        <div class="form-group video-duration-fps">
+                            <div class="duration-fps-row">
+                                <div class="duration-input">
+                                    <label for="omni-video-duration">Duration (sec)</label>
+                                    <input type="number" id="omni-video-duration" value="4" min="1" max="16" step="1">
+                                </div>
+                                <div class="fps-input">
+                                    <label for="omni-video-fps">FPS</label>
+                                    <input type="number" id="omni-video-fps" value="16" min="8" max="30" step="1">
+                                </div>
+                            </div>
+                            <span class="help-text">Lower resolution & shorter duration use less GPU memory. For L4 (24GB): use 480x640, 4s, 16fps. For OOM errors, try 320x512.</span>
+                        </div>
+                    </div>
+
+                    <!-- Audio Parameters: For TTS (Qwen3-TTS) and Diffusion (Stable Audio) models -->
+                    <!-- TTS Parameters (for Qwen3-TTS) -->
+                    <div id="omni-tts-params-group" style="display: none;">
+                        <div class="form-group">
+                            <label for="omni-tts-voice">Voice</label>
+                            <select id="omni-tts-voice">
+                                <option value="Vivian" selected>Vivian (Female, English)</option>
+                                <option value="Serena">Serena (Female, English)</option>
+                                <option value="Ono_Anna">Ono Anna (Female, Japanese)</option>
+                                <option value="Sohee">Sohee (Female, Korean)</option>
+                                <option value="Ryan">Ryan (Male, English)</option>
+                                <option value="Aiden">Aiden (Male, English)</option>
+                                <option value="Dylan">Dylan (Male, English)</option>
+                                <option value="Eric">Eric (Male, English)</option>
+                                <option value="Uncle_Fu">Uncle Fu (Male, Chinese)</option>
+                            </select>
+                            <span class="help-text">Select voice for speech synthesis</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="omni-tts-instructions">Style Instructions (optional)</label>
+                            <input type="text" id="omni-tts-instructions" placeholder="e.g., Speak with excitement">
+                            <span class="help-text">Voice style or emotion (e.g., "cheerful", "serious")</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="omni-tts-speed">Speed: <span id="omni-tts-speed-value">1.0</span>x</label>
+                            <input type="range" id="omni-tts-speed" min="0.25" max="4.0" value="1.0" step="0.25">
+                            <span class="help-text">Speech speed (0.25x to 4.0x)</span>
+                        </div>
+                    </div>
+
+                    <!-- Audio Parameters (for Stable Audio - Music/SFX) -->
+                    <div id="omni-audio-params-group" style="display: none;">
+                        <div class="form-group">
+                            <label for="omni-audio-duration">Duration: <span id="omni-audio-duration-value">10</span>s</label>
+                            <input type="range" id="omni-audio-duration" min="1" max="47" value="10" step="1">
+                            <span class="help-text">Audio length: 1-47 seconds (shorter = less GPU memory)</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="omni-audio-steps">Inference Steps: <span id="omni-audio-steps-value">50</span></label>
+                            <input type="range" id="omni-audio-steps" min="10" max="200" value="50" step="10">
+                            <span class="help-text">Quality vs speed (20-100 recommended)</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="omni-audio-guidance">Guidance Scale: <span id="omni-audio-guidance-value">7.0</span></label>
+                            <input type="range" id="omni-audio-guidance" min="1" max="15" value="7" step="0.5">
+                            <span class="help-text">Prompt adherence (7.0 recommended)</span>
+                        </div>
+                    </div>
+
+                    <!-- Inference Steps: For image and video generation -->
+                    <div class="form-group" id="omni-steps-group">
+                        <label>Inference Steps: <span id="omni-steps-value">6</span></label>
+                        <input type="range" id="omni-steps" min="1" max="100" value="6">
+                    </div>
+
+                    <!-- Guidance Scale: For image and video generation -->
+                    <div class="form-group" id="omni-guidance-group">
+                        <label>Guidance Scale: <span id="omni-guidance-value">1.0</span></label>
+                        <input type="range" id="omni-guidance" min="0" max="20" step="0.5" value="1">
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Command Preview -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="command-preview-section">
+                <div class="command-preview-header">
+                    <h3>Command Preview</h3>
+                    <div class="command-preview-buttons">
+                        <button id="omni-reset-command-btn" class="btn btn-secondary btn-sm" title="Reset to auto-generated command">Reset</button>
+                        <button id="omni-copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command">Copy</button>
+                    </div>
+                </div>
+                <textarea id="omni-command-text" class="command-preview-textarea" rows="6" spellcheck="false">vllm serve Tongyi-MAI/Z-Image-Turbo --omni --port 8091</textarea>
+                <small class="command-help">Editable for customization. Copy to run manually. "Start Server" uses settings above. Click "Reset" to restore.</small>
+            </div>
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Server Controls -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="config-section server-controls-section">
+                <div class="button-group">
+                    <button id="omni-start-btn" class="btn btn-primary">Start Server</button>
+                    <button id="omni-stop-btn" class="btn btn-danger" disabled>Stop Server</button>
+                </div>
+
+                <div class="status-indicator" id="omni-server-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Offline</span>
+                </div>
+            </div>
+
+            <!-- Resize Handle -->
+            <div class="resize-handle resize-handle-vertical" id="omni-config-resize-handle" data-direction="horizontal"></div>
+        </div>
+
+        <!-- Right: Hybrid Interaction Panel -->
+        <div class="interaction-panel" id="omni-interaction-panel">
+
+            <!-- === GENERATION STUDIO (for image/video models) === -->
+            <div id="omni-studio-panel" class="panel-mode">
+                <!-- Panel Header with dynamic title -->
+                <div class="studio-header">
+                    <span class="studio-icon" id="omni-studio-icon">&#127912;</span>
+                    <span class="studio-title" id="omni-studio-title">Image Generation</span>
+                </div>
+
+                <!-- Image Upload Dropzone (only shown for Image-Edit models like Qwen-Image-Edit) -->
+                <div class="image-upload-section" id="omni-image-upload" style="display: none;">
+                    <div class="image-edit-info" style="font-size: 0.85em; color: var(--text-muted); margin-bottom: 8px; padding: 6px 10px; background: var(--surface-color); border-radius: 6px; border-left: 3px solid var(--primary-color);">
+                        <strong>Image-to-Image Mode:</strong> Upload an image to edit with your prompt. Only available with Image-Edit models.
+                    </div>
+                    <div class="dropzone" id="omni-dropzone">
+                        <div class="dropzone-content">
+                            <span class="dropzone-icon">&#128444;</span>
+                            <span class="dropzone-text">Drop image here for image-to-image editing</span>
+                            <span class="dropzone-hint">or click to browse (optional)</span>
+                        </div>
+                        <input type="file" id="omni-image-input" accept="image/*" hidden>
+                    </div>
+                    <div class="uploaded-preview" id="omni-uploaded-preview" style="display: none;">
+                        <img id="omni-uploaded-image" src="" alt="Uploaded">
+                        <button id="omni-clear-upload" class="btn btn-sm">Clear</button>
+                    </div>
+                </div>
+
+                <!-- Prompt Input -->
+                <div class="prompt-section">
+                    <div class="prompt-inputs">
+                        <textarea id="omni-prompt" placeholder="Describe the image you want to generate..." rows="3"></textarea>
+                        <textarea id="omni-negative-prompt" placeholder="Negative prompt (optional)..." rows="2"></textarea>
+                    </div>
+
+                    <div class="prompt-actions">
+                        <div class="seed-input-wrapper">
+                            <input type="number" id="omni-seed" placeholder="Seed (optional)" min="0">
+                            <span class="help-text seed-tip">Random number for reproducibility. Same seed + prompt = same output.</span>
+                        </div>
+                        <div class="template-select-wrapper">
+                            <label for="omni-prompt-template">Quick Template:</label>
+                            <select id="omni-prompt-template">
+                                <option value="">-- Select a template --</option>
+                                <!-- Options populated dynamically based on model type -->
+                            </select>
+                        </div>
+                        <button id="omni-generate-btn" class="btn btn-primary" disabled>
+                            <span id="omni-generate-btn-text">Generate Image</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Generated Content Gallery (dynamic based on mode) -->
+                <div class="generation-gallery-wrapper">
+                    <div class="gallery-header" id="omni-gallery-header">
+                        <div class="gallery-header-title">
+                            <h3>Gallery</h3>
+                        </div>
+                        <div class="gallery-header-actions">
+                            <span class="gallery-count" id="omni-gallery-count">0 items</span>
+                            <button id="omni-clear-gallery-btn" class="btn btn-secondary btn-sm" title="Clear gallery">Clear</button>
+                        </div>
+                    </div>
+                    <div class="generation-gallery" id="omni-gallery">
+                        <div class="gallery-placeholder" id="omni-gallery-placeholder">
+                            <span class="placeholder-icon" id="omni-gallery-icon">&#127912;</span>
+                            <span class="placeholder-text" id="omni-gallery-text">Generated images will appear here</span>
+                            <span class="placeholder-hint" id="omni-gallery-hint">Start the server and enter a prompt to generate</span>
+                        </div>
+                        <div class="gallery-content" id="omni-gallery-content" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === CHAT INTERFACE (for Omni models) === -->
+            <div id="omni-chat-panel" class="panel-mode" style="display: none;">
+                <div class="panel omni-chat-wrapper">
+                    <!-- Panel Header (consistent with vLLM Server) -->
+                    <div class="panel-header">
+                        <h2>&#128172; Omni Chat</h2>
+                        <div class="chat-header-actions">
+                            <button id="omni-export-chat-btn" class="btn btn-secondary btn-sm">Export</button>
+                            <button id="omni-clear-chat-btn" class="btn btn-secondary btn-sm">Clear</button>
+                        </div>
+                    </div>
+
+                    <!-- Chat Container (reuse pattern from vLLM Server) -->
+                    <div class="chat-container" id="omni-chat-container">
+                        <div class="chat-message system">
+                            <div class="message-content">
+                                <span class="message-text">Chat with Qwen-Omni. Supports text, images, and audio input/output.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Input Area (consistent with vLLM Server) -->
+                    <div class="chat-input-area">
+                        <!-- Media Preview (for attached images) -->
+                        <div class="chat-media-preview" id="omni-chat-media-preview" style="display: none;">
+                            <img id="omni-chat-preview-image" src="" alt="Attached">
+                            <button id="omni-chat-clear-media" class="btn btn-sm btn-secondary">Remove</button>
+                        </div>
+
+                        <!-- Main Input Group -->
+                        <div class="input-group">
+                            <button id="omni-attach-image-btn" class="btn btn-secondary btn-icon" title="Attach image">&#128444;</button>
+                            <input type="file" id="omni-chat-image-input" accept="image/*" hidden>
+                            <textarea id="omni-chat-input" class="chat-input" placeholder="Type your message here..." rows="1"></textarea>
+                            <button id="omni-chat-send-btn" class="btn btn-primary" disabled>Send</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Bottom: Server Logs (collapsible, consistent with vLLM Server) -->
+    <div class="logs-row" id="omni-logs-row">
+        <div class="logs-row-header" id="omni-logs-row-toggle">
+            <div class="logs-row-title">
+                <span class="logs-toggle-icon">&#9660;</span>
+                <h2>&#128203; Server Logs</h2>
+            </div>
+            <div class="logs-row-controls">
+                <label class="auto-scroll-label">
+                    <input type="checkbox" id="omni-auto-scroll" checked>
+                    <span>Auto-scroll</span>
+                </label>
+                <button id="omni-save-logs-btn" class="btn btn-secondary btn-sm">Save</button>
+                <button id="omni-clear-logs-btn" class="btn btn-secondary btn-sm">Clear</button>
+            </div>
+        </div>
+        <div class="logs-row-content" id="omni-logs-row-content">
+            <div id="omni-logs-container" class="logs-container">
+                <div class="log-entry info">Waiting for vLLM-Omni server...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Omni Recipes Modal -->
+<div id="omni-recipes-modal" class="modal omni-recipes-modal" style="display: none;">
+    <div class="modal-overlay" id="omni-recipes-modal-overlay" onclick="window.vllmUI.closeOmniRecipesModal()"></div>
+    <div class="modal-content omni-recipes-modal-content">
+        <div class="modal-header">
+            <h2>📚 vLLM-Omni Recipes</h2>
+            <button id="omni-recipes-modal-close" class="modal-close" onclick="window.vllmUI.closeOmniRecipesModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p class="recipes-intro">
+                Pre-configured settings optimized for different GPU sizes and use cases.
+                Select a recipe to auto-configure all settings.
+            </p>
+
+            <!-- Recipe Cards -->
+            <div class="omni-recipes-container">
+                <!-- Image Generation Section -->
+                <div class="recipe-section">
+                    <h3 class="recipe-section-header">🖼️ Image Generation</h3>
+                    <div class="omni-recipes-grid" id="omni-recipes-grid-image">
+                        <!-- Small GPU Recipes -->
+                        <div class="omni-recipe-card" data-recipe="small-gpu-turbo">
+                    <div class="recipe-badge">Small GPU</div>
+                    <h3>🚀 Z-Image Turbo (16-24GB)</h3>
+                    <p>Fast image generation for GPUs with 16-24GB VRAM (L4, RTX 4090, A10)</p>
+                    <div class="recipe-specs">
+                        <span>Model: Z-Image-Turbo</span>
+                        <span>Steps: 6</span>
+                        <span>Guidance: 1.0</span>
+                        <span>Memory: 85%</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('small-gpu-turbo')">Apply Recipe</button>
+                </div>
+
+                <div class="omni-recipe-card" data-recipe="small-gpu-quality">
+                    <div class="recipe-badge">Small GPU</div>
+                    <h3>🎨 Quality Mode (16-24GB)</h3>
+                    <p>Higher quality with more steps, still fits in smaller GPUs</p>
+                    <div class="recipe-specs">
+                        <span>Model: Z-Image-Turbo</span>
+                        <span>Steps: 20</span>
+                        <span>Guidance: 3.5</span>
+                        <span>Memory: 90%</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('small-gpu-quality')">Apply Recipe</button>
+                </div>
+
+                <!-- Medium GPU Recipes -->
+                <div class="omni-recipe-card" data-recipe="medium-gpu-balanced">
+                    <div class="recipe-badge">Medium GPU</div>
+                    <h3>⚡ Balanced (32-48GB)</h3>
+                    <p>Good balance of speed and quality for A100-40GB or similar</p>
+                    <div class="recipe-specs">
+                        <span>Model: Z-Image-Turbo</span>
+                        <span>Steps: 12</span>
+                        <span>Guidance: 2.5</span>
+                        <span>Memory: 80%</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('medium-gpu-balanced')">Apply Recipe</button>
+                </div>
+
+                <div class="omni-recipe-card" data-recipe="medium-gpu-hq">
+                    <div class="recipe-badge">Medium GPU</div>
+                    <h3>✨ High Quality (32-48GB)</h3>
+                    <p>Maximum quality settings with Qwen Image model</p>
+                    <div class="recipe-specs">
+                        <span>Model: Qwen-Image</span>
+                        <span>Steps: 30</span>
+                        <span>Guidance: 4.0</span>
+                        <span>Memory: 85%</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('medium-gpu-hq')">Apply Recipe</button>
+                </div>
+
+                <!-- Large GPU Recipes -->
+                <div class="omni-recipe-card" data-recipe="large-gpu-fast">
+                    <div class="recipe-badge">Large GPU</div>
+                    <h3>💨 Ultra Fast (80GB+)</h3>
+                    <p>Blazing fast generation on A100-80GB or H100</p>
+                    <div class="recipe-specs">
+                        <span>Model: Z-Image-Turbo</span>
+                        <span>Steps: 4</span>
+                        <span>Guidance: 0.5</span>
+                        <span>Memory: 70%</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('large-gpu-fast')">Apply Recipe</button>
+                </div>
+
+                <div class="omni-recipe-card" data-recipe="large-gpu-production">
+                    <div class="recipe-badge">Large GPU</div>
+                    <h3>🏭 Production (80GB+)</h3>
+                    <p>Production-ready settings with torch.compile enabled</p>
+                    <div class="recipe-specs">
+                        <span>Model: Qwen-Image</span>
+                        <span>Steps: 25</span>
+                        <span>Guidance: 4.0</span>
+                        <span>torch.compile: On</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('large-gpu-production')">Apply Recipe</button>
+                </div>
+
+                <!-- CPU Offload Recipe -->
+                <div class="omni-recipe-card" data-recipe="cpu-offload">
+                    <div class="recipe-badge">Limited VRAM</div>
+                    <h3>💾 CPU Offload Mode</h3>
+                    <p>For GPUs with limited VRAM (8-16GB), uses CPU offloading</p>
+                    <div class="recipe-specs">
+                        <span>Model: Z-Image-Turbo</span>
+                        <span>Steps: 8</span>
+                        <span>CPU Offload: On</span>
+                        <span>Memory: 70%</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('cpu-offload')">Apply Recipe</button>
+                </div>
+                    </div>
+                </div>
+
+                <!-- Video Generation Section -->
+                <div class="recipe-section recipe-section-wip">
+                    <h3 class="recipe-section-header">🎬 Video Generation <span class="wip-badge">WIP</span></h3>
+                    <div class="omni-recipes-grid" id="omni-recipes-grid-video">
+                        <div class="omni-recipe-card recipe-card-disabled" data-recipe="video-small-fast">
+                            <div class="recipe-badge recipe-badge-video">Video</div>
+                            <h3>🎬 Video 5B Minimal (16GB)</h3>
+                            <p>Smallest config for GPUs with limited VRAM</p>
+                            <div class="recipe-specs">
+                                <span>Model: Wan2.2-TI2V-5B</span>
+                                <span>320x512</span>
+                                <span>2s @ 16fps</span>
+                                <span>Steps: 20</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" disabled>Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card recipe-card-disabled" data-recipe="video-l4-optimized">
+                            <div class="recipe-badge recipe-badge-video">Video</div>
+                            <h3>🎬 Video 5B for L4 (24GB)</h3>
+                            <p>Conservative settings for L4 GPUs</p>
+                            <div class="recipe-specs">
+                                <span>Model: Wan2.2-TI2V-5B</span>
+                                <span>320x512</span>
+                                <span>2s @ 16fps</span>
+                                <span>GPU: 70%</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" disabled>Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card recipe-card-disabled" data-recipe="video-medium-balanced">
+                            <div class="recipe-badge recipe-badge-video">Video</div>
+                            <h3>🎬 Video 5B Quality (32GB+)</h3>
+                            <p>Better quality with 16:9 aspect ratio</p>
+                            <div class="recipe-specs">
+                                <span>Model: Wan2.2-TI2V-5B</span>
+                                <span>480x848</span>
+                                <span>4s @ 16fps</span>
+                                <span>Steps: 30</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" disabled>Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card recipe-card-disabled" data-recipe="video-large-quality">
+                            <div class="recipe-badge recipe-badge-video">Video</div>
+                            <h3>🎬 Video 14B HQ (48GB+)</h3>
+                            <p>High quality HD video for A40/A100 GPUs</p>
+                            <div class="recipe-specs">
+                                <span>Model: Wan2.2-T2V-A14B</span>
+                                <span>720x1280</span>
+                                <span>4s @ 24fps</span>
+                                <span>Steps: 40</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" disabled>Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card recipe-card-disabled" data-recipe="video-cpu-offload">
+                            <div class="recipe-badge recipe-badge-video">Video</div>
+                            <h3>🎬 Video 5B CPU Offload (16GB+)</h3>
+                            <p>Aggressive CPU offload, needs 32GB+ system RAM</p>
+                            <div class="recipe-specs">
+                                <span>Model: Wan2.2-TI2V-5B</span>
+                                <span>320x512</span>
+                                <span>2s @ 16fps</span>
+                                <span>GPU: 50% + CPU</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" disabled>Apply Recipe</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TTS (Text-to-Speech) Section -->
+                <div class="recipe-section">
+                    <h3 class="recipe-section-header">🎙️ Text-to-Speech (TTS)</h3>
+                    <p class="recipe-section-note">⚠️ <strong>Qwen3 TTS</strong>: Open model (Apache-2.0), but container image missing onnxruntime. Use <strong>Subprocess mode</strong> with local vLLM-Omni install.<br>💡 Uses <code>/v1/audio/speech</code> endpoint for speech synthesis.</p>
+                    <div class="omni-recipes-grid" id="omni-recipes-grid-tts">
+                        <div class="omni-recipe-card" data-recipe="tts-base">
+                            <div class="recipe-badge recipe-badge-tts">TTS</div>
+                            <h3>🔊 Qwen3 TTS Base (12GB)</h3>
+                            <p>Lightweight multilingual text-to-speech (0.6B)</p>
+                            <div class="recipe-specs">
+                                <span>Model: Qwen3 TTS 0.6B</span>
+                                <span>VRAM: 12GB</span>
+                                <span>📦 Subprocess mode only</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('tts-base')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="tts-voice-design">
+                            <div class="recipe-badge recipe-badge-tts">TTS</div>
+                            <h3>🎙️ Qwen3 Voice Design (24GB+)</h3>
+                            <p>High quality TTS with voice design (1.7B)</p>
+                            <div class="recipe-specs">
+                                <span>Model: Qwen3 TTS 1.7B</span>
+                                <span>VRAM: 24GB+</span>
+                                <span>📦 Subprocess mode only</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('tts-voice-design')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="tts-custom-voice">
+                            <div class="recipe-badge recipe-badge-tts">TTS</div>
+                            <h3>🎤 Qwen3 Custom Voice (24GB+)</h3>
+                            <p>TTS with voice cloning capabilities (1.7B)</p>
+                            <div class="recipe-specs">
+                                <span>Model: Qwen3 TTS 1.7B</span>
+                                <span>VRAM: 24GB+</span>
+                                <span>📦 Subprocess mode only</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('tts-custom-voice')">Apply Recipe</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audio Generation (Music/SFX) Section -->
+                <div class="recipe-section">
+                    <h3 class="recipe-section-header">🎵 Audio Generation (Music/SFX)</h3>
+                    <p class="recipe-section-note">⚠️ <strong>Stable Audio</strong>: Requires HF token AND accepting license at <a href="https://huggingface.co/stabilityai/stable-audio-open-1.0" target="_blank">huggingface.co</a>.<br>🔧 Uses <strong>offline inference</strong> (in-process mode) to bypass vLLM-Omni serving bug. Container mode unavailable.</p>
+                    <div class="omni-recipes-grid" id="omni-recipes-grid-audio">
+                        <div class="omni-recipe-card" data-recipe="audio-generation">
+                            <div class="recipe-badge recipe-badge-audio">Audio</div>
+                            <h3>🎵 Stable Audio (32GB+)</h3>
+                            <p>Generate music and sound effects from text (diffusion model, up to 47s)</p>
+                            <div class="recipe-specs">
+                                <span>Model: Stable Audio Open</span>
+                                <span>VRAM: 32GB+</span>
+                                <span>🔑 HF Token + License</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-generation')">Apply Recipe</button>
+                        </div>
+
+                        <div class="omni-recipe-card" data-recipe="audio-generation-offload">
+                            <div class="recipe-badge recipe-badge-audio">Audio</div>
+                            <h3>💾 Stable Audio CPU Offload</h3>
+                            <p>Audio generation with CPU offloading (lower VRAM)</p>
+                            <div class="recipe-specs">
+                                <span>Model: Stable Audio Open</span>
+                                <span>CPU Offload: On</span>
+                                <span>🔑 HF Token + License</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm recipe-apply-btn" onclick="window.vllmUI.applyOmniRecipe('audio-generation-offload')">Apply Recipe</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Image Lightbox Modal -->
+<div id="omni-lightbox" class="omni-lightbox">
+    <div class="lightbox-backdrop"></div>
+    <div class="lightbox-content">
+        <button class="lightbox-close" title="Close">&times;</button>
+        <img id="omni-lightbox-image" src="" alt="Generated image">
+        <div class="lightbox-info">
+            <p id="omni-lightbox-prompt" class="lightbox-prompt"></p>
+            <button id="omni-lightbox-download" class="btn btn-primary btn-sm lightbox-download-btn" title="Download">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Video Lightbox Modal -->
+<div id="omni-video-lightbox" class="omni-lightbox omni-video-lightbox">
+    <div class="lightbox-backdrop"></div>
+    <div class="lightbox-content video-lightbox-content">
+        <button class="lightbox-close" title="Close">&times;</button>
+        <video id="omni-lightbox-video" controls autoplay loop>
+            <source src="" type="video/mp4">
+            Your browser does not support video playback.
+        </video>
+        <div class="lightbox-info">
+            <p id="omni-video-lightbox-prompt" class="lightbox-prompt"></p>
+            <button id="omni-video-lightbox-download" class="btn btn-primary btn-sm lightbox-download-btn" title="Download">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+</div>

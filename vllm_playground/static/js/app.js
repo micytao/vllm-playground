@@ -2,6 +2,7 @@
 import { initMCPModule } from './modules/mcp.js';
 import { initGuideLLMModule } from './modules/guidellm.js';
 import { initClaudeCodeModule } from './modules/claudecode.js';
+import { initOmniModule } from './modules/omni.js';
 
 class VLLMWebUI {
     constructor() {
@@ -53,6 +54,10 @@ class VLLMWebUI {
         this.mcpTools = [];             // Tools from selected servers
         this.mcpPresets = [];           // Built-in presets
         this.mcpDisabledTools = new Set(); // Disabled tools (server:toolName format) - all enabled by default
+
+        // vLLM-Omni state
+        this.omniAvailable = false;
+        this.omniVersion = null;
 
         this.init();
     }
@@ -463,6 +468,13 @@ class VLLMWebUI {
                     // Activate Claude Code view
                     if (this.onClaudeCodeViewActivated) {
                         this.onClaudeCodeViewActivated();
+                    }
+                    break;
+                case 'vllm-omni':
+                    viewTitle.innerHTML = '<img src="/assets/vllm-omni-logo.svg" alt="vLLM-Omni" class="view-title-logo"> vLLM-Omni';
+                    // Activate vLLM-Omni view (load template if needed)
+                    if (this.onOmniViewActivated) {
+                        this.onOmniViewActivated();
                     }
                     break;
                 default:
@@ -1333,6 +1345,14 @@ number ::= [0-9]+`
 
             // Initialize Claude Code module
             initClaudeCodeModule(this);
+
+            // Handle vLLM-Omni availability
+            this.omniAvailable = features.vllm_omni_installed || false;
+            this.omniVersion = features.vllm_omni_version || null;
+            initOmniModule(this);
+
+            // Preload vLLM-Omni template immediately (like MCP/Claude Code which are inline)
+            this.loadOmniTemplate();
 
             // Handle ModelScope availability
             this.modelscopeInstalled = features.modelscope_installed || false;
