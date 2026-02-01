@@ -173,7 +173,7 @@ const zhCN = {
         commandPreview: {
             title: '命令预览',
             copy: '复制',
-            help: '直接编辑命令或使用上面的表单。启动服务器时将使用您的编辑内容。'
+            help: '可编辑以自定义。复制后手动运行。"启动服务器"使用上方设置。'
         },
         buttons: {
             start: '启动服务器',

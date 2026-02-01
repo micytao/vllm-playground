@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="/static/css/mcp.css">
     <link rel="stylesheet" href="/static/css/guidellm.css">
     <link rel="stylesheet" href="/static/css/claudecode.css">
+    <link rel="stylesheet" href="/static/css/omni.css">
     <!-- xterm.js for Claude Code terminal -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
@@ -34,6 +35,10 @@
                 <button class="nav-item" data-view="guidellm" title="GuideLLM Benchmark">
                     <img src="/assets/guidellm-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label" data-i18n="nav.guidellm">GuideLLM</span>
+                </button>
+                <button class="nav-item" data-view="vllm-omni" title="vLLM-Omni" id="nav-omni">
+                    <img src="/assets/vllm-omni-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
+                    <span class="nav-label">vLLM-Omni</span>
                 </button>
 
                 <!-- Divider -->
@@ -441,7 +446,7 @@
                                     <button id="copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command" data-i18n="serverConfig.commandPreview.copy">Copy</button>
                                 </div>
                                 <textarea id="command-text" class="command-preview-textarea" rows="8" spellcheck="false">python -m vllm.entrypoints.openai.api_server --model facebook/opt-125m</textarea>
-                                <small class="command-help" data-i18n="serverConfig.commandPreview.help">Edit the command directly or use the form above. Your edits will be used when starting the server.</small>
+                                <small class="command-help" data-i18n="serverConfig.commandPreview.help">Editable for customization. Copy to run manually. "Start Server" uses settings above.</small>
                             </div>
 
                             <div class="button-group">
@@ -1145,6 +1150,14 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- vLLM-Omni View (template loaded dynamically from static/templates/vllm-omni.html) -->
+            <div class="view-content" id="vllm-omni-view" style="display: none;">
+                <div class="view-loading" id="omni-view-loading">
+                    <span class="loading-spinner"></span>
+                    <span>Loading vLLM-Omni...</span>
                 </div>
             </div>
 

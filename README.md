@@ -2,6 +2,11 @@
 
 A modern web interface for managing and interacting with vLLM servers (www.github.com/vllm-project/vllm). Supports GPU and CPU modes, with special optimizations for macOS Apple Silicon and enterprise deployment on OpenShift/Kubernetes.
 
+### 🆕 vLLM-Omni Multimodal Generation
+![vLLM-Omni Audio Generation](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-omni-audio.png)
+
+*Generate images, edit photos, create speech, and produce music - all with vLLM-Omni integration.*
+
 ### ✨ Claude Code Integration
 ![vLLM Playground Claude Code](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-claude-code.gif)
 
@@ -18,13 +23,12 @@ A modern web interface for managing and interacting with vLLM servers (www.githu
 ### ✨ Structured Outputs Support
 ![vLLM Playground with Structured Outputs](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-structured-outputs.png)
 
-### 🆕 What's New in v0.1.3
+### 🆕 What's New in v0.1.4
 
-- 🎮 **Multi-Accelerators** - NVIDIA CUDA, AMD ROCm, Google TPU support
-- 🤖 **Claude Code** - Use open-source models as Claude Code backend
-- ⚡ **Metal GPU** - Apple Silicon GPU acceleration via vllm-metal
-- 🔧 **Custom venv** - Use specific vLLM versions or custom builds
-- 🐳 **vLLM v0.12.0** - Updated container image with Anthropic Messages API
+- 🎨 **vLLM-Omni Integration** - Image generation, image editing, TTS, audio generation
+- 🎬 **Studio UI** - Adaptive themes, unified gallery, built-in media players
+- 🐳 **CLI** - `vllm-playground pull --omni` for vLLM-Omni container
+- 🔧 **Pre-commit Hooks** - Ruff formatting and code quality checks
 
 See **[Changelog](CHANGELOG.md)** for full details.
 
@@ -196,6 +200,7 @@ See [Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md) for details.
 
 ### Releases
 - **[Changelog](CHANGELOG.md)** - Version history and changes
+- **[v0.1.4](releases/v0.1.4.md)** - vLLM-Omni multimodal, Studio UI
 - **[v0.1.3](releases/v0.1.3.md)** - Multi-accelerators, Claude Code, vLLM-Metal
 - **[v0.1.2](releases/v0.1.2.md)** - ModelScope integration, i18n improvements
 - **[v0.1.1](releases/v0.1.1.md)** - MCP integration, runtime detection

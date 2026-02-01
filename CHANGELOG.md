@@ -6,6 +6,40 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 ---
 
+## [v0.1.4](releases/v0.1.4.md) - 2026-02-01
+
+**vLLM-Omni Multimodal Integration**
+
+### Added
+- 🎨 **vLLM-Omni Integration** - Multimodal generation support
+  - Image Generation (Text-to-Image) with DiT models (Z-Image-Turbo, Qwen-Image, SD3)
+  - Image Editing (Image-to-Image) with Qwen-Image-Edit series
+  - TTS (Text-to-Speech) with Qwen3-TTS models
+  - Audio Generation (Music/SFX) with Stable Audio Open
+  - Video Generation and Omni Chat (preview, coming soon)
+- 🎬 **Studio UI** - Polished multimodal generation interface
+  - Adaptive color themes per generation mode (Image, TTS, Audio)
+  - Unified Gallery with lightbox viewer, download, and delete
+  - Built-in media players for audio/video playback
+  - Prompt templates for each generation type
+- 🐳 **CLI Enhancement** - `vllm-playground pull --omni` for vLLM-Omni container
+- 📚 **vLLM-Omni Recipes** - GPU-optimized configurations
+  - Stable Audio Open 1.0
+  - Qwen3-TTS Custom Voice, Voice Design, Base
+- 🔧 **Pre-commit Hooks** - Code quality tooling
+  - Ruff formatting for Python
+  - File hygiene checks (trailing whitespace, YAML validation)
+- 📖 Documentation: [vLLM-Omni Guide](docs/VLLM_OMNI_GUIDE.md)
+
+### Changed
+- vLLM-Omni runs on separate port (default: 8091) from main vLLM server
+- Container images: `vllm/vllm-omni:v0.14.0rc1` (NVIDIA), `vllm/vllm-omni-rocm:v0.14.0rc1` (AMD)
+
+### Fixed
+- Various UI improvements and bug fixes for vLLM-Omni stability
+
+---
+
 ## [v0.1.3](releases/v0.1.3.md) - 2026-01-22
 
 **Multi-Accelerators, Claude Code & vLLM-Metal Support**
@@ -132,6 +166,7 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| v0.1.4 | 2026-02-01 | vLLM-Omni multimodal, Studio UI, pre-commit hooks |
 | v0.1.3 | 2026-01-22 | Multi-accelerators, Claude Code, vLLM-Metal |
 | v0.1.2 | 2026-01-19 | ModelScope integration, i18n improvements |
 | v0.1.1 | 2026-01-08 | MCP integration, runtime detection |
