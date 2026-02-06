@@ -112,6 +112,83 @@
                         <div class="panel">
                             <h2 data-i18n="serverConfig.title">⚙️ Server Configuration</h2>
 
+                            <!-- Run Mode Toggle (always visible) -->
+                            <div class="form-group mode-toggle-group">
+                                <label data-i18n="serverConfig.runMode.label">Run Mode</label>
+                                <div class="mode-toggle-buttons">
+                                    <label class="mode-button" id="run-mode-subprocess-label">
+                                        <input type="radio" name="run-mode" id="run-mode-subprocess" value="subprocess">
+                                        <span data-i18n="serverConfig.runMode.subprocess">⚡ Subprocess</span>
+                                    </label>
+                                    <label class="mode-button active" id="run-mode-container-label">
+                                        <input type="radio" name="run-mode" id="run-mode-container" value="container" checked>
+                                        <span data-i18n="serverConfig.runMode.container">📦 Container</span>
+                                    </label>
+                                    <label class="mode-button" id="run-mode-remote-label">
+                                        <input type="radio" name="run-mode" id="run-mode-remote" value="remote">
+                                        <span data-i18n="serverConfig.runMode.remote">🌐 Remote</span>
+                                    </label>
+                                </div>
+                                <small class="form-help" id="run-mode-help-text" data-i18n="serverConfig.runMode.help">Container: Isolated (recommended), Subprocess: Direct (requires vLLM installed)</small>
+                                <div class="subprocess-tip" data-i18n="serverConfig.runMode.subprocessTip">
+                                    💡 Tip: Use subprocess mode for additional accelerators (Huawei Ascend, Intel Gaudi, AWS Neuron) with vLLM + hardware plugin installed on the host.
+                                </div>
+                            </div>
+
+                            <!-- Remote vLLM Settings - Only shown in Remote mode -->
+                            <div id="remote-settings-group" style="display: none;">
+                                <div class="form-group">
+                                    <label for="remote-url" data-i18n="serverConfig.remoteUrl.label">Remote vLLM URL</label>
+                                    <input
+                                        type="text"
+                                        id="remote-url"
+                                        class="form-control"
+                                        placeholder="http://gpu-server:8000"
+                                        data-i18n-placeholder="serverConfig.remoteUrl.placeholder"
+                                    >
+                                    <small class="form-help" data-i18n="serverConfig.remoteUrl.help">Base URL of a running vLLM instance with OpenAI-compatible API</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="remote-api-key" data-i18n="serverConfig.remoteApiKey.label">API Key (Optional)</label>
+                                    <input
+                                        type="password"
+                                        id="remote-api-key"
+                                        class="form-control"
+                                        placeholder="sk-..."
+                                        data-i18n-placeholder="serverConfig.remoteApiKey.placeholder"
+                                    >
+                                    <small class="form-help" data-i18n="serverConfig.remoteApiKey.help">Bearer token for authenticated vLLM endpoints</small>
+                                </div>
+
+                                <!-- Remote Server Info (populated after connecting) -->
+                                <div id="remote-server-info" class="remote-server-info" style="display: none;">
+                                    <div class="remote-info-header">
+                                        <span class="remote-info-title">Remote Server Info</span>
+                                    </div>
+                                    <div class="remote-info-content">
+                                        <div class="remote-info-row">
+                                            <span class="info-label">Health</span>
+                                            <span class="info-value" id="remote-info-health-value">--</span>
+                                        </div>
+                                        <div class="remote-info-row">
+                                            <span class="info-label">Models</span>
+                                            <span class="info-value" id="remote-info-models-value">--</span>
+                                        </div>
+                                        <div class="remote-info-row">
+                                            <span class="info-label">Max Context</span>
+                                            <span class="info-value" id="remote-info-maxctx-value">--</span>
+                                        </div>
+                                        <div class="remote-info-row">
+                                            <span class="info-label">Root Model</span>
+                                            <span class="info-value" id="remote-info-root-value">--</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Local server settings (hidden in remote mode) -->
+                            <div id="local-server-settings">
+
                             <!-- Model Source Toggle -->
                             <div class="form-group mode-toggle-group">
                                 <label data-i18n="serverConfig.modelSource.label">Model Source</label>
@@ -231,25 +308,6 @@
                                 <input type="password" id="modelscope-token" class="form-control" placeholder="Your ModelScope SDK token">
                                 <small class="form-help" data-i18n-html="serverConfig.modelscopeToken.help">Required for some models. Get token from <a href="https://www.modelscope.cn/my/myaccesstoken" target="_blank">ModelScope Settings</a></small>
                                 <small class="form-help" id="modelscope-install-hint" style="display: none; color: var(--warning-color);" data-i18n-html="serverConfig.modelscopeToken.installHint">⚠️ Requires: <code>pip install modelscope>=1.18.1</code></small>
-                            </div>
-
-                            <!-- Run Mode Toggle -->
-                            <div class="form-group mode-toggle-group">
-                                <label data-i18n="serverConfig.runMode.label">Run Mode</label>
-                                <div class="mode-toggle-buttons">
-                                    <label class="mode-button" id="run-mode-subprocess-label">
-                                        <input type="radio" name="run-mode" id="run-mode-subprocess" value="subprocess">
-                                        <span data-i18n="serverConfig.runMode.subprocess">⚡ Subprocess</span>
-                                    </label>
-                                    <label class="mode-button active" id="run-mode-container-label">
-                                        <input type="radio" name="run-mode" id="run-mode-container" value="container" checked>
-                                        <span data-i18n="serverConfig.runMode.container">📦 Container</span>
-                                    </label>
-                                </div>
-                                <small class="form-help" id="run-mode-help-text" data-i18n="serverConfig.runMode.help">Container: Isolated (recommended), Subprocess: Direct (requires vLLM installed)</small>
-                                <div class="subprocess-tip" data-i18n="serverConfig.runMode.subprocessTip">
-                                    💡 Tip: Use subprocess mode for additional accelerators (Huawei Ascend, Intel Gaudi, AWS Neuron) with vLLM + hardware plugin installed on the host.
-                                </div>
                             </div>
 
                             <!-- Virtual Environment Path (optional) - Only for Subprocess mode -->
@@ -439,8 +497,10 @@
                                 <small class="form-help">Alias for the model in API calls. <strong>Required for Claude Code</strong> (cannot contain '/').</small>
                             </div>
 
-                            <!-- Command Preview Section -->
-                            <div class="command-preview-section">
+                            </div><!-- end local-server-settings -->
+
+                            <!-- Command Preview Section (hidden in remote mode) -->
+                            <div class="command-preview-section" id="command-preview-section">
                                 <div class="command-preview-header">
                                     <h3 data-i18n="serverConfig.commandPreview.title">Command Preview</h3>
                                     <button id="copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command" data-i18n="serverConfig.commandPreview.copy">Copy</button>

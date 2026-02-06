@@ -133,7 +133,8 @@ const ClaudeCodeMethods = {
                 toolCallingEnabled: configData.tool_calling_enabled,
                 toolCallingWarning: configData.tool_calling_warning,
                 model: configData.model,
-                port: configData.port
+                port: configData.port,
+                base_url: configData.base_url
             };
 
             this.updateClaudeCodeUI();
@@ -507,7 +508,8 @@ const ClaudeCodeMethods = {
             // Update connection info
             this.updateClaudeConnectionInfo({
                 port: this.claudeStatus.port,
-                model: this.claudeStatus.model
+                model: this.claudeStatus.model,
+                base_url: this.claudeStatus.base_url
             });
 
         } catch (error) {
@@ -520,8 +522,12 @@ const ClaudeCodeMethods = {
         const endpointEl = document.getElementById('claude-endpoint');
         const modelEl = document.getElementById('claude-model-name');
 
-        if (endpointEl && message.port) {
-            endpointEl.textContent = `http://localhost:${message.port}`;
+        if (endpointEl) {
+            if (message.base_url) {
+                endpointEl.textContent = message.base_url;
+            } else if (message.port) {
+                endpointEl.textContent = `http://localhost:${message.port}`;
+            }
         }
 
         if (modelEl && message.model) {

@@ -201,12 +201,15 @@ export const GuideLLMModule = {
         const statusBanner = document.getElementById('benchmark-server-status');
         if (!statusBanner) return;
 
+        const isRemote = ui.currentConfig && ui.currentConfig.run_mode === 'remote';
+
         if (ui.serverRunning && ui.serverReady) {
             statusBanner.classList.add('connected');
+            const modeLabel = isRemote ? 'Connected to remote vLLM instance' : 'vLLM server is running';
             statusBanner.innerHTML = `
                 <div class="server-status-content">
                     <span class="status-icon">✅</span>
-                    <span class="status-message">vLLM server is running and ready for benchmarks</span>
+                    <span class="status-message">${modeLabel} — ready for benchmarks</span>
                 </div>
             `;
         } else if (ui.serverRunning) {
@@ -227,6 +230,9 @@ export const GuideLLMModule = {
                 </div>
             `;
         }
+
+        // Refresh command preview so it reflects the current target URL
+        this.updateBenchmarkCommandPreview();
     },
 
     // =========================================================================
@@ -596,9 +602,16 @@ export const GuideLLMModule = {
         const outputTokens = ui.elements.benchmarkOutputTokens.value || '100';
         const useGuideLLM = ui.elements.benchmarkMethodGuidellm?.checked;
 
-        const host = ui.elements.host?.value || 'localhost';
-        const port = ui.elements.port?.value || '8000';
-        const targetUrl = `http://${host}:${port}/v1`;
+        // In remote mode, use the remote URL; otherwise build from host/port inputs
+        const isRemote = ui.currentConfig && ui.currentConfig.run_mode === 'remote';
+        let targetUrl;
+        if (isRemote && ui.currentConfig.remote_url) {
+            targetUrl = `${ui.currentConfig.remote_url.replace(/\/+$/, '')}/v1`;
+        } else {
+            const host = ui.elements.host?.value || 'localhost';
+            const port = ui.elements.port?.value || '8000';
+            targetUrl = `http://${host}:${port}/v1`;
+        }
 
         let cmd = '';
 
