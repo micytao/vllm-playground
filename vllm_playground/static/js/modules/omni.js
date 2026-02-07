@@ -1156,6 +1156,7 @@ export const OmniModule = {
         // Follow the same pattern as main vLLM Server
         const subprocessLabel = document.getElementById('omni-run-mode-subprocess-label');
         const containerLabel = document.getElementById('omni-run-mode-container-label');
+        const remoteLabel = document.getElementById('omni-run-mode-remote-label');
 
         // Add visual indication for unavailable modes (same as main vLLM Server)
         if (!this.available) {
@@ -1185,6 +1186,12 @@ export const OmniModule = {
                 containerLabel.classList.remove('mode-unavailable');
                 containerLabel.title = 'Container mode available';
             }
+        }
+
+        // Remote mode is always available
+        if (remoteLabel) {
+            remoteLabel.classList.remove('mode-unavailable');
+            remoteLabel.title = 'Connect to a remote vLLM-Omni instance';
         }
 
         // Trigger onRunModeChange to update help text and venv visibility
@@ -1920,12 +1927,34 @@ export const OmniModule = {
         const helpText = document.getElementById('omni-run-mode-help');
         const subprocessLabel = document.getElementById('omni-run-mode-subprocess-label');
         const containerLabel = document.getElementById('omni-run-mode-container-label');
+        const remoteLabel = document.getElementById('omni-run-mode-remote-label');
+        const localSettings = document.getElementById('omni-local-server-settings');
+        const remoteSettings = document.getElementById('omni-remote-settings-group');
+        const startBtn = document.getElementById('omni-start-btn');
+        const stopBtn = document.getElementById('omni-stop-btn');
+        const isRemote = (mode === 'remote');
+
+        // Toggle active class on all mode buttons
+        if (subprocessLabel) subprocessLabel.classList.toggle('active', mode === 'subprocess');
+        if (containerLabel) containerLabel.classList.toggle('active', mode === 'container');
+        if (remoteLabel) remoteLabel.classList.toggle('active', mode === 'remote');
+
+        // Toggle local settings vs remote settings visibility
+        if (localSettings) localSettings.style.display = isRemote ? 'none' : '';
+        if (remoteSettings) remoteSettings.style.display = isRemote ? 'block' : 'none';
+
+        // Update start/stop button labels only when server is not running.
+        // When running, labels must stay consistent with the active mode.
+        if (!this.serverRunning) {
+            if (startBtn) {
+                startBtn.textContent = isRemote ? 'Connect' : 'Start Server';
+            }
+            if (stopBtn) {
+                stopBtn.textContent = isRemote ? 'Disconnect' : 'Stop Server';
+            }
+        }
 
         if (mode === 'subprocess') {
-            // Toggle active class on mode buttons
-            if (subprocessLabel) subprocessLabel.classList.add('active');
-            if (containerLabel) containerLabel.classList.remove('active');
-
             // Show venv path option only in subprocess mode (same as main vLLM Server)
             if (venvGroup) venvGroup.style.display = 'block';
 
@@ -1937,11 +1966,7 @@ export const OmniModule = {
             } else {
                 if (helpText) helpText.textContent = `Subprocess: Direct execution using vLLM-Omni v${this.version}`;
             }
-        } else {
-            // Toggle active class on mode buttons
-            if (subprocessLabel) subprocessLabel.classList.remove('active');
-            if (containerLabel) containerLabel.classList.add('active');
-
+        } else if (mode === 'container') {
             // Hide venv path option in container mode (same as main vLLM Server)
             if (venvGroup) venvGroup.style.display = 'none';
 
@@ -1951,6 +1976,12 @@ export const OmniModule = {
             } else {
                 if (helpText) helpText.textContent = 'Container: Isolated environment using official vLLM-Omni image';
             }
+        } else if (mode === 'remote') {
+            // Hide venv path in remote mode
+            if (venvGroup) venvGroup.style.display = 'none';
+
+            // Update help text
+            if (helpText) helpText.textContent = 'Remote: Connect to an existing vLLM-Omni instance';
         }
 
         // Update command preview
@@ -2014,6 +2045,7 @@ export const OmniModule = {
 
     async startServer() {
         const config = this.buildConfig();
+        const isRemote = config.run_mode === 'remote';
 
         // Check run mode requirements (like main vLLM Server)
         if (config.run_mode === 'subprocess' && !this.available) {
@@ -2036,10 +2068,20 @@ export const OmniModule = {
             return;
         }
 
+        // Remote mode: validate URL
+        if (isRemote) {
+            if (!config.remote_url) {
+                this.ui.showNotification('Please enter the Remote vLLM-Omni URL', 'error');
+                this.addLog('ERROR: Remote URL is required for remote mode.', 'error');
+                document.getElementById('omni-remote-url')?.focus();
+                return;
+            }
+        }
+
         // Check if gated model requires HF token (same pattern as main vLLM Server)
         // Note: Only Stability AI models require HF token + license agreement
         // Qwen models (including TTS) are Apache-2.0 licensed and don't require HF token
-        if (!config.use_modelscope) {
+        if (!isRemote && !config.use_modelscope) {
             const model = config.model.toLowerCase();
             // Known gated models in vLLM-Omni ecosystem (Stability AI models)
             const isGated = model.includes('stabilityai/');
@@ -2056,15 +2098,16 @@ export const OmniModule = {
             }
         }
 
-        // Disable start button and show "Starting..." (same pattern as main vLLM Server)
+        // Disable start button and show "Starting..."/"Connecting..." (same pattern as main vLLM Server)
         const startBtn = document.getElementById('omni-start-btn');
+        const btnDefaultText = isRemote ? 'Connect' : 'Start Server';
         if (startBtn) {
             startBtn.disabled = true;
-            startBtn.textContent = 'Starting...';
+            startBtn.textContent = isRemote ? 'Connecting...' : 'Starting...';
         }
 
-        this.ui.showNotification('Starting vLLM-Omni server...', 'info');
-        this.addLog('🚀 Starting vLLM-Omni server...');
+        this.ui.showNotification(isRemote ? 'Connecting to remote vLLM-Omni...' : 'Starting vLLM-Omni server...', 'info');
+        this.addLog(isRemote ? `🔗 Connecting to remote vLLM-Omni at ${config.remote_url}...` : '🚀 Starting vLLM-Omni server...');
 
         try {
             const response = await fetch('/api/omni/start', {
@@ -2078,8 +2121,20 @@ export const OmniModule = {
             if (response.ok) {
                 this.serverRunning = true;
 
+                // Remote mode: immediately ready
+                if (result.mode === 'remote') {
+                    this.serverReady = true;
+                    this.updateServerStatus(true, true);
+                    this.ui.showNotification(`Connected to remote vLLM-Omni`, 'success');
+                    this.addLog(`✅ Connected to remote instance`);
+                    if (result.model) {
+                        this.addLog(`📋 Remote model: ${result.model}`);
+                    }
+                    // Populate remote server info panel
+                    this.populateOmniRemoteServerInfo(result);
+                }
                 // In-process mode: model is already loaded and ready
-                if (result.mode === 'inprocess') {
+                else if (result.mode === 'inprocess') {
                     this.serverReady = true;
                     this.updateServerStatus(true, true);
                     this.ui.showNotification('Stable Audio model loaded and ready!', 'success');
@@ -2109,26 +2164,30 @@ export const OmniModule = {
             }
         } catch (error) {
             const errMsg = error.message || String(error);
-            this.addLog(`❌ Failed to start server: ${errMsg}`, 'error');
-            this.ui.showNotification(`Failed to start: ${errMsg}`, 'error');
+            this.addLog(`❌ Failed to ${isRemote ? 'connect' : 'start server'}: ${errMsg}`, 'error');
+            this.ui.showNotification(`Failed to ${isRemote ? 'connect' : 'start'}: ${errMsg}`, 'error');
             // Re-enable start button on error (same pattern as main vLLM Server)
             if (startBtn) startBtn.disabled = false;
         } finally {
             // Always reset button text (same pattern as main vLLM Server)
-            if (startBtn) startBtn.textContent = 'Start Server';
+            if (startBtn) startBtn.textContent = btnDefaultText;
         }
     },
 
     async stopServer() {
-        // Disable stop button and show "Stopping..." (same pattern as main vLLM Server)
+        const currentRunMode = document.querySelector('input[name="omni-run-mode"]:checked')?.value || 'subprocess';
+        const isRemote = (currentRunMode === 'remote');
+
+        // Disable stop button and show "Stopping..."/"Disconnecting..." (same pattern as main vLLM Server)
         const stopBtn = document.getElementById('omni-stop-btn');
+        const btnDefaultText = isRemote ? 'Disconnect' : 'Stop Server';
         if (stopBtn) {
             stopBtn.disabled = true;
-            stopBtn.textContent = 'Stopping...';
+            stopBtn.textContent = isRemote ? 'Disconnecting...' : 'Stopping...';
         }
 
-        this.ui.showNotification('Stopping vLLM-Omni server...', 'info');
-        this.addLog('Stopping vLLM-Omni server...');
+        this.ui.showNotification(isRemote ? 'Disconnecting from remote vLLM-Omni...' : 'Stopping vLLM-Omni server...', 'info');
+        this.addLog(isRemote ? 'Disconnecting from remote vLLM-Omni...' : 'Stopping vLLM-Omni server...');
 
         // Stop health check polling
         this.stopHealthCheckPolling();
@@ -2140,20 +2199,24 @@ export const OmniModule = {
                 this.serverRunning = false;
                 this.serverReady = false;
                 this.updateServerStatus(false, false);
-                this.ui.showNotification('vLLM-Omni server stopped', 'success');
-                this.addLog('✅ Server stopped');
+                this.ui.showNotification(isRemote ? 'Disconnected from remote vLLM-Omni' : 'vLLM-Omni server stopped', 'success');
+                this.addLog(isRemote ? '✅ Disconnected from remote instance' : '✅ Server stopped');
+                // Hide remote server info panel on disconnect
+                if (isRemote) {
+                    this.hideOmniRemoteServerInfo();
+                }
             } else {
                 const result = await response.json();
-                throw new Error(result.detail || 'Failed to stop server');
+                throw new Error(result.detail || (isRemote ? 'Failed to disconnect' : 'Failed to stop server'));
             }
         } catch (error) {
-            this.addLog(`❌ Failed to stop server: ${error.message}`, 'error');
-            this.ui.showNotification(`Failed to stop: ${error.message}`, 'error');
+            this.addLog(`❌ Failed to ${isRemote ? 'disconnect' : 'stop server'}: ${error.message}`, 'error');
+            this.ui.showNotification(`Failed to ${isRemote ? 'disconnect' : 'stop'}: ${error.message}`, 'error');
             // Re-enable stop button on error (same pattern as main vLLM Server)
             if (stopBtn) stopBtn.disabled = false;
         } finally {
             // Always reset button text (same pattern as main vLLM Server)
-            if (stopBtn) stopBtn.textContent = 'Stop Server';
+            if (stopBtn) stopBtn.textContent = btnDefaultText;
         }
     },
 
@@ -2167,7 +2230,7 @@ export const OmniModule = {
         const selectedModel = document.getElementById('omni-model-select')?.value || 'Tongyi-MAI/Z-Image-Turbo';
         const model = customModel || selectedModel;
 
-        return {
+        const config = {
             model: model,
             model_type: document.getElementById('omni-model-type')?.value || 'image',
             port: parseInt(document.getElementById('omni-port')?.value) || 8091,
@@ -2188,6 +2251,14 @@ export const OmniModule = {
             // HuggingFace token for gated models (Stable Audio, etc.)
             hf_token: hfToken,
         };
+
+        // Add remote mode fields
+        if (runMode === 'remote') {
+            config.remote_url = document.getElementById('omni-remote-url')?.value?.trim() || null;
+            config.remote_api_key = document.getElementById('omni-remote-api-key')?.value?.trim() || null;
+        }
+
+        return config;
     },
 
     // =========================================================================
@@ -2229,6 +2300,16 @@ export const OmniModule = {
             command += `    num_inference_steps=num_inference_steps,\n`;
             command += `    extra={"audio_start_in_s": 0.0, "audio_end_in_s": duration},\n`;
             command += `)\n`;
+        } else if (runMode === 'remote') {
+            // Remote mode - show connection info
+            const remoteUrl = document.getElementById('omni-remote-url')?.value?.trim() || 'http://gpu-server:8091';
+            command = `# Remote mode - connecting to existing vLLM-Omni instance\n`;
+            command += `# No local server is launched.\n\n`;
+            command += `# Remote URL: ${remoteUrl}\n`;
+            command += `# API endpoint: ${remoteUrl}/v1/chat/completions\n\n`;
+            command += `# Test with curl:\n`;
+            command += `curl ${remoteUrl}/health\n`;
+            command += `curl ${remoteUrl}/v1/models\n`;
         } else if (runMode === 'container') {
             // Container mode - podman/docker command
             // Note: Actual runtime (podman/docker) is auto-detected at startup
@@ -2336,12 +2417,14 @@ export const OmniModule = {
         const stopBtn = document.getElementById('omni-stop-btn');
         const generateBtn = document.getElementById('omni-generate-btn');
         const chatSendBtn = document.getElementById('omni-chat-send-btn');
+        const currentRunMode = document.querySelector('input[name="omni-run-mode"]:checked')?.value || 'subprocess';
+        const isRemote = (currentRunMode === 'remote');
 
         if (running && ready) {
             // Server is running AND ready to accept requests
             dot?.classList.add('online');
             dot?.classList.remove('starting');
-            if (text) text.textContent = 'Ready';
+            if (text) text.textContent = isRemote ? 'Connected (Remote)' : 'Ready';
             if (startBtn) startBtn.disabled = true;
             if (stopBtn) stopBtn.disabled = false;
             if (generateBtn) {
@@ -2353,7 +2436,7 @@ export const OmniModule = {
             // Server is running but still loading model
             dot?.classList.remove('online');
             dot?.classList.add('starting');
-            if (text) text.textContent = 'Starting...';
+            if (text) text.textContent = isRemote ? 'Connecting...' : 'Starting...';
             if (startBtn) startBtn.disabled = true;
             if (stopBtn) stopBtn.disabled = false;
             if (generateBtn) {
@@ -2366,14 +2449,87 @@ export const OmniModule = {
             dot?.classList.remove('online');
             dot?.classList.remove('starting');
             if (text) text.textContent = 'Offline';
-            if (startBtn) startBtn.disabled = false;
-            if (stopBtn) stopBtn.disabled = true;
+            if (startBtn) {
+                startBtn.disabled = false;
+                startBtn.textContent = isRemote ? 'Connect' : 'Start Server';
+            }
+            if (stopBtn) {
+                stopBtn.disabled = true;
+                stopBtn.textContent = isRemote ? 'Disconnect' : 'Stop Server';
+            }
             if (generateBtn) {
                 generateBtn.disabled = true;
                 generateBtn.classList.remove('btn-ready');
             }
             if (chatSendBtn) chatSendBtn.disabled = true;
         }
+    },
+
+    // =========================================================================
+    // Remote Server Info Panel
+    // =========================================================================
+
+    populateOmniRemoteServerInfo(data) {
+        const panel = document.getElementById('omni-remote-server-info');
+        if (!panel) return;
+
+        // Health
+        const healthEl = document.getElementById('omni-remote-info-health-value');
+        if (healthEl) {
+            if (data.health) {
+                healthEl.innerHTML = '<span class="health-dot healthy"></span> Healthy';
+            } else {
+                healthEl.innerHTML = '<span class="health-dot unhealthy"></span> Unhealthy';
+            }
+        }
+
+        // Models
+        const modelsEl = document.getElementById('omni-remote-info-models-value');
+        if (modelsEl && data.models && data.models.length > 0) {
+            modelsEl.innerHTML = data.models.map(m =>
+                `<code class="remote-model-id">${m.id}</code>`
+            ).join('<br>');
+        } else if (modelsEl) {
+            modelsEl.textContent = data.model || 'Unknown';
+        }
+
+        // Max Context Length (from first model's max_model_len)
+        const maxCtxEl = document.getElementById('omni-remote-info-maxctx-value');
+        if (maxCtxEl && data.models && data.models.length > 0) {
+            const maxLen = data.models[0].max_model_len;
+            if (maxLen !== undefined && maxLen !== null) {
+                maxCtxEl.textContent = Number(maxLen).toLocaleString() + ' tokens';
+            } else {
+                maxCtxEl.textContent = 'N/A';
+            }
+        } else if (maxCtxEl) {
+            maxCtxEl.textContent = 'N/A';
+        }
+
+        // Root Model (base model path)
+        const rootEl = document.getElementById('omni-remote-info-root-value');
+        if (rootEl && data.models && data.models.length > 0) {
+            const root = data.models[0].root;
+            if (root) {
+                rootEl.innerHTML = `<code class="remote-model-id">${root}</code>`;
+            } else {
+                rootEl.textContent = 'N/A';
+            }
+        } else if (rootEl) {
+            rootEl.textContent = 'N/A';
+        }
+
+        panel.style.display = 'block';
+    },
+
+    hideOmniRemoteServerInfo() {
+        const panel = document.getElementById('omni-remote-server-info');
+        if (panel) panel.style.display = 'none';
+        const ids = ['omni-remote-info-health-value', 'omni-remote-info-models-value', 'omni-remote-info-maxctx-value', 'omni-remote-info-root-value'];
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = '--';
+        });
     },
 
     // =========================================================================

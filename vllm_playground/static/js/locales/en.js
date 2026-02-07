@@ -87,8 +87,19 @@ const en = {
             label: 'Run Mode',
             subprocess: '⚡ Subprocess',
             container: '📦 Container',
+            remote: '🌐 Remote',
             help: 'Container: Isolated (recommended), Subprocess: Direct (requires vLLM installed)',
             subprocessTip: '💡 Tip: Use subprocess mode for additional accelerators (Huawei Ascend, Intel Gaudi, AWS Neuron) with vLLM + hardware plugin installed on the host.'
+        },
+        remoteUrl: {
+            label: 'Remote vLLM URL',
+            placeholder: 'http://gpu-server:8000',
+            help: 'Base URL of a running vLLM instance with OpenAI-compatible API'
+        },
+        remoteApiKey: {
+            label: 'API Key (Optional)',
+            placeholder: 'sk-...',
+            help: 'Bearer token for authenticated vLLM endpoints'
         },
         computeMode: {
             label: 'Compute Mode',
@@ -145,6 +156,20 @@ const en = {
         stopped: 'Generation stopped',
         error: 'Error generating response',
         clearConfirm: 'Are you sure you want to clear all chat history?'
+    },
+
+    // VLM (Vision Language Model)
+    vlm: {
+        title: 'Vision (VLM)',
+        docs: 'Docs',
+        enable: 'Enable Vision (VLM)',
+        dropzone: 'Drag & drop an image here, or click to browse',
+        dropzoneHint: 'Supports JPEG, PNG, GIF, WebP',
+        urlLabel: 'Or paste image URL',
+        urlPlaceholder: 'https://example.com/image.jpg',
+        loadUrl: 'Load',
+        removeImage: 'Remove image',
+        help: 'Attach an image to your next message. The image will be sent once and cleared after sending. Requires a VLM model (e.g., LLaVA, Qwen-VL).'
     },
 
     // MCP (Model Context Protocol)

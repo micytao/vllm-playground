@@ -91,8 +91,19 @@ const zhCN = {
             label: '运行模式',
             subprocess: '⚡ 子进程',
             container: '📦 容器',
+            remote: '🌐 远程',
             help: '子进程：直接运行（本地开发），容器：隔离运行（生产环境）',
             subprocessTip: '💡 提示：使用子进程模式可支持更多加速器（华为昇腾、Intel Gaudi、AWS Neuron），需在主机上安装 vLLM + 硬件插件。'
+        },
+        remoteUrl: {
+            label: '远程 vLLM 地址',
+            placeholder: 'http://gpu-server:8000',
+            help: '正在运行的 vLLM 实例的基础 URL（兼容 OpenAI API）'
+        },
+        remoteApiKey: {
+            label: 'API 密钥（可选）',
+            placeholder: 'sk-...',
+            help: '用于认证的 Bearer 令牌'
         },
         computeMode: {
             label: '计算模式',
@@ -308,28 +319,17 @@ const zhCN = {
                 delete: '删除'
             }
         },
-        rag: {
-            title: '📚 RAG（检索增强生成）',
-            docs: '📖 文档',
-            enable: '启用 RAG',
-            files: '文件',
-            noFiles: '未上传文件',
-            uploadBtn: '上传文件',
-            uploadHelp: '支持：PDF、TXT、MD、CSV、JSON',
-            fileCard: {
-                size: '大小：',
-                chunks: '块：',
-                delete: '删除'
-            },
-            settings: {
-                title: 'RAG 设置',
-                topK: 'Top K 结果',
-                topKHelp: '返回的最相关块数',
-                chunkSize: '块大小',
-                chunkSizeHelp: '每个文本块的字符数',
-                chunkOverlap: '块重叠',
-                chunkOverlapHelp: '块之间的重叠字符数'
-            }
+        vlm: {
+            title: '视觉（VLM）',
+            docs: '文档',
+            enable: '启用视觉（VLM）',
+            dropzone: '拖放图片到此处，或点击浏览',
+            dropzoneHint: '支持 JPEG、PNG、GIF、WebP',
+            urlLabel: '或粘贴图片 URL',
+            urlPlaceholder: 'https://example.com/image.jpg',
+            loadUrl: '加载',
+            removeImage: '移除图片',
+            help: '将图片附加到下一条消息。图片发送一次后自动清除。需要 VLM 模型（如 LLaVA、Qwen-VL）。'
         }
     },
 

@@ -17,18 +17,17 @@ A modern web interface for managing and interacting with vLLM servers (www.githu
 
 *MCP (Model Context Protocol) integration enables models to use external tools with human-in-the-loop approval.*
 
-### ✨ Tool Calling Support
-![vLLM Playground Interface](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-newUI.png)
+### 🖼️ VLM (Vision Language Model)
+![VLM Support](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-vlm.png)
 
-### ✨ Structured Outputs Support
-![vLLM Playground with Structured Outputs](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-structured-outputs.png)
+*Upload images and chat with vision models like Qwen2.5-VL, LLaVA, and more.*
 
-### 🆕 What's New in v0.1.4
+### 🆕 What's New in v0.1.5
 
-- 🎨 **vLLM-Omni Integration** - Image generation, image editing, TTS, audio generation
-- 🎬 **Studio UI** - Adaptive themes, unified gallery, built-in media players
-- 🐳 **CLI** - `vllm-playground pull --omni` for vLLM-Omni container
-- 🔧 **Pre-commit Hooks** - Ruff formatting and code quality checks
+- 🌐 **Remote vLLM Server** - Connect to any remote vLLM instance via URL + API key
+- 🖼️ **VLM Support** - Image upload and multimodal chat with vision models
+- ✨ **Markdown Rendering** - Rich formatting for assistant messages (bold, lists, code blocks)
+- 🔧 **Bug Fixes** - GuideLLM hang, Claude Code remote mode, structured outputs for vLLM v0.12+
 
 See **[Changelog](CHANGELOG.md)** for full details.
 
@@ -69,8 +68,10 @@ vllm-playground status              # Check status
 
 | Feature | Description |
 |---------|-------------|
+| 🌐 **Remote Server** | Connect to any remote vLLM instance via URL + API key |
+| 🖼️ **VLM Support** | Upload images and chat with vision models (Qwen2.5-VL, LLaVA) |
 | 🤖 **Claude Code** | Use open-source models as Claude Code backend via vLLM |
-| 💬 **Modern Chat UI** | Streamlined ChatGPT-style interface with streaming responses |
+| 💬 **Modern Chat UI** | Markdown-rendered chat with streaming responses |
 | 🔧 **Tool Calling** | Function calling with Llama, Mistral, Qwen, and more |
 | 🔗 **MCP Integration** | Connect to MCP servers for agentic capabilities |
 | 🏗️ **Structured Outputs** | Constrain responses to JSON Schema, Regex, or Grammar |
@@ -200,6 +201,7 @@ See [Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md) for details.
 
 ### Releases
 - **[Changelog](CHANGELOG.md)** - Version history and changes
+- **[v0.1.5](releases/v0.1.5.md)** - Remote server, VLM vision support, markdown rendering
 - **[v0.1.4](releases/v0.1.4.md)** - vLLM-Omni multimodal, Studio UI
 - **[v0.1.3](releases/v0.1.3.md)** - Multi-accelerators, Claude Code, vLLM-Metal
 - **[v0.1.2](releases/v0.1.2.md)** - ModelScope integration, i18n improvements

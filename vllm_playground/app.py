@@ -146,8 +146,13 @@ class VLLMConfig(BaseModel):
     # Local model support - for pre-downloaded models
     # If specified, takes precedence over 'model' parameter
     local_model_path: Optional[str] = None
-    # Run mode: subprocess or container
-    run_mode: Literal["subprocess", "container"] = "subprocess"
+    # Run mode: subprocess, container, or remote
+    run_mode: Literal["subprocess", "container", "remote"] = "subprocess"
+    # Remote vLLM instance URL (for remote mode)
+    # Full base URL of a running vLLM instance, e.g. http://gpu-server:8000
+    remote_url: Optional[str] = None
+    # Optional API key for authenticated remote vLLM endpoints
+    remote_api_key: Optional[str] = None
     # GPU device selection for subprocess mode (e.g., "0", "1", "0,1" for multi-GPU)
     gpu_device: Optional[str] = None
     # GPU accelerator type for container mode - determines which image and device flags to use
@@ -175,6 +180,71 @@ class VLLMConfig(BaseModel):
     # Custom virtual environment path for subprocess mode
     # Allows using specific vLLM installations (e.g., vllm-metal)
     venv_path: Optional[str] = None
+
+
+# =============================================================================
+# Helper functions for vLLM server URL and status
+# =============================================================================
+
+
+def get_vllm_base_url() -> str:
+    """Get the base URL for the running vLLM instance based on current mode.
+
+    Centralizes URL construction logic that was previously duplicated across
+    8+ endpoints. Handles remote, Kubernetes, container, and subprocess modes.
+    """
+    global current_config, current_run_mode
+
+    if current_run_mode == "remote" and current_config and current_config.remote_url:
+        return current_config.remote_url.rstrip("/")
+
+    is_kubernetes = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
+
+    if current_run_mode == "container" and is_kubernetes and container_manager:
+        service_name = getattr(container_manager, "SERVICE_NAME", "vllm-service")
+        namespace = getattr(container_manager, "namespace", os.getenv("KUBERNETES_NAMESPACE", "default"))
+        return f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}"
+    elif current_run_mode == "container":
+        return f"http://localhost:{current_config.port}"
+    else:
+        return f"http://{current_config.host}:{current_config.port}"
+
+
+def get_vllm_auth_headers() -> dict:
+    """Get authorization headers for proxied requests to vLLM.
+
+    Returns a dict with Bearer token header if remote_api_key is configured,
+    otherwise returns an empty dict.
+    """
+    global current_config
+    if current_config and current_config.remote_api_key:
+        return {"Authorization": f"Bearer {current_config.remote_api_key}"}
+    return {}
+
+
+async def check_vllm_server_running() -> bool:
+    """Check if the vLLM server is currently running based on the active mode.
+
+    Returns True if the server is confirmed running, False otherwise.
+    Handles remote, container, and subprocess modes.
+    """
+    global current_run_mode, vllm_running, vllm_process
+
+    if current_run_mode == "remote":
+        return vllm_running
+
+    if current_run_mode == "container":
+        if CONTAINER_MODE_AVAILABLE and container_manager:
+            status = await container_manager.get_container_status()
+            return status.get("running", False)
+        return False
+
+    if current_run_mode == "subprocess":
+        if vllm_process is not None:
+            return vllm_process.returncode is None
+        return False
+
+    return False
 
 
 # =============================================================================
@@ -210,9 +280,13 @@ class OmniConfig(BaseModel):
     # When False, uses --enforce-eager mode which is faster to start and uses less memory
     enable_torch_compile: bool = False
 
-    # Run mode: subprocess (CLI) or container (same as vLLM Server)
-    run_mode: Literal["subprocess", "container"] = "subprocess"
+    # Run mode: subprocess (CLI), container, or remote (same as vLLM Server)
+    run_mode: Literal["subprocess", "container", "remote"] = "subprocess"
     venv_path: Optional[str] = None  # Path to vLLM-Omni venv (for subprocess mode)
+    # Remote vLLM-Omni instance URL (for remote mode)
+    remote_url: Optional[str] = None
+    # Optional API key for authenticated remote endpoints
+    remote_api_key: Optional[str] = None
 
     # HuggingFace token for gated models
     hf_token: Optional[str] = None
@@ -224,6 +298,39 @@ class OmniConfig(BaseModel):
 
     # Trust remote code (required for some models)
     trust_remote_code: bool = False
+
+
+# =============================================================================
+# Helper functions for vLLM-Omni server URL and status
+# =============================================================================
+
+
+def get_omni_base_url() -> str:
+    """Get the base URL for the running vLLM-Omni instance based on current mode.
+
+    Centralizes URL construction for all Omni endpoints.
+    """
+    global omni_config, omni_run_mode
+
+    if omni_run_mode == "remote" and omni_config and omni_config.remote_url:
+        return omni_config.remote_url.rstrip("/")
+
+    if omni_config:
+        return f"http://localhost:{omni_config.port}"
+
+    return "http://localhost:8091"  # fallback default
+
+
+def get_omni_auth_headers() -> dict:
+    """Get authorization headers for proxied requests to vLLM-Omni.
+
+    Returns a dict with Bearer token header if remote_api_key is configured,
+    otherwise returns an empty dict.
+    """
+    global omni_config
+    if omni_config and omni_config.remote_api_key:
+        return {"Authorization": f"Bearer {omni_config.remote_api_key}"}
+    return {}
 
 
 # Image-Edit models that support image-to-image generation
@@ -473,10 +580,14 @@ class ToolCall(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    """Chat message structure with tool calling support"""
+    """Chat message structure with tool calling and VLM (vision) support"""
 
     role: str  # "system", "user", "assistant", or "tool"
-    content: Optional[str] = None  # Can be None when assistant makes tool calls
+    # Content can be a string (text-only) or a list of content parts (multimodal/VLM).
+    # List format follows the OpenAI Vision API:
+    #   [{"type": "image_url", "image_url": {"url": "data:image/...;base64,..."}},
+    #    {"type": "text", "text": "Describe this image."}]
+    content: Optional[Union[str, List[Dict[str, Any]]]] = None
     # For assistant messages with tool calls
     tool_calls: Optional[List[ToolCall]] = None
     # For tool response messages
@@ -904,22 +1015,9 @@ async def get_status():
     global vllm_running, current_config, server_start_time, current_run_mode, container_id, vllm_process
 
     # Check status based on run mode
-    running = False
+    running = await check_vllm_server_running()
 
-    if current_run_mode == "container":
-        # Check container status
-        if container_manager is not None:
-            status = await container_manager.get_container_status()
-            running = status.get("running", False)
-        else:
-            running = False
-    elif current_run_mode == "subprocess":
-        # Check subprocess status
-        if vllm_process is not None:
-            running = vllm_process.returncode is None
-        else:
-            running = False
-    else:
+    if not running and current_run_mode is None:
         # If run mode is not set (e.g., after restart), check if container exists
         # This handles the case where Web UI restarts but vLLM pod is still running
         if CONTAINER_MODE_AVAILABLE and container_manager:
@@ -973,19 +1071,14 @@ async def debug_connection():
         }
 
         # Show what URL would be used
-        if current_run_mode == "container" and is_kubernetes and container_manager:
-            service_name = getattr(container_manager, "SERVICE_NAME", "vllm-service")
-            namespace = getattr(container_manager, "namespace", os.getenv("KUBERNETES_NAMESPACE", "default"))
-            url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}/v1/chat/completions"
-            debug_info["url_would_use"] = url
+        base_url = get_vllm_base_url()
+        url = f"{base_url}/v1/chat/completions"
+        debug_info["url_would_use"] = url
+        if current_run_mode == "remote":
+            debug_info["connection_mode"] = "remote"
+        elif current_run_mode == "container" and is_kubernetes:
             debug_info["connection_mode"] = "kubernetes_service"
         else:
-            # Use localhost for container mode since 0.0.0.0 is a bind address, not a valid destination
-            if current_run_mode == "container":
-                url = f"http://localhost:{current_config.port}/v1/chat/completions"
-            else:
-                url = f"http://{current_config.host}:{current_config.port}/v1/chat/completions"
-            debug_info["url_would_use"] = url
             debug_info["connection_mode"] = "localhost"
 
     if is_kubernetes and container_manager and hasattr(container_manager, "namespace"):
@@ -1005,19 +1098,7 @@ async def test_vllm_connection():
     if not current_config:
         return {"error": "No server configuration available"}
 
-    is_kubernetes = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
-
-    # Determine URL to use
-    if current_run_mode == "container" and is_kubernetes and container_manager:
-        service_name = getattr(container_manager, "SERVICE_NAME", "vllm-service")
-        namespace = getattr(container_manager, "namespace", os.getenv("KUBERNETES_NAMESPACE", "default"))
-        base_url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}"
-    else:
-        # Use localhost for container mode since 0.0.0.0 is a bind address, not a valid destination
-        if current_run_mode == "container":
-            base_url = f"http://localhost:{current_config.port}"
-        else:
-            base_url = f"http://{current_config.host}:{current_config.port}"
+    base_url = get_vllm_base_url()
 
     health_url = f"{base_url}/health"
 
@@ -1025,7 +1106,8 @@ async def test_vllm_connection():
         import aiohttp
 
         timeout = aiohttp.ClientTimeout(total=5)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        auth_headers = get_vllm_auth_headers()
+        async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
             async with session.get(health_url) as response:
                 status = response.status
                 text = await response.text()
@@ -1871,7 +1953,7 @@ async def get_gpu_status():
 
 @app.post("/api/start")
 async def start_server(config: VLLMConfig):
-    """Start the vLLM server in subprocess or container mode"""
+    """Start the vLLM server in subprocess, container, or remote mode"""
     global \
         container_id, \
         vllm_process, \
@@ -1883,13 +1965,135 @@ async def start_server(config: VLLMConfig):
         current_run_mode
 
     # Check if server is already running
-    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
-        status = await container_manager.get_container_status()
-        if status.get("running", False):
-            raise HTTPException(status_code=400, detail="Server is already running")
-    elif current_run_mode == "subprocess":
-        if vllm_process is not None and vllm_process.returncode is None:
-            raise HTTPException(status_code=400, detail="Server is already running")
+    if await check_vllm_server_running():
+        raise HTTPException(status_code=400, detail="Server is already running")
+
+    # =========================================================================
+    # Remote mode - connect to an existing vLLM instance
+    # =========================================================================
+    if config.run_mode == "remote":
+        if not config.remote_url:
+            raise HTTPException(
+                status_code=400,
+                detail="Remote URL is required for remote mode. Provide the base URL of a running vLLM instance (e.g., http://gpu-server:8000)."
+            )
+
+        # Basic URL validation
+        remote_url = config.remote_url.rstrip("/")
+        if not remote_url.startswith(("http://", "https://")):
+            raise HTTPException(
+                status_code=400,
+                detail="Remote URL must start with http:// or https://"
+            )
+
+        await broadcast_log(f"[WEBUI] Run mode: REMOTE")
+        await broadcast_log(f"[WEBUI] Connecting to remote vLLM instance at {remote_url}...")
+
+        # Build auth headers if API key provided
+        auth_headers = {}
+        if config.remote_api_key:
+            auth_headers["Authorization"] = f"Bearer {config.remote_api_key}"
+            await broadcast_log("[WEBUI] Using API key for authentication")
+
+        try:
+            import aiohttp
+
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
+                # Probe health endpoint
+                health_url = f"{remote_url}/health"
+                await broadcast_log(f"[WEBUI] Checking health: {health_url}")
+                health_ok = False
+                try:
+                    async with session.get(health_url) as response:
+                        if response.status == 200:
+                            health_ok = True
+                            await broadcast_log("[WEBUI] ✓ Remote server is healthy")
+                        else:
+                            text = await response.text()
+                            await broadcast_log(f"[WEBUI] ⚠ Health check returned status {response.status}: {text[:200]}")
+                except aiohttp.ClientError as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Cannot connect to remote vLLM instance at {remote_url}: {str(e)}"
+                    )
+
+                # Probe /v1/models to discover served models and their details
+                models_url = f"{remote_url}/v1/models"
+                await broadcast_log(f"[WEBUI] Discovering models: {models_url}")
+                discovered_model = None
+                discovered_models_list = []
+                try:
+                    async with session.get(models_url) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            models = data.get("data", [])
+                            if models:
+                                discovered_model = models[0].get("id", None)
+                                discovered_models_list = [
+                                    {
+                                        "id": m.get("id", "unknown"),
+                                        "owned_by": m.get("owned_by", ""),
+                                        "max_model_len": m.get("max_model_len"),
+                                        "root": m.get("root", ""),
+                                    }
+                                    for m in models
+                                ]
+                                model_list = ", ".join(m.get("id", "unknown") for m in models)
+                                await broadcast_log(f"[WEBUI] ✓ Available models: {model_list}")
+                                # Log extra details if available
+                                first_model = models[0]
+                                if first_model.get("max_model_len"):
+                                    await broadcast_log(f"[WEBUI] ✓ Max context length: {first_model['max_model_len']}")
+                            else:
+                                await broadcast_log("[WEBUI] ⚠ No models found on remote server")
+                        else:
+                            await broadcast_log(f"[WEBUI] ⚠ Could not list models (status {response.status})")
+                except aiohttp.ClientError as e:
+                    await broadcast_log(f"[WEBUI] ⚠ Could not discover models: {str(e)}")
+
+            # Set global state
+            current_run_mode = "remote"
+            current_config = config
+            vllm_running = True
+            server_start_time = datetime.now()
+
+            # Use discovered model or served_model_name or config.model
+            if config.served_model_name:
+                current_model_identifier = config.served_model_name
+                current_served_model_name = config.served_model_name
+            elif discovered_model:
+                current_model_identifier = discovered_model
+                current_served_model_name = None
+            else:
+                current_model_identifier = config.model or "unknown"
+                current_served_model_name = None
+
+            await broadcast_log(f"[WEBUI] ✓ Connected to remote vLLM instance")
+            await broadcast_log(f"[WEBUI] Model: {current_model_identifier}")
+            await broadcast_log(f"[WEBUI] URL: {remote_url}")
+
+            return {
+                "status": "connected",
+                "mode": "remote",
+                "remote_url": remote_url,
+                "model": current_model_identifier,
+                "health": health_ok,
+                "models": discovered_models_list,
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to connect to remote vLLM: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to connect to remote vLLM instance: {str(e)}"
+            )
+
+    # =========================================================================
+    # Subprocess / Container mode - launch a local vLLM instance
+    # =========================================================================
 
     # Determine if using local model or HuggingFace Hub
     # Local model path takes precedence
@@ -2426,7 +2630,7 @@ async def start_server(config: VLLMConfig):
 
 @app.post("/api/stop")
 async def stop_server():
-    """Stop the vLLM server (container or subprocess)"""
+    """Stop the vLLM server (container, subprocess, or disconnect from remote)"""
     global \
         container_id, \
         vllm_process, \
@@ -2436,19 +2640,17 @@ async def stop_server():
         current_served_model_name, \
         current_run_mode
 
-    # Check if server is running based on mode
-    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
-        status = await container_manager.get_container_status()
-        if not status.get("running", False):
-            raise HTTPException(status_code=400, detail="Server is not running")
-    elif current_run_mode == "subprocess":
-        if vllm_process is None or vllm_process.returncode is not None:
-            raise HTTPException(status_code=400, detail="Server is not running")
-    else:
+    # Check if server is running
+    if not await check_vllm_server_running():
         raise HTTPException(status_code=400, detail="Server is not running")
 
     try:
-        if current_run_mode == "container":
+        if current_run_mode == "remote":
+            remote_url = current_config.remote_url if current_config else "unknown"
+            await broadcast_log(f"[WEBUI] Disconnecting from remote vLLM instance ({remote_url})...")
+            await broadcast_log("[WEBUI] ✓ Disconnected from remote vLLM instance")
+
+        elif current_run_mode == "container":
             await broadcast_log("[WEBUI] Stopping vLLM container...")
 
             # Stop container
@@ -2808,14 +3010,7 @@ async def chat(request: ChatRequestWithStopTokens):
     global current_config, current_model_identifier, vllm_running, current_run_mode
 
     # Check server status based on mode
-    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
-        status = await container_manager.get_container_status()
-        if not status.get("running", False):
-            raise HTTPException(status_code=400, detail="vLLM server is not running")
-    elif current_run_mode == "subprocess":
-        if vllm_process is None or vllm_process.returncode is not None:
-            raise HTTPException(status_code=400, detail="vLLM server is not running")
-    else:
+    if not await check_vllm_server_running():
         raise HTTPException(status_code=400, detail="vLLM server is not running")
 
     if current_config is None:
@@ -2824,36 +3019,13 @@ async def chat(request: ChatRequestWithStopTokens):
     try:
         import aiohttp
 
-        # Use OpenAI-compatible chat completions endpoint
-        # vLLM will automatically handle chat template formatting using the model's tokenizer config
-        # In Kubernetes mode, use the service endpoint instead of host:port
-        # Check if we're in Kubernetes by looking for service account token
-        is_kubernetes = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
+        # Use centralized URL construction
+        base_url = get_vllm_base_url()
+        url = f"{base_url}/v1/chat/completions"
 
         logger.info(f"=== CHAT ENDPOINT ROUTING DEBUG ===")
         logger.info(f"current_run_mode: {current_run_mode}")
-        logger.info(f"is_kubernetes: {is_kubernetes}")
-        logger.info(f"CONTAINER_MODE_AVAILABLE: {CONTAINER_MODE_AVAILABLE}")
-
-        if current_run_mode == "container" and is_kubernetes:
-            # Kubernetes mode - connect to vLLM service
-            # Use SERVICE_NAME from container_manager if available
-            service_name = getattr(container_manager, "SERVICE_NAME", "vllm-service")
-            namespace = getattr(container_manager, "namespace", os.getenv("KUBERNETES_NAMESPACE", "default"))
-            url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}/v1/chat/completions"
-            logger.info(f"✓ Using Kubernetes service URL: {url}")
-            logger.info(f"  Service Name: {service_name}")
-            logger.info(f"  Namespace: {namespace}")
-            logger.info(f"  Port: {current_config.port}")
-        else:
-            # Subprocess mode or local container mode - connect to localhost
-            # Use localhost for container mode since 0.0.0.0 is a bind address, not a valid destination
-            if current_run_mode == "container":
-                url = f"http://localhost:{current_config.port}/v1/chat/completions"
-            else:
-                url = f"http://{current_config.host}:{current_config.port}/v1/chat/completions"
-            logger.info(f"✓ Using URL: {url}")
-
+        logger.info(f"✓ Using URL: {url}")
         logger.info(f"=====================================")
 
         # Convert messages to OpenAI format with full tool calling support
@@ -2955,8 +3127,14 @@ async def chat(request: ChatRequestWithStopTokens):
             payload["parallel_tool_calls"] = request.parallel_tool_calls
             logger.info(f"🔧 Parallel tool calls: {request.parallel_tool_calls}")
 
-        # Structured Outputs Support (vLLM guided decoding)
-        # See: https://docs.vllm.ai/en/latest/features/structured_outputs.html
+        # Structured Outputs Support
+        # See: https://docs.vllm.ai/en/latest/features/structured_outputs/
+        #
+        # vLLM v0.12+ removed the legacy guided_* fields (guided_choice,
+        # guided_regex, guided_grammar, guided_json) and now expects a
+        # top-level "structured_outputs" dict with the constraint type.
+        # The OpenAI-standard "response_format" for JSON schema is still
+        # supported as-is.
         if request.response_format:
             # JSON Schema mode (OpenAI-compatible response_format)
             if request.response_format.type == "json_schema" and request.response_format.json_schema:
@@ -2974,21 +3152,21 @@ async def chat(request: ChatRequestWithStopTokens):
                 payload["response_format"] = {"type": "json_object"}
                 logger.info(f"📋 JSON Object mode enabled")
         elif request.structured_outputs:
-            # vLLM-specific guided decoding via extra_body
-            extra_body = {}
+            # vLLM structured_outputs format (v0.12+)
+            # Sent as a top-level "structured_outputs" dict in the request body
+            so_body = {}
             if request.structured_outputs.choice:
-                extra_body["guided_choice"] = request.structured_outputs.choice
-                logger.info(f"📋 Guided choice enabled: {request.structured_outputs.choice}")
+                so_body["choice"] = request.structured_outputs.choice
+                logger.info(f"📋 Structured output (choice) enabled: {request.structured_outputs.choice}")
             elif request.structured_outputs.regex:
-                extra_body["guided_regex"] = request.structured_outputs.regex
-                logger.info(f"📋 Guided regex enabled: {request.structured_outputs.regex}")
+                so_body["regex"] = request.structured_outputs.regex
+                logger.info(f"📋 Structured output (regex) enabled: {request.structured_outputs.regex}")
             elif request.structured_outputs.grammar:
-                extra_body["guided_grammar"] = request.structured_outputs.grammar
-                logger.info(f"📋 Guided grammar enabled")
+                so_body["grammar"] = request.structured_outputs.grammar
+                logger.info(f"📋 Structured output (grammar) enabled")
 
-            if extra_body:
-                # vLLM accepts these parameters directly in the request body
-                payload.update(extra_body)
+            if so_body:
+                payload["structured_outputs"] = so_body
 
         # Stop tokens handling:
         # By default, trust vLLM to use appropriate stop tokens from the model's tokenizer
@@ -3006,10 +3184,22 @@ async def chat(request: ChatRequestWithStopTokens):
             logger.info(f"✓ Letting vLLM handle stop tokens automatically (recommended for /v1/chat/completions)")
 
         # Log the request payload being sent to vLLM
+        # Truncate base64 image data in logs to avoid flooding
+        def _truncate_for_log(obj, max_str_len=200):
+            if isinstance(obj, str):
+                if len(obj) > max_str_len and ("base64," in obj or obj.startswith("data:")):
+                    return obj[:80] + f"...[{len(obj)} chars truncated]"
+                return obj if len(obj) <= max_str_len else obj[:max_str_len] + "..."
+            if isinstance(obj, list):
+                return [_truncate_for_log(item, max_str_len) for item in obj]
+            if isinstance(obj, dict):
+                return {k: _truncate_for_log(v, max_str_len) for k, v in obj.items()}
+            return obj
+
         logger.info(f"=== vLLM REQUEST ===")
         logger.info(f"URL: {url}")
-        logger.info(f"Payload: {payload}")
-        logger.info(f"Messages ({len(messages_dict)}): {messages_dict}")
+        logger.info(f"Payload keys: {list(payload.keys())}")
+        logger.info(f"Messages ({len(messages_dict)}): {_truncate_for_log(messages_dict)}")
         logger.info(f"==================")
 
         async def generate_stream():
@@ -3018,8 +3208,11 @@ async def chat(request: ChatRequestWithStopTokens):
             buffer = ""  # Buffer for incomplete lines
             try:
                 # Set reasonable timeout to prevent hanging
-                timeout = aiohttp.ClientTimeout(total=300, connect=10, sock_read=30)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
+                # sock_read=120 is needed for VLM models that may take longer
+                # to process images before producing the first token
+                timeout = aiohttp.ClientTimeout(total=300, connect=10, sock_read=120)
+                auth_headers = get_vllm_auth_headers()
+                async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
                     async with session.post(url, json=payload) as response:
                         if response.status != 200:
                             text = await response.text()
@@ -3129,9 +3322,10 @@ async def chat(request: ChatRequestWithStopTokens):
             )
         else:
             # Non-streaming response
-            # Set reasonable timeout to prevent hanging
-            timeout = aiohttp.ClientTimeout(total=60, connect=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            # Set reasonable timeout - VLM image processing may need extra time
+            timeout = aiohttp.ClientTimeout(total=120, connect=10)
+            auth_headers = get_vllm_auth_headers()
+            async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
                 async with session.post(url, json=payload) as response:
                     if response.status != 200:
                         text = await response.text()
@@ -3463,14 +3657,7 @@ async def completion(request: CompletionRequest):
     global current_config, current_model_identifier, current_run_mode
 
     # Check server status based on mode
-    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
-        status = await container_manager.get_container_status()
-        if not status.get("running", False):
-            raise HTTPException(status_code=400, detail="vLLM server is not running")
-    elif current_run_mode == "subprocess":
-        if vllm_process is None or vllm_process.returncode is not None:
-            raise HTTPException(status_code=400, detail="vLLM server is not running")
-    else:
+    if not await check_vllm_server_running():
         raise HTTPException(status_code=400, detail="vLLM server is not running")
 
     if current_config is None:
@@ -3479,24 +3666,10 @@ async def completion(request: CompletionRequest):
     try:
         import aiohttp
 
-        # In Kubernetes mode, use the service endpoint instead of host:port
-        # Check if we're in Kubernetes by looking for service account token
-        is_kubernetes = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
-
-        if current_run_mode == "container" and is_kubernetes:
-            # Kubernetes mode - connect to vLLM service
-            service_name = getattr(container_manager, "SERVICE_NAME", "vllm-service")
-            namespace = getattr(container_manager, "namespace", os.getenv("KUBERNETES_NAMESPACE", "default"))
-            url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}/v1/completions"
-            logger.info(f"Using Kubernetes service URL: {url}")
-        else:
-            # Subprocess mode or local container mode - connect to localhost
-            # Use localhost for container mode since 0.0.0.0 is a bind address, not a valid destination
-            if current_run_mode == "container":
-                url = f"http://localhost:{current_config.port}/v1/completions"
-            else:
-                url = f"http://{current_config.host}:{current_config.port}/v1/completions"
-            logger.info(f"Using URL: {url}")
+        # Use centralized URL construction
+        base_url = get_vllm_base_url()
+        url = f"{base_url}/v1/completions"
+        logger.info(f"Using URL: {url}")
 
         payload = {
             "model": get_model_name_for_api(),
@@ -3505,7 +3678,8 @@ async def completion(request: CompletionRequest):
             "max_tokens": request.max_tokens,
         }
 
-        async with aiohttp.ClientSession() as session:
+        auth_headers = get_vllm_auth_headers()
+        async with aiohttp.ClientSession(headers=auth_headers) as session:
             async with session.post(url, json=payload) as response:
                 if response.status != 200:
                     text = await response.text()
@@ -4160,13 +4334,8 @@ async def check_vllm_health():
     global current_config, vllm_process, current_run_mode
 
     # Check if server is running
-    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
-        status = await container_manager.get_container_status()
-        if not status.get("running", False):
-            return {"success": False, "status_code": 503, "error": "Server not running"}
-    elif current_run_mode == "subprocess":
-        if vllm_process is None or vllm_process.returncode is not None:
-            return {"success": False, "status_code": 503, "error": "Server not running"}
+    if not await check_vllm_server_running():
+        return {"success": False, "status_code": 503, "error": "Server not running"}
 
     if current_config is None:
         return {"success": False, "status_code": 503, "error": "No configuration"}
@@ -4175,15 +4344,12 @@ async def check_vllm_health():
     try:
         import aiohttp
 
-        if current_run_mode == "container":
-            base_url = f"http://localhost:{current_config.port}"
-        else:
-            base_url = f"http://{current_config.host}:{current_config.port}"
-
+        base_url = get_vllm_base_url()
         health_url = f"{base_url}/health"
+        auth_headers = get_vllm_auth_headers()
 
         timeout = aiohttp.ClientTimeout(total=3)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
             async with session.get(health_url) as response:
                 if response.status == 200:
                     return {"success": True, "status_code": 200, "message": "Server is healthy"}
@@ -4199,14 +4365,7 @@ async def get_vllm_metrics():
     global current_config, latest_vllm_metrics, metrics_timestamp, current_run_mode
 
     # Check server status based on mode
-    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
-        status = await container_manager.get_container_status()
-        if not status.get("running", False):
-            return JSONResponse(status_code=400, content={"error": "vLLM server is not running"})
-    elif current_run_mode == "subprocess":
-        if vllm_process is None or vllm_process.returncode is not None:
-            return JSONResponse(status_code=400, content={"error": "vLLM server is not running"})
-    else:
+    if not await check_vllm_server_running():
         return JSONResponse(status_code=400, content={"error": "vLLM server is not running"})
 
     # Calculate how fresh the metrics are
@@ -4231,25 +4390,12 @@ async def get_vllm_metrics():
     try:
         import aiohttp
 
-        # Try to fetch metrics from vLLM's metrics endpoint
-        # In Kubernetes mode, use the service endpoint instead of host:port
-        # Check if we're in Kubernetes by looking for service account token
-        is_kubernetes = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
+        # Use centralized URL construction
+        base_url = get_vllm_base_url()
+        metrics_url = f"{base_url}/metrics"
+        auth_headers = get_vllm_auth_headers()
 
-        if current_run_mode == "container" and is_kubernetes:
-            # Kubernetes mode - connect to vLLM service
-            service_name = getattr(container_manager, "SERVICE_NAME", "vllm-service")
-            namespace = getattr(container_manager, "namespace", os.getenv("KUBERNETES_NAMESPACE", "default"))
-            metrics_url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}/metrics"
-        else:
-            # Subprocess mode or local container mode - connect to localhost
-            # Use localhost for container mode since 0.0.0.0 is a bind address, not a valid destination
-            if current_run_mode == "container":
-                metrics_url = f"http://localhost:{current_config.port}/metrics"
-            else:
-                metrics_url = f"http://{current_config.host}:{current_config.port}/metrics"
-
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(headers=auth_headers) as session:
             try:
                 async with session.get(metrics_url, timeout=aiohttp.ClientTimeout(total=2)) as response:
                     if response.status == 200:
@@ -4305,14 +4451,7 @@ async def start_benchmark(config: BenchmarkConfig):
     global current_config, benchmark_task, benchmark_results, current_run_mode
 
     # Check server status based on mode
-    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
-        status = await container_manager.get_container_status()
-        if not status.get("running", False):
-            raise HTTPException(status_code=400, detail="vLLM server is not running")
-    elif current_run_mode == "subprocess":
-        if vllm_process is None or vllm_process.returncode is not None:
-            raise HTTPException(status_code=400, detail="vLLM server is not running")
-    else:
+    if not await check_vllm_server_running():
         raise HTTPException(status_code=400, detail="vLLM server is not running")
 
     if benchmark_task is not None and not benchmark_task.done():
@@ -4389,24 +4528,10 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
             f"[BENCHMARK] Configuration: {config.total_requests} requests at {config.request_rate} req/s"
         )
 
-        # In Kubernetes mode, use the service endpoint instead of host:port
-        # Check if we're in Kubernetes by looking for service account token
-        is_kubernetes = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
-
-        if current_run_mode == "container" and is_kubernetes:
-            # Kubernetes mode - connect to vLLM service
-            service_name = getattr(container_manager, "SERVICE_NAME", "vllm-service")
-            namespace = getattr(container_manager, "namespace", os.getenv("KUBERNETES_NAMESPACE", "default"))
-            url = f"http://{service_name}.{namespace}.svc.cluster.local:{server_config.port}/v1/chat/completions"
-            logger.info(f"Using Kubernetes service URL for benchmark: {url}")
-        else:
-            # Subprocess mode or local container mode - connect to localhost
-            # Use localhost for container mode since 0.0.0.0 is a bind address, not a valid destination
-            if current_run_mode == "container":
-                url = f"http://localhost:{server_config.port}/v1/chat/completions"
-            else:
-                url = f"http://{server_config.host}:{server_config.port}/v1/chat/completions"
-            logger.info(f"Using URL for benchmark: {url}")
+        # Use centralized URL construction
+        base_url = get_vllm_base_url()
+        url = f"{base_url}/v1/chat/completions"
+        logger.info(f"Using URL for benchmark: {url}")
 
         # Generate a sample prompt of specified length
         prompt_text = " ".join(["benchmark" for _ in range(config.prompt_tokens // 10)])
@@ -4417,7 +4542,8 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
         start_time = time.time()
 
         # Create session
-        async with aiohttp.ClientSession() as session:
+        auth_headers = get_vllm_auth_headers()
+        async with aiohttp.ClientSession(headers=auth_headers) as session:
             # Send requests
             for i in range(config.total_requests):
                 request_start = time.time()
@@ -4554,7 +4680,7 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
             return
 
         # Setup target URL
-        target_url = f"http://{server_config.host}:{server_config.port}/v1"
+        target_url = f"{get_vllm_base_url()}/v1"
         await broadcast_log(f"[GUIDELLM] Target: {target_url}")
 
         # Run GuideLLM benchmark using subprocess (since GuideLLM CLI is simpler)
@@ -4657,36 +4783,54 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
         await broadcast_log(f"[GUIDELLM] Running: {' '.join(cmd)}")
         await broadcast_log(f"[GUIDELLM] JSON output will be saved to: {result_file.name}")
 
-        # Run GuideLLM process and capture ALL output
+        # Run GuideLLM process and capture ALL output.
+        # IMPORTANT: Read stdout and stderr concurrently to avoid deadlock.
+        # GuideLLM writes progress/status to stderr; if we only read stdout
+        # the stderr pipe buffer fills up, blocking the process, which in
+        # turn blocks our stdout readline -- classic subprocess deadlock.
         process = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
 
         # Collect all output lines for parsing
         output_lines = []
+        stderr_lines = []
 
-        # Stream output
-        while True:
-            line = await process.stdout.readline()
-            if not line:
-                break
-            decoded = line.decode().strip()
-            if decoded:
-                output_lines.append(decoded)
-                await broadcast_log(f"[GUIDELLM] {decoded}")
+        async def _drain_stdout():
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                decoded = line.decode().strip()
+                if decoded:
+                    output_lines.append(decoded)
+                    await broadcast_log(f"[GUIDELLM] {decoded}")
 
-        # Wait for completion
+        async def _drain_stderr():
+            while True:
+                line = await process.stderr.readline()
+                if not line:
+                    break
+                decoded = line.decode().strip()
+                if decoded:
+                    stderr_lines.append(decoded)
+                    # Log stderr too (contains progress info)
+                    await broadcast_log(f"[GUIDELLM] {decoded}")
+
+        # Read both streams concurrently, then wait for exit
+        await asyncio.gather(_drain_stdout(), _drain_stderr())
         await process.wait()
 
         if process.returncode != 0:
-            stderr = await process.stderr.read()
-            error_msg = stderr.decode().strip()
-            await broadcast_log(f"[GUIDELLM] Error: {error_msg}")
+            error_msg = "\n".join(stderr_lines) if stderr_lines else "Unknown error"
+            await broadcast_log(f"[GUIDELLM] Error (exit code {process.returncode}): {error_msg}")
             benchmark_results = None
             return
 
         # Join all output for raw display
         raw_output = "\n".join(output_lines)
+        if stderr_lines:
+            raw_output += "\n--- stderr ---\n" + "\n".join(stderr_lines)
 
         # Try to read JSON output file
         json_output = None
@@ -4839,12 +4983,13 @@ async def check_omni_health():
     try:
         import aiohttp
 
-        base_url = f"http://localhost:{omni_config.port}"
+        base_url = get_omni_base_url()
         health_url = f"{base_url}/health"
+        headers = get_omni_auth_headers()
 
         timeout = aiohttp.ClientTimeout(total=3)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(health_url) as response:
+            async with session.get(health_url, headers=headers) as response:
                 if response.status == 200:
                     return {"success": True, "ready": True, "message": "Server is healthy"}
                 else:
@@ -5152,6 +5297,88 @@ async def start_omni_server(config: OmniConfig):
             }
 
         # ═══════════════════════════════════════════════════════════════════════
+        # Remote mode: connect to an existing remote vLLM-Omni instance
+        # ═══════════════════════════════════════════════════════════════════════
+        if config.run_mode == "remote":
+            if not config.remote_url:
+                raise HTTPException(status_code=400, detail="Remote URL is required for remote mode")
+
+            omni_run_mode = "remote"
+            remote_base = config.remote_url.rstrip("/")
+            await broadcast_omni_log(f"[OMNI] Connecting to remote vLLM-Omni instance: {remote_base}")
+
+            # Probe health endpoint
+            import aiohttp
+
+            try:
+                headers = get_omni_auth_headers()
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    # Try /health first
+                    health_ok = False
+                    try:
+                        async with session.get(f"{remote_base}/health", headers=headers) as resp:
+                            if resp.status == 200:
+                                health_ok = True
+                                await broadcast_omni_log("[OMNI] ✅ Remote health check passed")
+                            else:
+                                await broadcast_omni_log(f"[OMNI] ⚠️  Health endpoint returned {resp.status}")
+                    except Exception as he:
+                        await broadcast_omni_log(f"[OMNI] ⚠️  Health endpoint not available: {he}")
+
+                    # Try /v1/models to confirm it's a vLLM instance and get details
+                    discovered_models_list = []
+                    try:
+                        async with session.get(f"{remote_base}/v1/models", headers=headers) as resp:
+                            if resp.status == 200:
+                                models_data = await resp.json()
+                                models_raw = models_data.get("data", [])
+                                model_ids = [m.get("id", "unknown") for m in models_raw]
+                                discovered_models_list = [
+                                    {
+                                        "id": m.get("id", "unknown"),
+                                        "owned_by": m.get("owned_by", ""),
+                                        "max_model_len": m.get("max_model_len"),
+                                        "root": m.get("root", ""),
+                                    }
+                                    for m in models_raw
+                                ]
+                                await broadcast_omni_log(f"[OMNI] ✅ Remote models: {', '.join(model_ids)}")
+                                if models_raw and models_raw[0].get("max_model_len"):
+                                    await broadcast_omni_log(f"[OMNI] ✅ Max context length: {models_raw[0]['max_model_len']}")
+                                if model_ids:
+                                    # Auto-set model name if available
+                                    config.model = model_ids[0]
+                            else:
+                                await broadcast_omni_log(f"[OMNI] ⚠️  Models endpoint returned {resp.status}")
+                    except Exception as me:
+                        await broadcast_omni_log(f"[OMNI] ⚠️  Models endpoint not available: {me}")
+
+                    if not health_ok:
+                        await broadcast_omni_log("[OMNI] ⚠️  Proceeding without confirmed health check")
+
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot reach remote vLLM-Omni at {remote_base}: {str(e)}",
+                )
+
+            omni_running = True
+            omni_start_time = datetime.now()
+
+            await broadcast_omni_log(f"[OMNI] ✅ Connected to remote instance at {remote_base}")
+            await broadcast_omni_log(f"[OMNI] Model: {config.model}")
+
+            return {
+                "status": "started",
+                "mode": "remote",
+                "model": config.model,
+                "message": f"Connected to remote vLLM-Omni at {remote_base}",
+                "health": health_ok,
+                "models": discovered_models_list,
+            }
+
+        # ═══════════════════════════════════════════════════════════════════════
         # Standard subprocess mode for other models
         # ═══════════════════════════════════════════════════════════════════════
         omni_run_mode = config.run_mode
@@ -5354,6 +5581,13 @@ async def stop_omni_server():
             stopped_something = True
             logger.info("vLLM-Omni container stopped")
 
+        elif omni_run_mode == "remote":
+            # Remote mode: just disconnect (nothing to kill)
+            await broadcast_omni_log("[OMNI] Disconnecting from remote vLLM-Omni instance...")
+            stopped_something = True
+            logger.info("Disconnected from remote vLLM-Omni instance")
+            await broadcast_omni_log("[OMNI] ✅ Disconnected from remote instance")
+
         # Handle inconsistent state - omni_running is True but nothing to stop
         if not stopped_something:
             logger.warning(
@@ -5411,7 +5645,8 @@ async def generate_omni_image(request: ImageGenerationRequest):
         start_time = time.time()
 
         # Build request to vLLM-Omni's /v1/chat/completions endpoint
-        omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
+        omni_url = f"{get_omni_base_url()}/v1/chat/completions"
+        omni_headers = get_omni_auth_headers()
 
         # Build message content - supports both text-to-image and image-to-image
         if request.input_image:
@@ -5451,7 +5686,7 @@ async def generate_omni_image(request: ImageGenerationRequest):
         logger.info(f"Sending image generation request to vLLM-Omni: {omni_url}")
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(omni_url, json=payload, timeout=aiohttp.ClientTimeout(total=300)) as response:
+            async with session.post(omni_url, json=payload, headers=omni_headers, timeout=aiohttp.ClientTimeout(total=300)) as response:
                 if response.status != 200:
                     error_text = await response.text()
                     logger.error(f"vLLM-Omni error: {error_text}")
@@ -5507,7 +5742,8 @@ async def generate_video(request: VideoGenerationRequest) -> VideoGenerationResp
 
     # Build request to vLLM-Omni's /v1/chat/completions endpoint
     # Video models typically use a chat completions format with specific parameters
-    omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
+    omni_url = f"{get_omni_base_url()}/v1/chat/completions"
+    omni_headers = get_omni_auth_headers()
 
     # Calculate number of frames based on duration and fps
     num_frames = request.duration * request.fps
@@ -5552,7 +5788,7 @@ async def generate_video(request: VideoGenerationRequest) -> VideoGenerationResp
     try:
         timeout = aiohttp.ClientTimeout(total=600)  # 10 minutes for video generation
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(omni_url, json=payload) as response:
+            async with session.post(omni_url, json=payload, headers=omni_headers) as response:
                 if response.status != 200:
                     error_text = await response.text()
                     logger.error(f"vLLM-Omni error: {error_text}")
@@ -5627,7 +5863,8 @@ async def generate_tts(request: TTSGenerationRequest) -> AudioGenerationResponse
     if not omni_config:
         return AudioGenerationResponse(success=False, error="vLLM-Omni configuration not available")
 
-    omni_url = f"http://localhost:{omni_config.port}/v1/audio/speech"
+    omni_url = f"{get_omni_base_url()}/v1/audio/speech"
+    omni_headers = get_omni_auth_headers()
 
     payload = {
         "model": omni_config.model,
@@ -5649,7 +5886,7 @@ async def generate_tts(request: TTSGenerationRequest) -> AudioGenerationResponse
     try:
         timeout = aiohttp.ClientTimeout(total=300)  # 5 minutes for audio generation
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(omni_url, json=payload) as response:
+            async with session.post(omni_url, json=payload, headers=omni_headers) as response:
                 content_type = response.headers.get("Content-Type", "")
 
                 if response.status != 200:
@@ -5849,7 +6086,8 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
     # ═══════════════════════════════════════════════════════════════════════════
     # API mode for other models (fallback, has bug for Stable Audio)
     # ═══════════════════════════════════════════════════════════════════════════
-    omni_url = f"http://localhost:{omni_config.port}/v1/images/generations"
+    omni_url = f"{get_omni_base_url()}/v1/images/generations"
+    omni_headers = get_omni_auth_headers()
 
     # Build payload for images/generations endpoint
     payload = {
@@ -5885,7 +6123,7 @@ async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResp
     try:
         timeout = aiohttp.ClientTimeout(total=300)  # 5 minutes for audio generation
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(omni_url, json=payload) as response:
+            async with session.post(omni_url, json=payload, headers=omni_headers) as response:
                 content_type = response.headers.get("Content-Type", "")
 
                 if response.status != 200:
@@ -6061,7 +6299,8 @@ async def omni_chat(request: OmniChatRequest):
         raise HTTPException(status_code=400, detail="vLLM-Omni configuration not available")
 
     # Build request to vLLM-Omni's /v1/chat/completions endpoint
-    omni_url = f"http://localhost:{omni_config.port}/v1/chat/completions"
+    omni_url = f"{get_omni_base_url()}/v1/chat/completions"
+    omni_headers = get_omni_auth_headers()
 
     payload = {
         "model": omni_config.model,
@@ -6081,7 +6320,7 @@ async def omni_chat(request: OmniChatRequest):
         try:
             timeout = aiohttp.ClientTimeout(total=120)  # 2 minutes for audio generation
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(omni_url, json=payload) as response:
+                async with session.post(omni_url, json=payload, headers=omni_headers) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         logger.error(f"vLLM-Omni error: {error_text}")
@@ -6671,12 +6910,16 @@ async def claude_code_config():
 
     # Get the model name to use
     # Use served_model_name if set (required for Claude Code as model names with '/' don't work)
+    is_remote = current_run_mode == "remote"
     if current_served_model_name:
         model_name = current_served_model_name
     else:
         model_name = current_model_identifier or current_config.model
-        # Check if model name contains '/' which won't work with Claude Code
-        if "/" in model_name:
+        # Check if model name contains '/' which won't work with Claude Code.
+        # Skip this check in remote mode -- the remote server's model name is
+        # what it is; the user can't change --served-model-name on a server
+        # they don't control, and vLLM will route the request correctly.
+        if "/" in model_name and not is_remote:
             return {
                 "available": False,
                 "message": "Model name contains '/'. Set a 'Served Model Name' in vLLM server configuration for Claude Code to work.",
@@ -6686,18 +6929,33 @@ async def claude_code_config():
             }
 
     # Check if tool calling is enabled (required for Claude Code)
-    tool_calling_enabled = current_config.enable_tool_calling
+    # In remote mode, we can't know, so assume it's available
+    tool_calling_enabled = True if is_remote else current_config.enable_tool_calling
 
     # Build the base URL for vLLM's Anthropic-compatible endpoint
-    # Use localhost since Claude Code runs on the same machine
     # Per vLLM docs: ANTHROPIC_BASE_URL should be the server root (e.g. http://localhost:8000)
     # Claude Code/Anthropic SDK appends /v1/messages to this base URL
-    port = current_config.port
-    base_url = f"http://localhost:{port}"
+    # Use get_vllm_base_url() to support local, container, and remote modes
+    base_url = get_vllm_base_url()
+    # Claude Code runs as an external CLI process; 0.0.0.0 (bind-all) isn't a
+    # valid connect address on every platform, so normalise to localhost.
+    base_url = base_url.replace("://0.0.0.0:", "://localhost:")
+
+    # Use remote API key if configured, otherwise use a placeholder
+    # (vLLM doesn't require auth by default for local mode)
+    api_key = "vllm-playground"
+    auth_headers = get_vllm_auth_headers()
+    if auth_headers and "Authorization" in auth_headers:
+        # Extract Bearer token value
+        api_key = auth_headers["Authorization"].replace("Bearer ", "")
 
     env_config = {
         "ANTHROPIC_BASE_URL": base_url,
-        "ANTHROPIC_API_KEY": "vllm-playground",  # vLLM doesn't require auth by default
+        "ANTHROPIC_API_KEY": api_key,
+        # ANTHROPIC_AUTH_TOKEN is required by Claude Code to skip the login
+        # prompt.  It can be any non-empty value when using a custom endpoint.
+        # See: https://docs.vllm.ai/en/latest/serving/integrations/claude_code/
+        "ANTHROPIC_AUTH_TOKEN": api_key,
         "ANTHROPIC_DEFAULT_OPUS_MODEL": model_name,
         "ANTHROPIC_DEFAULT_SONNET_MODEL": model_name,
         "ANTHROPIC_DEFAULT_HAIKU_MODEL": model_name,
@@ -6705,14 +6963,16 @@ async def claude_code_config():
 
     return {
         "available": True,
-        "message": "vLLM server is running and ready for Claude Code",
+        "message": "Connected to remote vLLM instance — ready for Claude Code"
+        if is_remote
+        else "vLLM server is running and ready for Claude Code",
         "tool_calling_enabled": tool_calling_enabled,
         "tool_calling_warning": None
         if tool_calling_enabled
         else "Tool calling is not enabled. Claude Code may not work properly.",
         "env": env_config,
         "model": model_name,
-        "port": port,
+        "base_url": base_url,
     }
 
 

@@ -118,10 +118,17 @@ class VLLMWebUI {
             // Run mode elements
             runModeSubprocess: document.getElementById('run-mode-subprocess'),
             runModeContainer: document.getElementById('run-mode-container'),
+            runModeRemote: document.getElementById('run-mode-remote'),
             runModeSubprocessLabel: document.getElementById('run-mode-subprocess-label'),
             runModeContainerLabel: document.getElementById('run-mode-container-label'),
+            runModeRemoteLabel: document.getElementById('run-mode-remote-label'),
             runModeHelpText: document.getElementById('run-mode-help-text'),
             gpuSettings: document.getElementById('gpu-settings'),
+
+            // Remote mode settings
+            remoteSettingsGroup: document.getElementById('remote-settings-group'),
+            remoteUrlInput: document.getElementById('remote-url'),
+            remoteApiKeyInput: document.getElementById('remote-api-key'),
 
             // Venv path (for custom vLLM installations)
             venvPathGroup: document.getElementById('venv-path-group'),
@@ -223,7 +230,7 @@ class VLLMWebUI {
             toolbarStructured: document.getElementById('toolbar-structured'),
             toolbarTools: document.getElementById('toolbar-tools'),
             toolbarMcp: document.getElementById('toolbar-mcp'),
-            toolbarRag: document.getElementById('toolbar-rag'),
+            toolbarVlm: document.getElementById('toolbar-vlm'),
 
             // Inline Panels
             panelSettings: document.getElementById('panel-settings'),
@@ -231,7 +238,20 @@ class VLLMWebUI {
             panelStructured: document.getElementById('panel-structured'),
             panelTools: document.getElementById('panel-tools'),
             panelMcp: document.getElementById('panel-mcp'),
-            panelRag: document.getElementById('panel-rag'),
+            panelVlm: document.getElementById('panel-vlm'),
+
+            // VLM (Vision) elements
+            vlmEnabled: document.getElementById('vlm-enabled'),
+            vlmOptions: document.getElementById('vlm-options'),
+            vlmDropzone: document.getElementById('vlm-dropzone'),
+            vlmImageInput: document.getElementById('vlm-image-input'),
+            vlmImageUrl: document.getElementById('vlm-image-url'),
+            vlmLoadUrlBtn: document.getElementById('vlm-load-url-btn'),
+            vlmImagePreview: document.getElementById('vlm-image-preview'),
+            vlmPreviewImg: document.getElementById('vlm-preview-img'),
+            vlmPreviewName: document.getElementById('vlm-preview-name'),
+            vlmPreviewSize: document.getElementById('vlm-preview-size'),
+            vlmClearImage: document.getElementById('vlm-clear-image'),
 
             // Structured Outputs elements
             structuredEnabled: document.getElementById('structured-enabled'),
@@ -610,6 +630,9 @@ class VLLMWebUI {
         // Initialize structured outputs
         this.initStructuredOutputs();
 
+        // Initialize VLM (Vision Language Model)
+        this.initVLM();
+
         // Add tool button
         if (this.elements.addToolBtn) {
             this.elements.addToolBtn.addEventListener('click', () => this.openToolEditor());
@@ -666,7 +689,7 @@ class VLLMWebUI {
             { btn: this.elements.toolbarStructured, panel: this.elements.panelStructured, id: 'structured' },
             { btn: this.elements.toolbarTools, panel: this.elements.panelTools, id: 'tools' },
             { btn: this.elements.toolbarMcp, panel: this.elements.panelMcp, id: 'mcp' },
-            { btn: this.elements.toolbarRag, panel: this.elements.panelRag, id: 'rag' }
+            { btn: this.elements.toolbarVlm, panel: this.elements.panelVlm, id: 'vlm' }
         ];
 
         toolbarButtons.forEach(({ btn, panel, id }) => {
@@ -788,7 +811,7 @@ class VLLMWebUI {
     }
 
     closeAllPanels() {
-        const panels = ['settings', 'prompt', 'structured', 'tools', 'mcp', 'rag'];
+        const panels = ['settings', 'prompt', 'structured', 'tools', 'mcp', 'vlm'];
         panels.forEach(id => this.closePanel(id));
     }
 
@@ -841,6 +864,13 @@ class VLLMWebUI {
         if (mcpBtn) {
             const mcpActive = this.mcpEnabled && (this.mcpSelectedServers?.length || 0) > 0;
             mcpBtn.classList.toggle('modified', mcpActive);
+        }
+
+        // VLM - check if VLM is enabled or image is attached
+        const vlmBtn = document.getElementById('toolbar-vlm');
+        if (vlmBtn) {
+            const vlmActive = this.vlmEnabled && this.vlmImageData;
+            vlmBtn.classList.toggle('modified', !!vlmActive);
         }
     }
 
@@ -1061,6 +1091,151 @@ number ::= [0-9]+`
         return null;
     }
 
+    // ============ VLM (Vision Language Model) ============
+    initVLM() {
+        this.vlmEnabled = false;
+        this.vlmImageData = null;   // base64 data URL or external URL
+        this.vlmImageName = null;   // filename for display
+
+        // Enable/disable toggle
+        if (this.elements.vlmEnabled) {
+            this.elements.vlmEnabled.addEventListener('change', () => {
+                this.vlmEnabled = this.elements.vlmEnabled.checked;
+                if (this.elements.vlmOptions) {
+                    this.elements.vlmOptions.style.display = this.vlmEnabled ? 'block' : 'none';
+                }
+                this.updateModifiedIndicators();
+            });
+        }
+
+        // Dropzone: click to browse
+        if (this.elements.vlmDropzone) {
+            this.elements.vlmDropzone.addEventListener('click', () => {
+                if (this.elements.vlmImageInput) this.elements.vlmImageInput.click();
+            });
+
+            // Drag & drop
+            this.elements.vlmDropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                this.elements.vlmDropzone.classList.add('dragover');
+            });
+            this.elements.vlmDropzone.addEventListener('dragleave', () => {
+                this.elements.vlmDropzone.classList.remove('dragover');
+            });
+            this.elements.vlmDropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                this.elements.vlmDropzone.classList.remove('dragover');
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    this.handleVLMImageUpload(e.dataTransfer.files[0]);
+                }
+            });
+        }
+
+        // File input change
+        if (this.elements.vlmImageInput) {
+            this.elements.vlmImageInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    this.handleVLMImageUpload(e.target.files[0]);
+                }
+            });
+        }
+
+        // Load URL button
+        if (this.elements.vlmLoadUrlBtn) {
+            this.elements.vlmLoadUrlBtn.addEventListener('click', () => {
+                const url = this.elements.vlmImageUrl?.value?.trim();
+                if (!url) {
+                    this.showNotification('Please enter an image URL', 'warning');
+                    return;
+                }
+                this.vlmImageData = url;
+                this.vlmImageName = url.split('/').pop() || 'image';
+                this.showVLMPreview(url, this.vlmImageName, 'URL');
+                this.showNotification('Image URL loaded', 'success');
+            });
+        }
+
+        // Clear image button
+        if (this.elements.vlmClearImage) {
+            this.elements.vlmClearImage.addEventListener('click', () => this.clearVLMImage());
+        }
+    }
+
+    handleVLMImageUpload(file) {
+        if (!file.type.startsWith('image/')) {
+            this.showNotification('Please upload an image file (JPEG, PNG, GIF, WebP)', 'warning');
+            return;
+        }
+
+        // Warn for very large files (> 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            this.showNotification('Image is very large (>10MB). This may cause slow requests.', 'warning');
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            this.vlmImageData = e.target.result; // base64 data URL
+            this.vlmImageName = file.name;
+            const sizeStr = file.size < 1024 * 1024
+                ? `${(file.size / 1024).toFixed(1)} KB`
+                : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+            this.showVLMPreview(e.target.result, file.name, sizeStr);
+            this.showVLMInputIndicator();
+            this.updateModifiedIndicators();
+        };
+        reader.readAsDataURL(file);
+    }
+
+    showVLMPreview(src, name, sizeText) {
+        if (this.elements.vlmPreviewImg) this.elements.vlmPreviewImg.src = src;
+        if (this.elements.vlmPreviewName) this.elements.vlmPreviewName.textContent = name;
+        if (this.elements.vlmPreviewSize) this.elements.vlmPreviewSize.textContent = sizeText;
+        if (this.elements.vlmImagePreview) this.elements.vlmImagePreview.style.display = 'flex';
+        if (this.elements.vlmDropzone) this.elements.vlmDropzone.style.display = 'none';
+    }
+
+    clearVLMImage() {
+        this.vlmImageData = null;
+        this.vlmImageName = null;
+        if (this.elements.vlmPreviewImg) this.elements.vlmPreviewImg.src = '';
+        if (this.elements.vlmImagePreview) this.elements.vlmImagePreview.style.display = 'none';
+        if (this.elements.vlmDropzone) this.elements.vlmDropzone.style.display = '';
+        if (this.elements.vlmImageInput) this.elements.vlmImageInput.value = '';
+        if (this.elements.vlmImageUrl) this.elements.vlmImageUrl.value = '';
+        this.removeVLMInputIndicator();
+        this.updateModifiedIndicators();
+    }
+
+    showVLMInputIndicator() {
+        // Show a small image indicator above the chat input
+        this.removeVLMInputIndicator(); // Remove any existing
+        if (!this.vlmImageData) return;
+
+        const indicator = document.createElement('div');
+        indicator.className = 'vlm-input-indicator';
+        indicator.id = 'vlm-input-indicator';
+        indicator.innerHTML = `
+            <img src="${this.vlmImageData}" alt="Attached">
+            <span>${this.vlmImageName || 'Image attached'}</span>
+            <button class="vlm-indicator-remove" title="Remove image">✕</button>
+        `;
+        indicator.querySelector('.vlm-indicator-remove').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.clearVLMImage();
+        });
+
+        // Insert before the chat input container
+        const chatInputContainer = this.elements.chatInput?.parentElement;
+        if (chatInputContainer) {
+            chatInputContainer.parentElement.insertBefore(indicator, chatInputContainer);
+        }
+    }
+
+    removeVLMInputIndicator() {
+        const existing = document.getElementById('vlm-input-indicator');
+        if (existing) existing.remove();
+    }
+
     attachListeners() {
         // Server control
         this.elements.startBtn.addEventListener('click', () => this.startServer());
@@ -1082,6 +1257,7 @@ number ::= [0-9]+`
         // Run mode toggle
         this.elements.runModeSubprocess.addEventListener('change', () => this.toggleRunMode());
         this.elements.runModeContainer.addEventListener('change', () => this.toggleRunMode());
+        this.elements.runModeRemote.addEventListener('change', () => this.toggleRunMode());
 
         // Virtual environment path validation (check vLLM version when path changes)
         if (this.elements.venvPathInput) {
@@ -1508,7 +1684,8 @@ number ::= [0-9]+`
             if (data.running) {
                 this.serverRunning = true;
                 this.currentConfig = data.config;  // Store current config
-                this.updateStatus('running', 'Server Running');
+                const isRemote = data.config && data.config.run_mode === 'remote';
+                this.updateStatus('running', isRemote ? 'Connected (Remote)' : 'Server Running');
                 this.elements.startBtn.disabled = true;
                 this.elements.stopBtn.disabled = false;
                 // Only enable send button if server is ready
@@ -1780,12 +1957,32 @@ number ::= [0-9]+`
 
     toggleRunMode() {
         const isSubprocess = this.elements.runModeSubprocess.checked;
+        const isContainer = this.elements.runModeContainer.checked;
+        const isRemote = this.elements.runModeRemote.checked;
 
         // Update button active states
-        if (isSubprocess) {
-            this.elements.runModeSubprocessLabel.classList.add('active');
-            this.elements.runModeContainerLabel.classList.remove('active');
+        this.elements.runModeSubprocessLabel.classList.toggle('active', isSubprocess);
+        this.elements.runModeContainerLabel.classList.toggle('active', isContainer);
+        this.elements.runModeRemoteLabel.classList.toggle('active', isRemote);
 
+        // Toggle local server settings visibility (hidden in remote mode)
+        const localServerSettings = document.getElementById('local-server-settings');
+        if (localServerSettings) {
+            localServerSettings.style.display = isRemote ? 'none' : 'block';
+        }
+
+        // Toggle command preview visibility (hidden in remote mode)
+        const commandPreviewSection = document.getElementById('command-preview-section');
+        if (commandPreviewSection) {
+            commandPreviewSection.style.display = isRemote ? 'none' : 'block';
+        }
+
+        // Toggle remote settings visibility (shown only in remote mode)
+        if (this.elements.remoteSettingsGroup) {
+            this.elements.remoteSettingsGroup.style.display = isRemote ? 'block' : 'none';
+        }
+
+        if (isSubprocess) {
             // Show venv path option only in subprocess mode
             if (this.elements.venvPathGroup) {
                 this.elements.venvPathGroup.style.display = 'block';
@@ -1801,10 +1998,7 @@ number ::= [0-9]+`
                 // vLLM is installed with known version
                 this.elements.runModeHelpText.textContent = `Subprocess: Direct execution using vLLM v${this.vllmVersion}`;
             }
-        } else {
-            this.elements.runModeSubprocessLabel.classList.remove('active');
-            this.elements.runModeContainerLabel.classList.add('active');
-
+        } else if (isContainer) {
             // Hide venv path option in container mode
             if (this.elements.venvPathGroup) {
                 this.elements.venvPathGroup.style.display = 'none';
@@ -1815,19 +2009,43 @@ number ::= [0-9]+`
             } else {
                 this.elements.runModeHelpText.textContent = 'Container: Isolated environment (recommended)';
             }
+        } else if (isRemote) {
+            // Hide venv path option in remote mode
+            if (this.elements.venvPathGroup) {
+                this.elements.venvPathGroup.style.display = 'none';
+            }
+
+            this.elements.runModeHelpText.textContent = 'Remote: Connect to an existing vLLM instance';
+        }
+
+        // Update start/stop button labels only when server is not running.
+        // When running, labels must stay consistent with the active mode.
+        if (!this.serverRunning) {
+            if (this.elements.startBtn) {
+                this.elements.startBtn.textContent = isRemote ? 'Connect' : 'Start Server';
+            }
+            if (this.elements.stopBtn) {
+                this.elements.stopBtn.textContent = isRemote ? 'Disconnect' : 'Stop Server';
+            }
         }
 
         // Update accelerator row visibility (only shown in container mode + GPU mode)
         this.updateAcceleratorVisibility();
 
         // Update command preview
-        this.updateCommandPreview();
+        if (!isRemote) {
+            this.updateCommandPreview();
+        }
+
+        // Update tool panel: in remote mode, tool calling is always enabled
+        this.updateToolPanelStatus();
     }
 
     updateRunModeAvailability() {
         // Update UI based on what's available
         const subprocessLabel = this.elements.runModeSubprocessLabel;
         const containerLabel = this.elements.runModeContainerLabel;
+        const remoteLabel = this.elements.runModeRemoteLabel;
 
         // Add visual indication for unavailable modes
         if (!this.vllmInstalled) {
@@ -1847,6 +2065,12 @@ number ::= [0-9]+`
         } else {
             containerLabel.classList.remove('mode-unavailable');
             containerLabel.title = 'Container mode available';
+        }
+
+        // Remote mode is always available (no local dependencies)
+        if (remoteLabel) {
+            remoteLabel.classList.remove('mode-unavailable');
+            remoteLabel.title = 'Connect to an existing remote vLLM instance';
         }
 
         // Trigger toggleRunMode to update help text
@@ -2190,8 +2414,13 @@ number ::= [0-9]+`
             computeMode = 'metal';
         }
 
-        // Get run mode (subprocess or container)
-        const runMode = document.getElementById('run-mode-subprocess').checked ? 'subprocess' : 'container';
+        // Get run mode (subprocess, container, or remote)
+        let runMode = 'container';
+        if (document.getElementById('run-mode-subprocess').checked) {
+            runMode = 'subprocess';
+        } else if (document.getElementById('run-mode-remote').checked) {
+            runMode = 'remote';
+        }
 
         const config = {
             model: model,
@@ -2212,6 +2441,12 @@ number ::= [0-9]+`
             tool_call_parser: this.elements.toolCallParser.value || null,  // null = auto-detect
             served_model_name: this.elements.servedModelName?.value.trim() || null  // null = use model path
         };
+
+        // Add remote mode settings
+        if (runMode === 'remote') {
+            config.remote_url = this.elements.remoteUrlInput?.value.trim() || null;
+            config.remote_api_key = this.elements.remoteApiKeyInput?.value.trim() || null;
+        }
 
         // Don't send chat template or stop tokens - let vLLM auto-detect them
         // The fields in the UI are for reference/display only
@@ -2244,22 +2479,32 @@ number ::= [0-9]+`
         const config = this.getConfig();
 
         // Check run mode requirements
-        if (config.run_mode === 'subprocess' && !this.vllmInstalled) {
+        if (config.run_mode === 'remote') {
+            // Remote mode: validate URL
+            if (!config.remote_url) {
+                this.showNotification('⚠️ Please enter the URL of a remote vLLM instance', 'error');
+                this.addLog('❌ Remote URL is required for remote mode', 'error');
+                return;
+            }
+            if (!config.remote_url.startsWith('http://') && !config.remote_url.startsWith('https://')) {
+                this.showNotification('⚠️ Remote URL must start with http:// or https://', 'error');
+                this.addLog('❌ Invalid remote URL format', 'error');
+                return;
+            }
+        } else if (config.run_mode === 'subprocess' && !this.vllmInstalled) {
             this.showNotification('⚠️ Cannot use Subprocess mode: vLLM is not installed. Please install vLLM (pip install vllm) or switch to Container mode.', 'error');
             this.addLog('❌ Subprocess mode requires vLLM to be installed. Run: pip install vllm', 'error');
             return;
-        }
-
-        // Check ModelScope SDK requirement
-        if (config.use_modelscope && !this.modelscopeInstalled) {
-            this.showNotification('⚠️ Cannot use ModelScope: modelscope SDK is not installed. Please install it with: pip install modelscope>=1.18.1', 'error');
-            this.addLog('❌ ModelScope requires the modelscope SDK. Run: pip install modelscope>=1.18.1', 'error');
+        } else if (config.run_mode === 'container' && !this.containerModeAvailable) {
+            this.showNotification('⚠️ Cannot use Container mode: No container runtime found. Please install podman or docker.', 'error');
+            this.addLog('❌ Container mode requires podman or docker to be installed.', 'error');
             return;
         }
 
-        if (config.run_mode === 'container' && !this.containerModeAvailable) {
-            this.showNotification('⚠️ Cannot use Container mode: No container runtime found. Please install podman or docker.', 'error');
-            this.addLog('❌ Container mode requires podman or docker to be installed.', 'error');
+        // Check ModelScope SDK requirement (not applicable for remote mode)
+        if (config.run_mode !== 'remote' && config.use_modelscope && !this.modelscopeInstalled) {
+            this.showNotification('⚠️ Cannot use ModelScope: modelscope SDK is not installed. Please install it with: pip install modelscope>=1.18.1', 'error');
+            this.addLog('❌ ModelScope requires the modelscope SDK. Run: pip install modelscope>=1.18.1', 'error');
             return;
         }
 
@@ -2316,29 +2561,39 @@ number ::= [0-9]+`
         this.serverReady = false;
         this.elements.sendBtn.classList.remove('btn-ready');
 
+        const isRemote = config.run_mode === 'remote';
         this.elements.startBtn.disabled = true;
-        this.elements.startBtn.textContent = 'Starting...';
+        this.elements.startBtn.textContent = isRemote ? 'Connecting...' : 'Starting...';
 
         // Add immediate log feedback
-        this.addLog('🚀 Starting vLLM server...', 'info');
-
-        if (config.local_model_path) {
-            this.addLog(`Model Source: Local Folder`, 'info');
-            this.addLog(`Path: ${config.local_model_path}`, 'info');
+        if (isRemote) {
+            this.addLog('🌐 Connecting to remote vLLM instance...', 'info');
+            this.addLog(`Remote URL: ${config.remote_url}`, 'info');
         } else {
-            this.addLog(`Model Source: HuggingFace Hub`, 'info');
-            this.addLog(`Model: ${config.model}`, 'info');
+            this.addLog('🚀 Starting vLLM server...', 'info');
+
+            if (config.local_model_path) {
+                this.addLog(`Model Source: Local Folder`, 'info');
+                this.addLog(`Path: ${config.local_model_path}`, 'info');
+            } else {
+                this.addLog(`Model Source: HuggingFace Hub`, 'info');
+                this.addLog(`Model: ${config.model}`, 'info');
+            }
         }
 
-        this.addLog(`Run Mode: ${config.run_mode === 'subprocess' ? 'Subprocess (Direct)' : 'Container (Isolated)'}`, 'info');
-        // Show compute mode with accelerator info if GPU mode
-        let computeModeLabel = config.compute_mode.toUpperCase();
-        if (config.compute_mode === 'gpu' && config.accelerator) {
-            computeModeLabel += ` (${config.accelerator.toUpperCase()})`;
-        }
-        this.addLog(`Compute Mode: ${computeModeLabel}`, 'info');
-        if (config.venv_path) {
-            this.addLog(`Using custom venv: ${config.venv_path}`, 'info');
+        const runModeLabels = { subprocess: 'Subprocess (Direct)', container: 'Container (Isolated)', remote: 'Remote (External)' };
+        this.addLog(`Run Mode: ${runModeLabels[config.run_mode] || config.run_mode}`, 'info');
+
+        if (!isRemote) {
+            // Show compute mode with accelerator info if GPU mode
+            let computeModeLabel = config.compute_mode.toUpperCase();
+            if (config.compute_mode === 'gpu' && config.accelerator) {
+                computeModeLabel += ` (${config.accelerator.toUpperCase()})`;
+            }
+            this.addLog(`Compute Mode: ${computeModeLabel}`, 'info');
+            if (config.venv_path) {
+                this.addLog(`Using custom venv: ${config.venv_path}`, 'info');
+            }
         }
 
         try {
@@ -2352,37 +2607,58 @@ number ::= [0-9]+`
 
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.detail || 'Failed to start server');
+                throw new Error(error.detail || (isRemote ? 'Failed to connect' : 'Failed to start server'));
             }
 
             const data = await response.json();
 
             // Log success with appropriate identifier
-            if (data.mode === 'container') {
+            if (data.mode === 'remote') {
+                this.addLog(`✅ Connected to remote vLLM instance`, 'success');
+                this.addLog(`Model: ${data.model || 'unknown'}`, 'info');
+                this.addLog(`URL: ${data.remote_url}`, 'info');
+                this.showNotification('Connected to remote vLLM instance', 'success');
+                // Store config so other components (e.g. tool panel) can
+                // detect remote mode and the discovered model name
+                this.currentConfig = {
+                    run_mode: 'remote',
+                    model: data.model || config.model,
+                    remote_url: data.remote_url,
+                };
+                // Remote mode is immediately ready (no startup wait needed)
+                this.serverReady = true;
+                this.updateSendButtonState();
+                // Populate remote server info panel
+                this.populateRemoteServerInfo(data);
+                // Enable tool calling controls (assume remote supports it)
+                this.updateToolPanelStatus();
+            } else if (data.mode === 'container') {
                 this.addLog(`✅ Server started in container mode`, 'success');
                 this.addLog(`Container ID: ${data.container_id}`, 'info');
+                this.addLog('⏳ Waiting for server initialization...', 'info');
+                this.showNotification('Server started successfully', 'success');
             } else {
                 this.addLog(`✅ Server started in subprocess mode`, 'success');
                 this.addLog(`Process ID: ${data.pid}`, 'info');
+                this.addLog('⏳ Waiting for server initialization...', 'info');
+                this.showNotification('Server started successfully', 'success');
             }
 
-            this.addLog('⏳ Waiting for server initialization...', 'info');
-            this.showNotification('Server started successfully', 'success');
-
         } catch (error) {
-            this.addLog(`❌ Failed to start server: ${error.message}`, 'error');
-            this.showNotification(`Failed to start: ${error.message}`, 'error');
+            this.addLog(`❌ ${isRemote ? 'Failed to connect' : 'Failed to start server'}: ${error.message}`, 'error');
+            this.showNotification(`${isRemote ? 'Failed to connect' : 'Failed to start'}: ${error.message}`, 'error');
             this.elements.startBtn.disabled = false;
         } finally {
-            this.elements.startBtn.textContent = 'Start Server';
+            this.elements.startBtn.textContent = isRemote ? 'Connect' : 'Start Server';
         }
     }
 
     async stopServer() {
+        const isRemote = this.currentConfig && this.currentConfig.run_mode === 'remote';
         this.elements.stopBtn.disabled = true;
-        this.elements.stopBtn.textContent = 'Stopping...';
+        this.elements.stopBtn.textContent = isRemote ? 'Disconnecting...' : 'Stopping...';
 
-        this.addLog('⏹️ Stopping vLLM server...', 'info');
+        this.addLog(isRemote ? '🔌 Disconnecting from remote vLLM instance...' : '⏹️ Stopping vLLM server...', 'info');
 
         try {
             const response = await fetch('/api/stop', {
@@ -2391,19 +2667,95 @@ number ::= [0-9]+`
 
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.detail || 'Failed to stop server');
+                throw new Error(error.detail || (isRemote ? 'Failed to disconnect' : 'Failed to stop server'));
             }
 
-            this.addLog('✅ Server stopped successfully', 'success');
-            this.showNotification('Server stopped', 'success');
+            this.addLog(isRemote ? '✅ Disconnected from remote instance' : '✅ Server stopped successfully', 'success');
+            this.showNotification(isRemote ? 'Disconnected' : 'Server stopped', 'success');
+            // Hide remote server info panel on disconnect
+            if (isRemote) {
+                this.hideRemoteServerInfo();
+            }
+            // Clear config so tool panel reverts to local checkbox state
+            this.currentConfig = null;
+            this.updateToolPanelStatus();
 
         } catch (error) {
-            this.addLog(`❌ Failed to stop server: ${error.message}`, 'error');
-            this.showNotification(`Failed to stop: ${error.message}`, 'error');
+            this.addLog(`❌ ${isRemote ? 'Failed to disconnect' : 'Failed to stop server'}: ${error.message}`, 'error');
+            this.showNotification(`${isRemote ? 'Failed to disconnect' : 'Failed to stop'}: ${error.message}`, 'error');
             this.elements.stopBtn.disabled = false;
         } finally {
-            this.elements.stopBtn.textContent = 'Stop Server';
+            this.elements.stopBtn.textContent = isRemote ? 'Disconnect' : 'Stop Server';
         }
+    }
+
+    /**
+     * Populate the remote server info panel with data from the connect response.
+     */
+    populateRemoteServerInfo(data) {
+        const panel = document.getElementById('remote-server-info');
+        if (!panel) return;
+
+        // Health
+        const healthEl = document.getElementById('remote-info-health-value');
+        if (healthEl) {
+            if (data.health) {
+                healthEl.innerHTML = '<span class="health-dot healthy"></span> Healthy';
+            } else {
+                healthEl.innerHTML = '<span class="health-dot unhealthy"></span> Unhealthy';
+            }
+        }
+
+        // Models
+        const modelsEl = document.getElementById('remote-info-models-value');
+        if (modelsEl && data.models && data.models.length > 0) {
+            modelsEl.innerHTML = data.models.map(m =>
+                `<code class="remote-model-id">${m.id}</code>`
+            ).join('<br>');
+        } else if (modelsEl) {
+            modelsEl.textContent = data.model || 'Unknown';
+        }
+
+        // Max Context Length (from first model's max_model_len)
+        const maxCtxEl = document.getElementById('remote-info-maxctx-value');
+        if (maxCtxEl && data.models && data.models.length > 0) {
+            const maxLen = data.models[0].max_model_len;
+            if (maxLen !== undefined && maxLen !== null) {
+                maxCtxEl.textContent = Number(maxLen).toLocaleString() + ' tokens';
+            } else {
+                maxCtxEl.textContent = 'N/A';
+            }
+        } else if (maxCtxEl) {
+            maxCtxEl.textContent = 'N/A';
+        }
+
+        // Root Model (base model path)
+        const rootEl = document.getElementById('remote-info-root-value');
+        if (rootEl && data.models && data.models.length > 0) {
+            const root = data.models[0].root;
+            if (root) {
+                rootEl.innerHTML = `<code class="remote-model-id">${root}</code>`;
+            } else {
+                rootEl.textContent = 'N/A';
+            }
+        } else if (rootEl) {
+            rootEl.textContent = 'N/A';
+        }
+
+        panel.style.display = 'block';
+    }
+
+    /**
+     * Hide and reset the remote server info panel.
+     */
+    hideRemoteServerInfo() {
+        const panel = document.getElementById('remote-server-info');
+        if (panel) panel.style.display = 'none';
+        const ids = ['remote-info-health-value', 'remote-info-models-value', 'remote-info-maxctx-value', 'remote-info-root-value'];
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = '--';
+        });
     }
 
     async sendMessage() {
@@ -2418,9 +2770,22 @@ number ::= [0-9]+`
             return;
         }
 
-        // Add user message to chat
-        this.addChatMessage('user', message);
-        this.chatHistory.push({role: 'user', content: message});
+        // Build user message content — multimodal if VLM image is attached
+        let userContent = message;
+        let vlmImageForDisplay = null;
+        if (this.vlmEnabled && this.vlmImageData) {
+            vlmImageForDisplay = this.vlmImageData;
+            userContent = [
+                { type: "image_url", image_url: { url: this.vlmImageData } },
+                { type: "text", text: message }
+            ];
+            // Clear the image after capturing (one-shot attachment)
+            this.clearVLMImage();
+        }
+
+        // Add user message to chat (pass image for display if present)
+        this.addChatMessage('user', message, vlmImageForDisplay);
+        this.chatHistory.push({role: 'user', content: userContent});
 
         // Clear input
         this.elements.chatInput.value = '';
@@ -2584,8 +2949,9 @@ number ::= [0-9]+`
                             tool_calls: message.tool_calls
                         });
                     } else if (message && message.content) {
-                        // Display text content only
-                        textSpan.textContent = message.content;
+                        // Display text content as rendered markdown
+                        textSpan.classList.add('markdown-body');
+                        textSpan.innerHTML = this.renderMarkdown(message.content);
                         this.chatHistory.push({role: 'assistant', content: message.content});
                     } else {
                         textSpan.textContent = 'No response from model';
@@ -2725,8 +3091,9 @@ number ::= [0-9]+`
                                     }
 
                                     fullText += content;
-                                    // Update the message in real-time with cursor
-                                    textSpan.textContent = `${fullText}▌`;
+                                    // Update the message in real-time with markdown rendering + cursor
+                                    textSpan.classList.add('markdown-body');
+                                    textSpan.innerHTML = this.renderMarkdown(fullText + '▌');
 
                                     // Auto-scroll to bottom
                                     this.elements.chatContainer.scrollTop = this.elements.chatContainer.scrollHeight;
@@ -2831,7 +3198,9 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                     console.error('  Check vLLM server logs for: "Error in extracting tool call from response"');
                 }
                 else {
-                    textSpan.textContent = fullText;
+                    // Render final response as markdown
+                    textSpan.classList.add('markdown-body');
+                    textSpan.innerHTML = this.renderMarkdown(fullText);
                     this.chatHistory.push({role: 'assistant', content: fullText});
                 }
             } else {
@@ -3018,7 +3387,37 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         }
     }
 
-    addChatMessage(role, content) {
+    /**
+     * Render markdown text to HTML using the marked library.
+     * Falls back to plain text (with escaped HTML) if marked is not loaded.
+     * Used for assistant messages to properly display formatting like bold,
+     * lists, code blocks, etc.
+     */
+    renderMarkdown(text) {
+        if (!text) return '';
+        if (typeof marked !== 'undefined' && marked.parse) {
+            try {
+                // Configure marked for safe, clean output
+                marked.setOptions({
+                    breaks: true,      // Convert \n to <br>
+                    gfm: true,         // GitHub Flavored Markdown
+                    headerIds: false,  // Don't add ids to headers (cleaner)
+                    mangle: false,     // Don't mangle email addresses
+                });
+                return marked.parse(text);
+            } catch (e) {
+                console.warn('Markdown rendering failed, using plain text:', e);
+            }
+        }
+        // Fallback: escape HTML and convert newlines to <br>
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\n/g, '<br>');
+    }
+
+    addChatMessage(role, content, imageUrl = null) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `chat-message ${role}`;
 
@@ -3033,9 +3432,33 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
 
+        // Show VLM image thumbnail if attached (user messages only)
+        if (imageUrl && role === 'user') {
+            const img = document.createElement('img');
+            img.className = 'vlm-chat-image';
+            img.src = imageUrl;
+            img.alt = 'Attached image';
+            img.title = 'Click to view full size';
+            img.addEventListener('click', () => {
+                // Open image in a new tab for full-size viewing
+                const win = window.open();
+                if (win) {
+                    win.document.write(`<img src="${imageUrl}" style="max-width:100%;height:auto;">`);
+                    win.document.title = 'VLM Image';
+                }
+            });
+            contentDiv.appendChild(img);
+        }
+
         const textSpan = document.createElement('span');
         textSpan.className = 'message-text';
-        textSpan.textContent = content;
+        if (role === 'assistant') {
+            // Render assistant messages as markdown for proper formatting
+            textSpan.classList.add('markdown-body');
+            textSpan.innerHTML = this.renderMarkdown(content);
+        } else {
+            textSpan.textContent = content;
+        }
         contentDiv.appendChild(textSpan);
 
         messageDiv.appendChild(contentDiv);
@@ -3639,14 +4062,27 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     }
 
     updateToolPanelStatus() {
-        // Update the Tool Calling panel to reflect server configuration
-        const toolCallingEnabled = this.elements.enableToolCalling?.checked ?? true;
+        // Update the Tool Calling panel to reflect server configuration.
+        // In remote mode, we can't know if the remote server has tool calling
+        // enabled, so we optimistically assume it does. The remote server will
+        // reject unsupported requests gracefully.
+        const isRemoteMode = this.elements.runModeRemote?.checked
+            || (this.currentConfig && this.currentConfig.run_mode === 'remote');
+        const toolCallingEnabled = isRemoteMode
+            ? true
+            : (this.elements.enableToolCalling?.checked ?? true);
 
         // Get the effective parser (auto-detect if not set)
         let parser = this.elements.toolCallParser?.value || '';
         if (!parser && toolCallingEnabled) {
-            // Auto-detect based on model name
-            const model = (this.elements.customModel?.value.trim() || this.elements.modelSelect?.value || '').toLowerCase();
+            // In remote mode, use the discovered model name from currentConfig
+            let model = '';
+            if (isRemoteMode && this.currentConfig && this.currentConfig.model) {
+                model = this.currentConfig.model.toLowerCase();
+            } else {
+                model = (this.elements.customModel?.value.trim() || this.elements.modelSelect?.value || '').toLowerCase();
+            }
+
             if (model.includes('llama-3') || model.includes('llama3') || model.includes('llama_3')) {
                 parser = 'llama3_json';
             } else if (model.includes('mistral')) {
@@ -3665,13 +4101,20 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
         // Update warning/status banners
         if (this.elements.toolServerWarning) {
-            this.elements.toolServerWarning.style.display = toolCallingEnabled ? 'none' : 'flex';
+            if (isRemoteMode) {
+                // In remote mode, show a softer hint instead of a hard warning
+                this.elements.toolServerWarning.style.display = 'none';
+            } else {
+                this.elements.toolServerWarning.style.display = toolCallingEnabled ? 'none' : 'flex';
+            }
         }
         if (this.elements.toolServerStatus) {
             if (toolCallingEnabled) {
                 this.elements.toolServerStatus.style.display = 'flex';
                 if (this.elements.toolParserDisplay) {
-                    this.elements.toolParserDisplay.textContent = parser || 'auto';
+                    this.elements.toolParserDisplay.textContent = isRemoteMode
+                        ? (parser ? `${parser} (assumed)` : 'auto (remote)')
+                        : (parser || 'auto');
                 }
             } else {
                 this.elements.toolServerStatus.style.display = 'none';
@@ -6002,7 +6445,8 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
                     // Display text content if present
                     if (message.content) {
-                        textSpan.textContent = message.content;
+                        textSpan.classList.add('markdown-body');
+                        textSpan.innerHTML = this.renderMarkdown(message.content);
                         this.chatHistory.push({ role: 'assistant', content: message.content });
                     }
 
@@ -6040,7 +6484,8 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                                 const content = parsed.choices?.[0]?.delta?.content || '';
                                 if (content) {
                                     fullText += content;
-                                    textSpan.textContent = fullText;
+                                    textSpan.classList.add('markdown-body');
+                                    textSpan.innerHTML = this.renderMarkdown(fullText + '▌');
                                 }
                             } catch (e) {
                                 // Skip invalid JSON
@@ -6050,6 +6495,8 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 }
 
                 if (fullText) {
+                    textSpan.classList.add('markdown-body');
+                    textSpan.innerHTML = this.renderMarkdown(fullText);
                     this.chatHistory.push({ role: 'assistant', content: fullText });
                 } else {
                     textSpan.textContent = 'No response from model';
