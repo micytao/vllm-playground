@@ -91,8 +91,19 @@ const zhCN = {
             label: '运行模式',
             subprocess: '⚡ 子进程',
             container: '📦 容器',
+            remote: '🌐 远程',
             help: '子进程：直接运行（本地开发），容器：隔离运行（生产环境）',
             subprocessTip: '💡 提示：使用子进程模式可支持更多加速器（华为昇腾、Intel Gaudi、AWS Neuron），需在主机上安装 vLLM + 硬件插件。'
+        },
+        remoteUrl: {
+            label: '远程 vLLM 地址',
+            placeholder: 'http://gpu-server:8000',
+            help: '正在运行的 vLLM 实例的基础 URL（兼容 OpenAI API）'
+        },
+        remoteApiKey: {
+            label: 'API 密钥（可选）',
+            placeholder: 'sk-...',
+            help: '用于认证的 Bearer 令牌'
         },
         computeMode: {
             label: '计算模式',

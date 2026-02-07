@@ -48,6 +48,68 @@ uv pip install onnxruntime</code></pre>
                 <span class="status-text">Checking...</span>
             </div>
 
+            <!-- Run Mode Toggle (always visible, at the top like vLLM Server) -->
+            <div class="form-group mode-toggle-group">
+                <label>Run Mode</label>
+                <div class="mode-toggle-buttons" id="omni-run-mode-toggle">
+                    <label class="mode-button active" id="omni-run-mode-subprocess-label">
+                        <input type="radio" id="omni-run-mode-subprocess" name="omni-run-mode" value="subprocess" checked>
+                        <span>⚡ Subprocess</span>
+                    </label>
+                    <label class="mode-button" id="omni-run-mode-container-label">
+                        <input type="radio" id="omni-run-mode-container" name="omni-run-mode" value="container">
+                        <span>📦 Container</span>
+                    </label>
+                    <label class="mode-button" id="omni-run-mode-remote-label">
+                        <input type="radio" id="omni-run-mode-remote" name="omni-run-mode" value="remote">
+                        <span>🌐 Remote</span>
+                    </label>
+                </div>
+                <small class="form-help" id="omni-run-mode-help">Subprocess requires local vLLM-Omni installation</small>
+            </div>
+
+            <!-- Remote vLLM-Omni Settings - Only shown in Remote mode -->
+            <div id="omni-remote-settings-group" style="display: none;">
+                <div class="form-group">
+                    <label for="omni-remote-url">Remote vLLM-Omni URL</label>
+                    <input type="text" id="omni-remote-url" class="form-control" placeholder="http://gpu-server:8091">
+                    <small class="form-help">Base URL of a running vLLM-Omni instance with OpenAI-compatible API</small>
+                </div>
+                <div class="form-group">
+                    <label for="omni-remote-api-key">API Key (Optional)</label>
+                    <input type="password" id="omni-remote-api-key" class="form-control" placeholder="sk-...">
+                    <small class="form-help">Bearer token for authenticated vLLM-Omni endpoints</small>
+                </div>
+
+                <!-- Remote Server Info (populated after connecting) -->
+                <div id="omni-remote-server-info" class="remote-server-info" style="display: none;">
+                    <div class="remote-info-header">
+                        <span class="remote-info-title">Remote Server Info</span>
+                    </div>
+                    <div class="remote-info-content">
+                        <div class="remote-info-row">
+                            <span class="info-label">Health</span>
+                            <span class="info-value" id="omni-remote-info-health-value">--</span>
+                        </div>
+                        <div class="remote-info-row">
+                            <span class="info-label">Models</span>
+                            <span class="info-value" id="omni-remote-info-models-value">--</span>
+                        </div>
+                        <div class="remote-info-row">
+                            <span class="info-label">Max Context</span>
+                            <span class="info-value" id="omni-remote-info-maxctx-value">--</span>
+                        </div>
+                        <div class="remote-info-row">
+                            <span class="info-label">Root Model</span>
+                            <span class="info-value" id="omni-remote-info-root-value">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Local server settings (hidden in remote mode) -->
+            <div id="omni-local-server-settings">
+
             <!-- ═══════════════════════════════════════════════════════════════ -->
             <!-- Section: Model Selection -->
             <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -118,21 +180,6 @@ uv pip install onnxruntime</code></pre>
                     <h3>Server Configuration</h3>
                 </div>
                 <div class="config-section-content">
-                    <div class="form-group mode-toggle-group">
-                        <label>Run Mode</label>
-                        <div class="mode-toggle-buttons" id="omni-run-mode-toggle">
-                            <label class="mode-button active" id="omni-run-mode-subprocess-label">
-                                <input type="radio" id="omni-run-mode-subprocess" name="omni-run-mode" value="subprocess" checked>
-                                <span>⚡ Subprocess</span>
-                            </label>
-                            <label class="mode-button" id="omni-run-mode-container-label">
-                                <input type="radio" id="omni-run-mode-container" name="omni-run-mode" value="container">
-                                <span>📦 Container</span>
-                            </label>
-                        </div>
-                        <small class="form-help" id="omni-run-mode-help">Subprocess requires local vLLM-Omni installation</small>
-                    </div>
-
                     <div class="form-group" id="omni-venv-path-group">
                         <label>vLLM-Omni Venv Path</label>
                         <input type="text" id="omni-venv-path" placeholder="~/.venv-vllm-omni">
@@ -196,7 +243,24 @@ uv pip install onnxruntime</code></pre>
             </div>
 
             <!-- ═══════════════════════════════════════════════════════════════ -->
-            <!-- Section: Generation Parameters (for image/video models) -->
+            <!-- Command Preview -->
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <div class="command-preview-section">
+                <div class="command-preview-header">
+                    <h3>Command Preview</h3>
+                    <div class="command-preview-buttons">
+                        <button id="omni-reset-command-btn" class="btn btn-secondary btn-sm" title="Reset to auto-generated command">Reset</button>
+                        <button id="omni-copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command">Copy</button>
+                    </div>
+                </div>
+                <textarea id="omni-command-text" class="command-preview-textarea" rows="6" spellcheck="false">vllm serve Tongyi-MAI/Z-Image-Turbo --omni --port 8091</textarea>
+                <small class="command-help">Editable for customization. Copy to run manually. "Start Server" uses settings above. Click "Reset" to restore.</small>
+            </div>
+
+            </div><!-- end omni-local-server-settings -->
+
+            <!-- ═══════════════════════════════════════════════════════════════ -->
+            <!-- Section: Generation Parameters (always visible, all modes) -->
             <!-- ═══════════════════════════════════════════════════════════════ -->
             <div class="config-section" id="omni-generation-params">
                 <div class="config-section-header">
@@ -301,21 +365,6 @@ uv pip install onnxruntime</code></pre>
                         <input type="range" id="omni-guidance" min="0" max="20" step="0.5" value="1">
                     </div>
                 </div>
-            </div>
-
-            <!-- ═══════════════════════════════════════════════════════════════ -->
-            <!-- Command Preview -->
-            <!-- ═══════════════════════════════════════════════════════════════ -->
-            <div class="command-preview-section">
-                <div class="command-preview-header">
-                    <h3>Command Preview</h3>
-                    <div class="command-preview-buttons">
-                        <button id="omni-reset-command-btn" class="btn btn-secondary btn-sm" title="Reset to auto-generated command">Reset</button>
-                        <button id="omni-copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command">Copy</button>
-                    </div>
-                </div>
-                <textarea id="omni-command-text" class="command-preview-textarea" rows="6" spellcheck="false">vllm serve Tongyi-MAI/Z-Image-Turbo --omni --port 8091</textarea>
-                <small class="command-help">Editable for customization. Copy to run manually. "Start Server" uses settings above. Click "Reset" to restore.</small>
             </div>
 
             <!-- ═══════════════════════════════════════════════════════════════ -->

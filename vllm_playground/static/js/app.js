@@ -118,10 +118,17 @@ class VLLMWebUI {
             // Run mode elements
             runModeSubprocess: document.getElementById('run-mode-subprocess'),
             runModeContainer: document.getElementById('run-mode-container'),
+            runModeRemote: document.getElementById('run-mode-remote'),
             runModeSubprocessLabel: document.getElementById('run-mode-subprocess-label'),
             runModeContainerLabel: document.getElementById('run-mode-container-label'),
+            runModeRemoteLabel: document.getElementById('run-mode-remote-label'),
             runModeHelpText: document.getElementById('run-mode-help-text'),
             gpuSettings: document.getElementById('gpu-settings'),
+
+            // Remote mode settings
+            remoteSettingsGroup: document.getElementById('remote-settings-group'),
+            remoteUrlInput: document.getElementById('remote-url'),
+            remoteApiKeyInput: document.getElementById('remote-api-key'),
 
             // Venv path (for custom vLLM installations)
             venvPathGroup: document.getElementById('venv-path-group'),
@@ -1082,6 +1089,7 @@ number ::= [0-9]+`
         // Run mode toggle
         this.elements.runModeSubprocess.addEventListener('change', () => this.toggleRunMode());
         this.elements.runModeContainer.addEventListener('change', () => this.toggleRunMode());
+        this.elements.runModeRemote.addEventListener('change', () => this.toggleRunMode());
 
         // Virtual environment path validation (check vLLM version when path changes)
         if (this.elements.venvPathInput) {
@@ -1508,7 +1516,8 @@ number ::= [0-9]+`
             if (data.running) {
                 this.serverRunning = true;
                 this.currentConfig = data.config;  // Store current config
-                this.updateStatus('running', 'Server Running');
+                const isRemote = data.config && data.config.run_mode === 'remote';
+                this.updateStatus('running', isRemote ? 'Connected (Remote)' : 'Server Running');
                 this.elements.startBtn.disabled = true;
                 this.elements.stopBtn.disabled = false;
                 // Only enable send button if server is ready
@@ -1780,12 +1789,32 @@ number ::= [0-9]+`
 
     toggleRunMode() {
         const isSubprocess = this.elements.runModeSubprocess.checked;
+        const isContainer = this.elements.runModeContainer.checked;
+        const isRemote = this.elements.runModeRemote.checked;
 
         // Update button active states
-        if (isSubprocess) {
-            this.elements.runModeSubprocessLabel.classList.add('active');
-            this.elements.runModeContainerLabel.classList.remove('active');
+        this.elements.runModeSubprocessLabel.classList.toggle('active', isSubprocess);
+        this.elements.runModeContainerLabel.classList.toggle('active', isContainer);
+        this.elements.runModeRemoteLabel.classList.toggle('active', isRemote);
 
+        // Toggle local server settings visibility (hidden in remote mode)
+        const localServerSettings = document.getElementById('local-server-settings');
+        if (localServerSettings) {
+            localServerSettings.style.display = isRemote ? 'none' : 'block';
+        }
+
+        // Toggle command preview visibility (hidden in remote mode)
+        const commandPreviewSection = document.getElementById('command-preview-section');
+        if (commandPreviewSection) {
+            commandPreviewSection.style.display = isRemote ? 'none' : 'block';
+        }
+
+        // Toggle remote settings visibility (shown only in remote mode)
+        if (this.elements.remoteSettingsGroup) {
+            this.elements.remoteSettingsGroup.style.display = isRemote ? 'block' : 'none';
+        }
+
+        if (isSubprocess) {
             // Show venv path option only in subprocess mode
             if (this.elements.venvPathGroup) {
                 this.elements.venvPathGroup.style.display = 'block';
@@ -1801,10 +1830,7 @@ number ::= [0-9]+`
                 // vLLM is installed with known version
                 this.elements.runModeHelpText.textContent = `Subprocess: Direct execution using vLLM v${this.vllmVersion}`;
             }
-        } else {
-            this.elements.runModeSubprocessLabel.classList.remove('active');
-            this.elements.runModeContainerLabel.classList.add('active');
-
+        } else if (isContainer) {
             // Hide venv path option in container mode
             if (this.elements.venvPathGroup) {
                 this.elements.venvPathGroup.style.display = 'none';
@@ -1815,19 +1841,43 @@ number ::= [0-9]+`
             } else {
                 this.elements.runModeHelpText.textContent = 'Container: Isolated environment (recommended)';
             }
+        } else if (isRemote) {
+            // Hide venv path option in remote mode
+            if (this.elements.venvPathGroup) {
+                this.elements.venvPathGroup.style.display = 'none';
+            }
+
+            this.elements.runModeHelpText.textContent = 'Remote: Connect to an existing vLLM instance';
+        }
+
+        // Update start/stop button labels only when server is not running.
+        // When running, labels must stay consistent with the active mode.
+        if (!this.serverRunning) {
+            if (this.elements.startBtn) {
+                this.elements.startBtn.textContent = isRemote ? 'Connect' : 'Start Server';
+            }
+            if (this.elements.stopBtn) {
+                this.elements.stopBtn.textContent = isRemote ? 'Disconnect' : 'Stop Server';
+            }
         }
 
         // Update accelerator row visibility (only shown in container mode + GPU mode)
         this.updateAcceleratorVisibility();
 
         // Update command preview
-        this.updateCommandPreview();
+        if (!isRemote) {
+            this.updateCommandPreview();
+        }
+
+        // Update tool panel: in remote mode, tool calling is always enabled
+        this.updateToolPanelStatus();
     }
 
     updateRunModeAvailability() {
         // Update UI based on what's available
         const subprocessLabel = this.elements.runModeSubprocessLabel;
         const containerLabel = this.elements.runModeContainerLabel;
+        const remoteLabel = this.elements.runModeRemoteLabel;
 
         // Add visual indication for unavailable modes
         if (!this.vllmInstalled) {
@@ -1847,6 +1897,12 @@ number ::= [0-9]+`
         } else {
             containerLabel.classList.remove('mode-unavailable');
             containerLabel.title = 'Container mode available';
+        }
+
+        // Remote mode is always available (no local dependencies)
+        if (remoteLabel) {
+            remoteLabel.classList.remove('mode-unavailable');
+            remoteLabel.title = 'Connect to an existing remote vLLM instance';
         }
 
         // Trigger toggleRunMode to update help text
@@ -2190,8 +2246,13 @@ number ::= [0-9]+`
             computeMode = 'metal';
         }
 
-        // Get run mode (subprocess or container)
-        const runMode = document.getElementById('run-mode-subprocess').checked ? 'subprocess' : 'container';
+        // Get run mode (subprocess, container, or remote)
+        let runMode = 'container';
+        if (document.getElementById('run-mode-subprocess').checked) {
+            runMode = 'subprocess';
+        } else if (document.getElementById('run-mode-remote').checked) {
+            runMode = 'remote';
+        }
 
         const config = {
             model: model,
@@ -2212,6 +2273,12 @@ number ::= [0-9]+`
             tool_call_parser: this.elements.toolCallParser.value || null,  // null = auto-detect
             served_model_name: this.elements.servedModelName?.value.trim() || null  // null = use model path
         };
+
+        // Add remote mode settings
+        if (runMode === 'remote') {
+            config.remote_url = this.elements.remoteUrlInput?.value.trim() || null;
+            config.remote_api_key = this.elements.remoteApiKeyInput?.value.trim() || null;
+        }
 
         // Don't send chat template or stop tokens - let vLLM auto-detect them
         // The fields in the UI are for reference/display only
@@ -2244,22 +2311,32 @@ number ::= [0-9]+`
         const config = this.getConfig();
 
         // Check run mode requirements
-        if (config.run_mode === 'subprocess' && !this.vllmInstalled) {
+        if (config.run_mode === 'remote') {
+            // Remote mode: validate URL
+            if (!config.remote_url) {
+                this.showNotification('⚠️ Please enter the URL of a remote vLLM instance', 'error');
+                this.addLog('❌ Remote URL is required for remote mode', 'error');
+                return;
+            }
+            if (!config.remote_url.startsWith('http://') && !config.remote_url.startsWith('https://')) {
+                this.showNotification('⚠️ Remote URL must start with http:// or https://', 'error');
+                this.addLog('❌ Invalid remote URL format', 'error');
+                return;
+            }
+        } else if (config.run_mode === 'subprocess' && !this.vllmInstalled) {
             this.showNotification('⚠️ Cannot use Subprocess mode: vLLM is not installed. Please install vLLM (pip install vllm) or switch to Container mode.', 'error');
             this.addLog('❌ Subprocess mode requires vLLM to be installed. Run: pip install vllm', 'error');
             return;
-        }
-
-        // Check ModelScope SDK requirement
-        if (config.use_modelscope && !this.modelscopeInstalled) {
-            this.showNotification('⚠️ Cannot use ModelScope: modelscope SDK is not installed. Please install it with: pip install modelscope>=1.18.1', 'error');
-            this.addLog('❌ ModelScope requires the modelscope SDK. Run: pip install modelscope>=1.18.1', 'error');
+        } else if (config.run_mode === 'container' && !this.containerModeAvailable) {
+            this.showNotification('⚠️ Cannot use Container mode: No container runtime found. Please install podman or docker.', 'error');
+            this.addLog('❌ Container mode requires podman or docker to be installed.', 'error');
             return;
         }
 
-        if (config.run_mode === 'container' && !this.containerModeAvailable) {
-            this.showNotification('⚠️ Cannot use Container mode: No container runtime found. Please install podman or docker.', 'error');
-            this.addLog('❌ Container mode requires podman or docker to be installed.', 'error');
+        // Check ModelScope SDK requirement (not applicable for remote mode)
+        if (config.run_mode !== 'remote' && config.use_modelscope && !this.modelscopeInstalled) {
+            this.showNotification('⚠️ Cannot use ModelScope: modelscope SDK is not installed. Please install it with: pip install modelscope>=1.18.1', 'error');
+            this.addLog('❌ ModelScope requires the modelscope SDK. Run: pip install modelscope>=1.18.1', 'error');
             return;
         }
 
@@ -2316,29 +2393,39 @@ number ::= [0-9]+`
         this.serverReady = false;
         this.elements.sendBtn.classList.remove('btn-ready');
 
+        const isRemote = config.run_mode === 'remote';
         this.elements.startBtn.disabled = true;
-        this.elements.startBtn.textContent = 'Starting...';
+        this.elements.startBtn.textContent = isRemote ? 'Connecting...' : 'Starting...';
 
         // Add immediate log feedback
-        this.addLog('🚀 Starting vLLM server...', 'info');
-
-        if (config.local_model_path) {
-            this.addLog(`Model Source: Local Folder`, 'info');
-            this.addLog(`Path: ${config.local_model_path}`, 'info');
+        if (isRemote) {
+            this.addLog('🌐 Connecting to remote vLLM instance...', 'info');
+            this.addLog(`Remote URL: ${config.remote_url}`, 'info');
         } else {
-            this.addLog(`Model Source: HuggingFace Hub`, 'info');
-            this.addLog(`Model: ${config.model}`, 'info');
+            this.addLog('🚀 Starting vLLM server...', 'info');
+
+            if (config.local_model_path) {
+                this.addLog(`Model Source: Local Folder`, 'info');
+                this.addLog(`Path: ${config.local_model_path}`, 'info');
+            } else {
+                this.addLog(`Model Source: HuggingFace Hub`, 'info');
+                this.addLog(`Model: ${config.model}`, 'info');
+            }
         }
 
-        this.addLog(`Run Mode: ${config.run_mode === 'subprocess' ? 'Subprocess (Direct)' : 'Container (Isolated)'}`, 'info');
-        // Show compute mode with accelerator info if GPU mode
-        let computeModeLabel = config.compute_mode.toUpperCase();
-        if (config.compute_mode === 'gpu' && config.accelerator) {
-            computeModeLabel += ` (${config.accelerator.toUpperCase()})`;
-        }
-        this.addLog(`Compute Mode: ${computeModeLabel}`, 'info');
-        if (config.venv_path) {
-            this.addLog(`Using custom venv: ${config.venv_path}`, 'info');
+        const runModeLabels = { subprocess: 'Subprocess (Direct)', container: 'Container (Isolated)', remote: 'Remote (External)' };
+        this.addLog(`Run Mode: ${runModeLabels[config.run_mode] || config.run_mode}`, 'info');
+
+        if (!isRemote) {
+            // Show compute mode with accelerator info if GPU mode
+            let computeModeLabel = config.compute_mode.toUpperCase();
+            if (config.compute_mode === 'gpu' && config.accelerator) {
+                computeModeLabel += ` (${config.accelerator.toUpperCase()})`;
+            }
+            this.addLog(`Compute Mode: ${computeModeLabel}`, 'info');
+            if (config.venv_path) {
+                this.addLog(`Using custom venv: ${config.venv_path}`, 'info');
+            }
         }
 
         try {
@@ -2352,37 +2439,58 @@ number ::= [0-9]+`
 
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.detail || 'Failed to start server');
+                throw new Error(error.detail || (isRemote ? 'Failed to connect' : 'Failed to start server'));
             }
 
             const data = await response.json();
 
             // Log success with appropriate identifier
-            if (data.mode === 'container') {
+            if (data.mode === 'remote') {
+                this.addLog(`✅ Connected to remote vLLM instance`, 'success');
+                this.addLog(`Model: ${data.model || 'unknown'}`, 'info');
+                this.addLog(`URL: ${data.remote_url}`, 'info');
+                this.showNotification('Connected to remote vLLM instance', 'success');
+                // Store config so other components (e.g. tool panel) can
+                // detect remote mode and the discovered model name
+                this.currentConfig = {
+                    run_mode: 'remote',
+                    model: data.model || config.model,
+                    remote_url: data.remote_url,
+                };
+                // Remote mode is immediately ready (no startup wait needed)
+                this.serverReady = true;
+                this.updateSendButtonState();
+                // Populate remote server info panel
+                this.populateRemoteServerInfo(data);
+                // Enable tool calling controls (assume remote supports it)
+                this.updateToolPanelStatus();
+            } else if (data.mode === 'container') {
                 this.addLog(`✅ Server started in container mode`, 'success');
                 this.addLog(`Container ID: ${data.container_id}`, 'info');
+                this.addLog('⏳ Waiting for server initialization...', 'info');
+                this.showNotification('Server started successfully', 'success');
             } else {
                 this.addLog(`✅ Server started in subprocess mode`, 'success');
                 this.addLog(`Process ID: ${data.pid}`, 'info');
+                this.addLog('⏳ Waiting for server initialization...', 'info');
+                this.showNotification('Server started successfully', 'success');
             }
 
-            this.addLog('⏳ Waiting for server initialization...', 'info');
-            this.showNotification('Server started successfully', 'success');
-
         } catch (error) {
-            this.addLog(`❌ Failed to start server: ${error.message}`, 'error');
-            this.showNotification(`Failed to start: ${error.message}`, 'error');
+            this.addLog(`❌ ${isRemote ? 'Failed to connect' : 'Failed to start server'}: ${error.message}`, 'error');
+            this.showNotification(`${isRemote ? 'Failed to connect' : 'Failed to start'}: ${error.message}`, 'error');
             this.elements.startBtn.disabled = false;
         } finally {
-            this.elements.startBtn.textContent = 'Start Server';
+            this.elements.startBtn.textContent = isRemote ? 'Connect' : 'Start Server';
         }
     }
 
     async stopServer() {
+        const isRemote = this.currentConfig && this.currentConfig.run_mode === 'remote';
         this.elements.stopBtn.disabled = true;
-        this.elements.stopBtn.textContent = 'Stopping...';
+        this.elements.stopBtn.textContent = isRemote ? 'Disconnecting...' : 'Stopping...';
 
-        this.addLog('⏹️ Stopping vLLM server...', 'info');
+        this.addLog(isRemote ? '🔌 Disconnecting from remote vLLM instance...' : '⏹️ Stopping vLLM server...', 'info');
 
         try {
             const response = await fetch('/api/stop', {
@@ -2391,19 +2499,95 @@ number ::= [0-9]+`
 
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.detail || 'Failed to stop server');
+                throw new Error(error.detail || (isRemote ? 'Failed to disconnect' : 'Failed to stop server'));
             }
 
-            this.addLog('✅ Server stopped successfully', 'success');
-            this.showNotification('Server stopped', 'success');
+            this.addLog(isRemote ? '✅ Disconnected from remote instance' : '✅ Server stopped successfully', 'success');
+            this.showNotification(isRemote ? 'Disconnected' : 'Server stopped', 'success');
+            // Hide remote server info panel on disconnect
+            if (isRemote) {
+                this.hideRemoteServerInfo();
+            }
+            // Clear config so tool panel reverts to local checkbox state
+            this.currentConfig = null;
+            this.updateToolPanelStatus();
 
         } catch (error) {
-            this.addLog(`❌ Failed to stop server: ${error.message}`, 'error');
-            this.showNotification(`Failed to stop: ${error.message}`, 'error');
+            this.addLog(`❌ ${isRemote ? 'Failed to disconnect' : 'Failed to stop server'}: ${error.message}`, 'error');
+            this.showNotification(`${isRemote ? 'Failed to disconnect' : 'Failed to stop'}: ${error.message}`, 'error');
             this.elements.stopBtn.disabled = false;
         } finally {
-            this.elements.stopBtn.textContent = 'Stop Server';
+            this.elements.stopBtn.textContent = isRemote ? 'Disconnect' : 'Stop Server';
         }
+    }
+
+    /**
+     * Populate the remote server info panel with data from the connect response.
+     */
+    populateRemoteServerInfo(data) {
+        const panel = document.getElementById('remote-server-info');
+        if (!panel) return;
+
+        // Health
+        const healthEl = document.getElementById('remote-info-health-value');
+        if (healthEl) {
+            if (data.health) {
+                healthEl.innerHTML = '<span class="health-dot healthy"></span> Healthy';
+            } else {
+                healthEl.innerHTML = '<span class="health-dot unhealthy"></span> Unhealthy';
+            }
+        }
+
+        // Models
+        const modelsEl = document.getElementById('remote-info-models-value');
+        if (modelsEl && data.models && data.models.length > 0) {
+            modelsEl.innerHTML = data.models.map(m =>
+                `<code class="remote-model-id">${m.id}</code>`
+            ).join('<br>');
+        } else if (modelsEl) {
+            modelsEl.textContent = data.model || 'Unknown';
+        }
+
+        // Max Context Length (from first model's max_model_len)
+        const maxCtxEl = document.getElementById('remote-info-maxctx-value');
+        if (maxCtxEl && data.models && data.models.length > 0) {
+            const maxLen = data.models[0].max_model_len;
+            if (maxLen !== undefined && maxLen !== null) {
+                maxCtxEl.textContent = Number(maxLen).toLocaleString() + ' tokens';
+            } else {
+                maxCtxEl.textContent = 'N/A';
+            }
+        } else if (maxCtxEl) {
+            maxCtxEl.textContent = 'N/A';
+        }
+
+        // Root Model (base model path)
+        const rootEl = document.getElementById('remote-info-root-value');
+        if (rootEl && data.models && data.models.length > 0) {
+            const root = data.models[0].root;
+            if (root) {
+                rootEl.innerHTML = `<code class="remote-model-id">${root}</code>`;
+            } else {
+                rootEl.textContent = 'N/A';
+            }
+        } else if (rootEl) {
+            rootEl.textContent = 'N/A';
+        }
+
+        panel.style.display = 'block';
+    }
+
+    /**
+     * Hide and reset the remote server info panel.
+     */
+    hideRemoteServerInfo() {
+        const panel = document.getElementById('remote-server-info');
+        if (panel) panel.style.display = 'none';
+        const ids = ['remote-info-health-value', 'remote-info-models-value', 'remote-info-maxctx-value', 'remote-info-root-value'];
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = '--';
+        });
     }
 
     async sendMessage() {
@@ -3639,14 +3823,27 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     }
 
     updateToolPanelStatus() {
-        // Update the Tool Calling panel to reflect server configuration
-        const toolCallingEnabled = this.elements.enableToolCalling?.checked ?? true;
+        // Update the Tool Calling panel to reflect server configuration.
+        // In remote mode, we can't know if the remote server has tool calling
+        // enabled, so we optimistically assume it does. The remote server will
+        // reject unsupported requests gracefully.
+        const isRemoteMode = this.elements.runModeRemote?.checked
+            || (this.currentConfig && this.currentConfig.run_mode === 'remote');
+        const toolCallingEnabled = isRemoteMode
+            ? true
+            : (this.elements.enableToolCalling?.checked ?? true);
 
         // Get the effective parser (auto-detect if not set)
         let parser = this.elements.toolCallParser?.value || '';
         if (!parser && toolCallingEnabled) {
-            // Auto-detect based on model name
-            const model = (this.elements.customModel?.value.trim() || this.elements.modelSelect?.value || '').toLowerCase();
+            // In remote mode, use the discovered model name from currentConfig
+            let model = '';
+            if (isRemoteMode && this.currentConfig && this.currentConfig.model) {
+                model = this.currentConfig.model.toLowerCase();
+            } else {
+                model = (this.elements.customModel?.value.trim() || this.elements.modelSelect?.value || '').toLowerCase();
+            }
+
             if (model.includes('llama-3') || model.includes('llama3') || model.includes('llama_3')) {
                 parser = 'llama3_json';
             } else if (model.includes('mistral')) {
@@ -3665,13 +3862,20 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
         // Update warning/status banners
         if (this.elements.toolServerWarning) {
-            this.elements.toolServerWarning.style.display = toolCallingEnabled ? 'none' : 'flex';
+            if (isRemoteMode) {
+                // In remote mode, show a softer hint instead of a hard warning
+                this.elements.toolServerWarning.style.display = 'none';
+            } else {
+                this.elements.toolServerWarning.style.display = toolCallingEnabled ? 'none' : 'flex';
+            }
         }
         if (this.elements.toolServerStatus) {
             if (toolCallingEnabled) {
                 this.elements.toolServerStatus.style.display = 'flex';
                 if (this.elements.toolParserDisplay) {
-                    this.elements.toolParserDisplay.textContent = parser || 'auto';
+                    this.elements.toolParserDisplay.textContent = isRemoteMode
+                        ? (parser ? `${parser} (assumed)` : 'auto (remote)')
+                        : (parser || 'auto');
                 }
             } else {
                 this.elements.toolServerStatus.style.display = 'none';

@@ -87,8 +87,19 @@ const en = {
             label: 'Run Mode',
             subprocess: '⚡ Subprocess',
             container: '📦 Container',
+            remote: '🌐 Remote',
             help: 'Container: Isolated (recommended), Subprocess: Direct (requires vLLM installed)',
             subprocessTip: '💡 Tip: Use subprocess mode for additional accelerators (Huawei Ascend, Intel Gaudi, AWS Neuron) with vLLM + hardware plugin installed on the host.'
+        },
+        remoteUrl: {
+            label: 'Remote vLLM URL',
+            placeholder: 'http://gpu-server:8000',
+            help: 'Base URL of a running vLLM instance with OpenAI-compatible API'
+        },
+        remoteApiKey: {
+            label: 'API Key (Optional)',
+            placeholder: 'sk-...',
+            help: 'Bearer token for authenticated vLLM endpoints'
         },
         computeMode: {
             label: 'Compute Mode',
