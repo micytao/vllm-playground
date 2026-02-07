@@ -319,28 +319,17 @@ const zhCN = {
                 delete: '删除'
             }
         },
-        rag: {
-            title: '📚 RAG（检索增强生成）',
-            docs: '📖 文档',
-            enable: '启用 RAG',
-            files: '文件',
-            noFiles: '未上传文件',
-            uploadBtn: '上传文件',
-            uploadHelp: '支持：PDF、TXT、MD、CSV、JSON',
-            fileCard: {
-                size: '大小：',
-                chunks: '块：',
-                delete: '删除'
-            },
-            settings: {
-                title: 'RAG 设置',
-                topK: 'Top K 结果',
-                topKHelp: '返回的最相关块数',
-                chunkSize: '块大小',
-                chunkSizeHelp: '每个文本块的字符数',
-                chunkOverlap: '块重叠',
-                chunkOverlapHelp: '块之间的重叠字符数'
-            }
+        vlm: {
+            title: '视觉（VLM）',
+            docs: '文档',
+            enable: '启用视觉（VLM）',
+            dropzone: '拖放图片到此处，或点击浏览',
+            dropzoneHint: '支持 JPEG、PNG、GIF、WebP',
+            urlLabel: '或粘贴图片 URL',
+            urlPlaceholder: 'https://example.com/image.jpg',
+            loadUrl: '加载',
+            removeImage: '移除图片',
+            help: '将图片附加到下一条消息。图片发送一次后自动清除。需要 VLM 模型（如 LLaVA、Qwen-VL）。'
         }
     },
 

@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="/static/css/omni.css">
     <!-- xterm.js for Claude Code terminal -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
@@ -225,6 +226,10 @@
                                         <option value="RedHatAI/Llama-3.2-1B-Instruct-FP8">Llama 3.2 1B Instruct FP8 (Gated, needs HF token)</option>
                                         <option value="RedHatAI/Llama-3.1-8B-Instruct">Llama 3.1 8B Instruct (Gated, needs HF token)</option>
                                     </optgroup>
+                                    <!-- Vision Language Models (VLM) -->
+                                    <optgroup label="🖼️ Vision Language Models (VLM)">
+                                        <option value="Qwen/Qwen2.5-VL-3B-Instruct">Qwen 2.5 VL 3B Instruct (Vision)</option>
+                                    </optgroup>
                                 </select>
                                 <small class="form-help">All models support chat interface. Gated models require HF token below.</small>
                                 <input type="text" id="custom-model" class="form-control" placeholder="Or enter custom model name">
@@ -248,6 +253,10 @@
                                         <option value="Qwen/Qwen2.5-3B-Instruct">Qwen 2.5 3B Instruct</option>
                                         <option value="Qwen/Qwen2.5-Coder-7B-Instruct">Qwen 2.5 Coder 7B Instruct</option>
                                         <option value="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B">DeepSeek R1 Distill Qwen 7B</option>
+                                    </optgroup>
+                                    <!-- Vision Language Models (VLM) -->
+                                    <optgroup label="🖼️ Vision Language Models (VLM)">
+                                        <option value="Qwen/Qwen2.5-VL-3B-Instruct">Qwen 2.5 VL 3B Instruct (Vision)</option>
                                     </optgroup>
                                 </select>
                                 <small class="form-help" data-i18n="serverConfig.modelscope.help">Models from ModelScope (魔搭社区) - optimized for China region access.</small>
@@ -788,18 +797,45 @@
                                         </div>
                                     </div>
 
-                                    <!-- RAG Panel -->
-                                    <div class="inline-panel" id="panel-rag" style="display: none;">
+                                    <!-- VLM (Vision Language Model) Panel -->
+                                    <div class="inline-panel" id="panel-vlm" style="display: none;">
                                         <div class="inline-panel-header">
-                                            <span class="inline-panel-title"><span class="panel-icon icon-rag"></span> RAG</span>
-                                            <a href="https://docs.vllm.ai/en/latest/deployment/frameworks/retrieval_augmented_generation/" target="_blank" class="panel-doc-link" title="Open vLLM Docs">📖 Docs</a>
-                                            <span class="coming-soon-badge">Coming Soon</span>
-                                            <button class="inline-panel-close" data-panel="rag">✕</button>
+                                            <span class="inline-panel-title"><span class="panel-icon icon-vlm"></span> Vision (VLM)</span>
+                                            <a href="https://docs.vllm.ai/en/latest/features/multimodal_inputs/" target="_blank" class="panel-doc-link" title="Open vLLM Docs">📖 Docs</a>
+                                            <button class="inline-panel-close" data-panel="vlm">✕</button>
                                         </div>
                                         <div class="inline-panel-content">
-                                            <div class="mcp-placeholder">
-                                                <p>Retrieval-Augmented Generation is under development.</p>
-                                                <p>Upload documents and enhance responses with relevant context.</p>
+                                            <div class="form-group checkbox-group">
+                                                <label><input type="checkbox" id="vlm-enabled"><span>Enable Vision (VLM)</span></label>
+                                            </div>
+                                            <div id="vlm-options" style="display: none;">
+                                                <!-- Image upload area -->
+                                                <div class="vlm-upload-zone" id="vlm-dropzone">
+                                                    <input type="file" id="vlm-image-input" accept="image/*" hidden>
+                                                    <div class="vlm-dropzone-content">
+                                                        <span class="vlm-dropzone-icon">🖼️</span>
+                                                        <p class="vlm-dropzone-text">Drag & drop an image here, or click to browse</p>
+                                                        <p class="vlm-dropzone-hint">Supports JPEG, PNG, GIF, WebP</p>
+                                                    </div>
+                                                </div>
+                                                <!-- Image URL input -->
+                                                <div class="form-group" style="margin-top: 8px;">
+                                                    <label class="form-label">Or paste image URL</label>
+                                                    <div style="display: flex; gap: 6px;">
+                                                        <input type="text" id="vlm-image-url" class="form-input" placeholder="https://example.com/image.jpg" style="flex: 1;">
+                                                        <button id="vlm-load-url-btn" class="btn btn-sm" style="white-space: nowrap;">Load</button>
+                                                    </div>
+                                                </div>
+                                                <!-- Image preview -->
+                                                <div class="vlm-image-preview" id="vlm-image-preview" style="display: none;">
+                                                    <img id="vlm-preview-img" src="" alt="Preview">
+                                                    <div class="vlm-preview-info">
+                                                        <span id="vlm-preview-name"></span>
+                                                        <span id="vlm-preview-size"></span>
+                                                    </div>
+                                                    <button id="vlm-clear-image" class="btn btn-sm btn-danger" title="Remove image">✕</button>
+                                                </div>
+                                                <p class="form-help" style="margin-top: 8px;">Attach an image to your next message. The image will be sent once and cleared after sending. Requires a VLM model (e.g., LLaVA, Qwen-VL).</p>
                                             </div>
                                         </div>
                                     </div>
@@ -828,9 +864,9 @@
                                             <span class="toolbar-icon icon-mcp"></span>
                                             <span class="toolbar-tooltip">MCP Servers</span>
                                         </button>
-                                        <button class="toolbar-icon-btn" id="toolbar-rag" data-panel="rag">
-                                            <span class="toolbar-icon icon-rag"></span>
-                                            <span class="toolbar-tooltip">RAG</span>
+                                        <button class="toolbar-icon-btn" id="toolbar-vlm" data-panel="vlm">
+                                            <span class="toolbar-icon icon-vlm"></span>
+                                            <span class="toolbar-tooltip">Vision (VLM)</span>
                                         </button>
                                     </div>
                                     <div class="toolbar-right">

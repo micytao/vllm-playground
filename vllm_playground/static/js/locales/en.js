@@ -158,6 +158,20 @@ const en = {
         clearConfirm: 'Are you sure you want to clear all chat history?'
     },
 
+    // VLM (Vision Language Model)
+    vlm: {
+        title: 'Vision (VLM)',
+        docs: 'Docs',
+        enable: 'Enable Vision (VLM)',
+        dropzone: 'Drag & drop an image here, or click to browse',
+        dropzoneHint: 'Supports JPEG, PNG, GIF, WebP',
+        urlLabel: 'Or paste image URL',
+        urlPlaceholder: 'https://example.com/image.jpg',
+        loadUrl: 'Load',
+        removeImage: 'Remove image',
+        help: 'Attach an image to your next message. The image will be sent once and cleared after sending. Requires a VLM model (e.g., LLaVA, Qwen-VL).'
+    },
+
     // MCP (Model Context Protocol)
     mcp: {
         nav: 'MCP Servers',

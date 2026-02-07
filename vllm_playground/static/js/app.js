@@ -230,7 +230,7 @@ class VLLMWebUI {
             toolbarStructured: document.getElementById('toolbar-structured'),
             toolbarTools: document.getElementById('toolbar-tools'),
             toolbarMcp: document.getElementById('toolbar-mcp'),
-            toolbarRag: document.getElementById('toolbar-rag'),
+            toolbarVlm: document.getElementById('toolbar-vlm'),
 
             // Inline Panels
             panelSettings: document.getElementById('panel-settings'),
@@ -238,7 +238,20 @@ class VLLMWebUI {
             panelStructured: document.getElementById('panel-structured'),
             panelTools: document.getElementById('panel-tools'),
             panelMcp: document.getElementById('panel-mcp'),
-            panelRag: document.getElementById('panel-rag'),
+            panelVlm: document.getElementById('panel-vlm'),
+
+            // VLM (Vision) elements
+            vlmEnabled: document.getElementById('vlm-enabled'),
+            vlmOptions: document.getElementById('vlm-options'),
+            vlmDropzone: document.getElementById('vlm-dropzone'),
+            vlmImageInput: document.getElementById('vlm-image-input'),
+            vlmImageUrl: document.getElementById('vlm-image-url'),
+            vlmLoadUrlBtn: document.getElementById('vlm-load-url-btn'),
+            vlmImagePreview: document.getElementById('vlm-image-preview'),
+            vlmPreviewImg: document.getElementById('vlm-preview-img'),
+            vlmPreviewName: document.getElementById('vlm-preview-name'),
+            vlmPreviewSize: document.getElementById('vlm-preview-size'),
+            vlmClearImage: document.getElementById('vlm-clear-image'),
 
             // Structured Outputs elements
             structuredEnabled: document.getElementById('structured-enabled'),
@@ -617,6 +630,9 @@ class VLLMWebUI {
         // Initialize structured outputs
         this.initStructuredOutputs();
 
+        // Initialize VLM (Vision Language Model)
+        this.initVLM();
+
         // Add tool button
         if (this.elements.addToolBtn) {
             this.elements.addToolBtn.addEventListener('click', () => this.openToolEditor());
@@ -673,7 +689,7 @@ class VLLMWebUI {
             { btn: this.elements.toolbarStructured, panel: this.elements.panelStructured, id: 'structured' },
             { btn: this.elements.toolbarTools, panel: this.elements.panelTools, id: 'tools' },
             { btn: this.elements.toolbarMcp, panel: this.elements.panelMcp, id: 'mcp' },
-            { btn: this.elements.toolbarRag, panel: this.elements.panelRag, id: 'rag' }
+            { btn: this.elements.toolbarVlm, panel: this.elements.panelVlm, id: 'vlm' }
         ];
 
         toolbarButtons.forEach(({ btn, panel, id }) => {
@@ -795,7 +811,7 @@ class VLLMWebUI {
     }
 
     closeAllPanels() {
-        const panels = ['settings', 'prompt', 'structured', 'tools', 'mcp', 'rag'];
+        const panels = ['settings', 'prompt', 'structured', 'tools', 'mcp', 'vlm'];
         panels.forEach(id => this.closePanel(id));
     }
 
@@ -848,6 +864,13 @@ class VLLMWebUI {
         if (mcpBtn) {
             const mcpActive = this.mcpEnabled && (this.mcpSelectedServers?.length || 0) > 0;
             mcpBtn.classList.toggle('modified', mcpActive);
+        }
+
+        // VLM - check if VLM is enabled or image is attached
+        const vlmBtn = document.getElementById('toolbar-vlm');
+        if (vlmBtn) {
+            const vlmActive = this.vlmEnabled && this.vlmImageData;
+            vlmBtn.classList.toggle('modified', !!vlmActive);
         }
     }
 
@@ -1066,6 +1089,151 @@ number ::= [0-9]+`
         }
 
         return null;
+    }
+
+    // ============ VLM (Vision Language Model) ============
+    initVLM() {
+        this.vlmEnabled = false;
+        this.vlmImageData = null;   // base64 data URL or external URL
+        this.vlmImageName = null;   // filename for display
+
+        // Enable/disable toggle
+        if (this.elements.vlmEnabled) {
+            this.elements.vlmEnabled.addEventListener('change', () => {
+                this.vlmEnabled = this.elements.vlmEnabled.checked;
+                if (this.elements.vlmOptions) {
+                    this.elements.vlmOptions.style.display = this.vlmEnabled ? 'block' : 'none';
+                }
+                this.updateModifiedIndicators();
+            });
+        }
+
+        // Dropzone: click to browse
+        if (this.elements.vlmDropzone) {
+            this.elements.vlmDropzone.addEventListener('click', () => {
+                if (this.elements.vlmImageInput) this.elements.vlmImageInput.click();
+            });
+
+            // Drag & drop
+            this.elements.vlmDropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                this.elements.vlmDropzone.classList.add('dragover');
+            });
+            this.elements.vlmDropzone.addEventListener('dragleave', () => {
+                this.elements.vlmDropzone.classList.remove('dragover');
+            });
+            this.elements.vlmDropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                this.elements.vlmDropzone.classList.remove('dragover');
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    this.handleVLMImageUpload(e.dataTransfer.files[0]);
+                }
+            });
+        }
+
+        // File input change
+        if (this.elements.vlmImageInput) {
+            this.elements.vlmImageInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    this.handleVLMImageUpload(e.target.files[0]);
+                }
+            });
+        }
+
+        // Load URL button
+        if (this.elements.vlmLoadUrlBtn) {
+            this.elements.vlmLoadUrlBtn.addEventListener('click', () => {
+                const url = this.elements.vlmImageUrl?.value?.trim();
+                if (!url) {
+                    this.showNotification('Please enter an image URL', 'warning');
+                    return;
+                }
+                this.vlmImageData = url;
+                this.vlmImageName = url.split('/').pop() || 'image';
+                this.showVLMPreview(url, this.vlmImageName, 'URL');
+                this.showNotification('Image URL loaded', 'success');
+            });
+        }
+
+        // Clear image button
+        if (this.elements.vlmClearImage) {
+            this.elements.vlmClearImage.addEventListener('click', () => this.clearVLMImage());
+        }
+    }
+
+    handleVLMImageUpload(file) {
+        if (!file.type.startsWith('image/')) {
+            this.showNotification('Please upload an image file (JPEG, PNG, GIF, WebP)', 'warning');
+            return;
+        }
+
+        // Warn for very large files (> 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            this.showNotification('Image is very large (>10MB). This may cause slow requests.', 'warning');
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            this.vlmImageData = e.target.result; // base64 data URL
+            this.vlmImageName = file.name;
+            const sizeStr = file.size < 1024 * 1024
+                ? `${(file.size / 1024).toFixed(1)} KB`
+                : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+            this.showVLMPreview(e.target.result, file.name, sizeStr);
+            this.showVLMInputIndicator();
+            this.updateModifiedIndicators();
+        };
+        reader.readAsDataURL(file);
+    }
+
+    showVLMPreview(src, name, sizeText) {
+        if (this.elements.vlmPreviewImg) this.elements.vlmPreviewImg.src = src;
+        if (this.elements.vlmPreviewName) this.elements.vlmPreviewName.textContent = name;
+        if (this.elements.vlmPreviewSize) this.elements.vlmPreviewSize.textContent = sizeText;
+        if (this.elements.vlmImagePreview) this.elements.vlmImagePreview.style.display = 'flex';
+        if (this.elements.vlmDropzone) this.elements.vlmDropzone.style.display = 'none';
+    }
+
+    clearVLMImage() {
+        this.vlmImageData = null;
+        this.vlmImageName = null;
+        if (this.elements.vlmPreviewImg) this.elements.vlmPreviewImg.src = '';
+        if (this.elements.vlmImagePreview) this.elements.vlmImagePreview.style.display = 'none';
+        if (this.elements.vlmDropzone) this.elements.vlmDropzone.style.display = '';
+        if (this.elements.vlmImageInput) this.elements.vlmImageInput.value = '';
+        if (this.elements.vlmImageUrl) this.elements.vlmImageUrl.value = '';
+        this.removeVLMInputIndicator();
+        this.updateModifiedIndicators();
+    }
+
+    showVLMInputIndicator() {
+        // Show a small image indicator above the chat input
+        this.removeVLMInputIndicator(); // Remove any existing
+        if (!this.vlmImageData) return;
+
+        const indicator = document.createElement('div');
+        indicator.className = 'vlm-input-indicator';
+        indicator.id = 'vlm-input-indicator';
+        indicator.innerHTML = `
+            <img src="${this.vlmImageData}" alt="Attached">
+            <span>${this.vlmImageName || 'Image attached'}</span>
+            <button class="vlm-indicator-remove" title="Remove image">✕</button>
+        `;
+        indicator.querySelector('.vlm-indicator-remove').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.clearVLMImage();
+        });
+
+        // Insert before the chat input container
+        const chatInputContainer = this.elements.chatInput?.parentElement;
+        if (chatInputContainer) {
+            chatInputContainer.parentElement.insertBefore(indicator, chatInputContainer);
+        }
+    }
+
+    removeVLMInputIndicator() {
+        const existing = document.getElementById('vlm-input-indicator');
+        if (existing) existing.remove();
     }
 
     attachListeners() {
@@ -2602,9 +2770,22 @@ number ::= [0-9]+`
             return;
         }
 
-        // Add user message to chat
-        this.addChatMessage('user', message);
-        this.chatHistory.push({role: 'user', content: message});
+        // Build user message content — multimodal if VLM image is attached
+        let userContent = message;
+        let vlmImageForDisplay = null;
+        if (this.vlmEnabled && this.vlmImageData) {
+            vlmImageForDisplay = this.vlmImageData;
+            userContent = [
+                { type: "image_url", image_url: { url: this.vlmImageData } },
+                { type: "text", text: message }
+            ];
+            // Clear the image after capturing (one-shot attachment)
+            this.clearVLMImage();
+        }
+
+        // Add user message to chat (pass image for display if present)
+        this.addChatMessage('user', message, vlmImageForDisplay);
+        this.chatHistory.push({role: 'user', content: userContent});
 
         // Clear input
         this.elements.chatInput.value = '';
@@ -2768,8 +2949,9 @@ number ::= [0-9]+`
                             tool_calls: message.tool_calls
                         });
                     } else if (message && message.content) {
-                        // Display text content only
-                        textSpan.textContent = message.content;
+                        // Display text content as rendered markdown
+                        textSpan.classList.add('markdown-body');
+                        textSpan.innerHTML = this.renderMarkdown(message.content);
                         this.chatHistory.push({role: 'assistant', content: message.content});
                     } else {
                         textSpan.textContent = 'No response from model';
@@ -2909,8 +3091,9 @@ number ::= [0-9]+`
                                     }
 
                                     fullText += content;
-                                    // Update the message in real-time with cursor
-                                    textSpan.textContent = `${fullText}▌`;
+                                    // Update the message in real-time with markdown rendering + cursor
+                                    textSpan.classList.add('markdown-body');
+                                    textSpan.innerHTML = this.renderMarkdown(fullText + '▌');
 
                                     // Auto-scroll to bottom
                                     this.elements.chatContainer.scrollTop = this.elements.chatContainer.scrollHeight;
@@ -3015,7 +3198,9 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                     console.error('  Check vLLM server logs for: "Error in extracting tool call from response"');
                 }
                 else {
-                    textSpan.textContent = fullText;
+                    // Render final response as markdown
+                    textSpan.classList.add('markdown-body');
+                    textSpan.innerHTML = this.renderMarkdown(fullText);
                     this.chatHistory.push({role: 'assistant', content: fullText});
                 }
             } else {
@@ -3202,7 +3387,37 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         }
     }
 
-    addChatMessage(role, content) {
+    /**
+     * Render markdown text to HTML using the marked library.
+     * Falls back to plain text (with escaped HTML) if marked is not loaded.
+     * Used for assistant messages to properly display formatting like bold,
+     * lists, code blocks, etc.
+     */
+    renderMarkdown(text) {
+        if (!text) return '';
+        if (typeof marked !== 'undefined' && marked.parse) {
+            try {
+                // Configure marked for safe, clean output
+                marked.setOptions({
+                    breaks: true,      // Convert \n to <br>
+                    gfm: true,         // GitHub Flavored Markdown
+                    headerIds: false,  // Don't add ids to headers (cleaner)
+                    mangle: false,     // Don't mangle email addresses
+                });
+                return marked.parse(text);
+            } catch (e) {
+                console.warn('Markdown rendering failed, using plain text:', e);
+            }
+        }
+        // Fallback: escape HTML and convert newlines to <br>
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\n/g, '<br>');
+    }
+
+    addChatMessage(role, content, imageUrl = null) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `chat-message ${role}`;
 
@@ -3217,9 +3432,33 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
 
+        // Show VLM image thumbnail if attached (user messages only)
+        if (imageUrl && role === 'user') {
+            const img = document.createElement('img');
+            img.className = 'vlm-chat-image';
+            img.src = imageUrl;
+            img.alt = 'Attached image';
+            img.title = 'Click to view full size';
+            img.addEventListener('click', () => {
+                // Open image in a new tab for full-size viewing
+                const win = window.open();
+                if (win) {
+                    win.document.write(`<img src="${imageUrl}" style="max-width:100%;height:auto;">`);
+                    win.document.title = 'VLM Image';
+                }
+            });
+            contentDiv.appendChild(img);
+        }
+
         const textSpan = document.createElement('span');
         textSpan.className = 'message-text';
-        textSpan.textContent = content;
+        if (role === 'assistant') {
+            // Render assistant messages as markdown for proper formatting
+            textSpan.classList.add('markdown-body');
+            textSpan.innerHTML = this.renderMarkdown(content);
+        } else {
+            textSpan.textContent = content;
+        }
         contentDiv.appendChild(textSpan);
 
         messageDiv.appendChild(contentDiv);
@@ -6206,7 +6445,8 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
                     // Display text content if present
                     if (message.content) {
-                        textSpan.textContent = message.content;
+                        textSpan.classList.add('markdown-body');
+                        textSpan.innerHTML = this.renderMarkdown(message.content);
                         this.chatHistory.push({ role: 'assistant', content: message.content });
                     }
 
@@ -6244,7 +6484,8 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                                 const content = parsed.choices?.[0]?.delta?.content || '';
                                 if (content) {
                                     fullText += content;
-                                    textSpan.textContent = fullText;
+                                    textSpan.classList.add('markdown-body');
+                                    textSpan.innerHTML = this.renderMarkdown(fullText + '▌');
                                 }
                             } catch (e) {
                                 // Skip invalid JSON
@@ -6254,6 +6495,8 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 }
 
                 if (fullText) {
+                    textSpan.classList.add('markdown-body');
+                    textSpan.innerHTML = this.renderMarkdown(fullText);
                     this.chatHistory.push({ role: 'assistant', content: fullText });
                 } else {
                     textSpan.textContent = 'No response from model';

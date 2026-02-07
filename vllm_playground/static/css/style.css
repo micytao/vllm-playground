@@ -2115,7 +2115,8 @@ code.remote-model-id {
     font-size: 0.9rem;
 }
 
-.message-content strong {
+/* Hide bold sender labels (non-markdown context) */
+.message-content > strong:first-child:last-child {
     display: none;
 }
 
@@ -2151,6 +2152,157 @@ code.remote-model-id {
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
+/* Markdown rendered content in chat messages */
+.message-text.markdown-body {
+    line-height: 1.6;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.message-text.markdown-body p {
+    margin: 0 0 0.6em 0;
+}
+
+.message-text.markdown-body p:last-child {
+    margin-bottom: 0;
+}
+
+.message-text.markdown-body strong {
+    font-weight: 600;
+    color: inherit;
+}
+
+.message-text.markdown-body em {
+    font-style: italic;
+}
+
+.message-text.markdown-body h1,
+.message-text.markdown-body h2,
+.message-text.markdown-body h3,
+.message-text.markdown-body h4 {
+    margin: 0.8em 0 0.4em 0;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.message-text.markdown-body h1 { font-size: 1.2em; }
+.message-text.markdown-body h2 { font-size: 1.1em; }
+.message-text.markdown-body h3 { font-size: 1.0em; }
+.message-text.markdown-body h4 { font-size: 0.95em; }
+
+.message-text.markdown-body h1:first-child,
+.message-text.markdown-body h2:first-child,
+.message-text.markdown-body h3:first-child {
+    margin-top: 0;
+}
+
+.message-text.markdown-body ul,
+.message-text.markdown-body ol {
+    margin: 0.4em 0;
+    padding-left: 1.5em;
+}
+
+.message-text.markdown-body li {
+    margin: 0.2em 0;
+}
+
+.message-text.markdown-body li > p {
+    margin: 0;
+}
+
+.message-text.markdown-body blockquote {
+    margin: 0.5em 0;
+    padding: 0.3em 0.8em;
+    border-left: 3px solid rgba(255, 255, 255, 0.2);
+    color: var(--text-secondary);
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 0 6px 6px 0;
+}
+
+.message-text.markdown-body pre {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    padding: 12px;
+    margin: 0.5em 0;
+    overflow-x: auto;
+    font-size: 0.85rem;
+}
+
+.message-text.markdown-body pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+}
+
+.message-text.markdown-body code {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.88em;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.message-text.markdown-body hr {
+    border: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    margin: 0.8em 0;
+}
+
+.message-text.markdown-body table {
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    font-size: 0.88em;
+    width: 100%;
+}
+
+.message-text.markdown-body th,
+.message-text.markdown-body td {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 6px 10px;
+    text-align: left;
+}
+
+.message-text.markdown-body th {
+    background: rgba(0, 0, 0, 0.2);
+    font-weight: 600;
+}
+
+.message-text.markdown-body a {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.message-text.markdown-body a:hover {
+    text-decoration: underline;
+}
+
+/* Light theme overrides for markdown */
+[data-theme="light"] .message-text.markdown-body blockquote {
+    border-left-color: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="light"] .message-text.markdown-body pre {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .message-text.markdown-body code {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .message-text.markdown-body th {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .message-text.markdown-body th,
+[data-theme="light"] .message-text.markdown-body td {
+    border-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .message-text.markdown-body hr {
+    border-top-color: rgba(0, 0, 0, 0.1);
+}
+
 .chat-input-area {
     flex-shrink: 0;
     margin-top: auto;
@@ -2158,7 +2310,7 @@ code.remote-model-id {
     position: relative;
     display: grid;
     grid-template-columns: 1fr auto;
-    gap: 10px;
+    gap: 6px 10px;  /* row-gap 6px, column-gap 10px */
 }
 
 /* Buttons in chat area - normal weight */
@@ -5105,20 +5257,155 @@ code.remote-model-id {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'/%3E%3C/svg%3E");
 }
 
-.icon-rag {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='12' y1='5' x2='12' y2='19'/%3E%3Cline x1='5' y1='12' x2='19' y2='12'/%3E%3C/svg%3E");
+.icon-vlm {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2' ry='2'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'/%3E%3Cpolyline points='21 15 16 10 5 21'/%3E%3C/svg%3E");
 }
 /* Light mode icons */
 [data-theme="light"] .icon-settings,
 [data-theme="light"] .icon-prompt,
 [data-theme="light"] .icon-structured,
 [data-theme="light"] .icon-tools,
-[data-theme="light"] .icon-rag {
+[data-theme="light"] .icon-vlm {
     filter: brightness(0.5);
 }
 
 [data-theme="light"] .panel-icon {
     filter: brightness(0.4);
+}
+
+/* ============================================
+   VLM (Vision Language Model) Panel Styles
+   ============================================ */
+
+.vlm-upload-zone {
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--bg-primary);
+}
+
+.vlm-upload-zone:hover,
+.vlm-upload-zone.dragover {
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 5%, var(--bg-primary));
+}
+
+.vlm-dropzone-content {
+    pointer-events: none;
+}
+
+.vlm-dropzone-icon {
+    font-size: 2rem;
+    display: block;
+    margin-bottom: 6px;
+}
+
+.vlm-dropzone-text {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    margin: 0 0 4px 0;
+}
+
+.vlm-dropzone-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.vlm-image-preview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    margin-top: 8px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.vlm-image-preview img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.vlm-preview-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.vlm-preview-info span {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vlm-preview-info span:first-child {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* Inline image in chat messages */
+.vlm-chat-image {
+    max-width: 280px;
+    max-height: 200px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    display: block;
+}
+
+.vlm-chat-image:hover {
+    opacity: 0.85;
+}
+
+/* VLM image indicator in chat input area */
+.vlm-input-indicator {
+    grid-column: 1 / -1;  /* Span full width of the chat-input-area grid */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: color-mix(in srgb, var(--primary-color) 10%, var(--bg-secondary));
+    border: 1px solid color-mix(in srgb, var(--primary-color) 30%, var(--border-color));
+    border-radius: 8px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.vlm-input-indicator img {
+    width: 32px;
+    height: 32px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.vlm-input-indicator .vlm-indicator-remove {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 2px 4px;
+    border-radius: 4px;
+}
+
+.vlm-input-indicator .vlm-indicator-remove:hover {
+    background: var(--hover-overlay);
+    color: var(--text-primary);
 }
 
 /* Tooltip that appears on hover */
