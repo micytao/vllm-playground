@@ -6,6 +6,42 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 ---
 
+## [v0.1.5](releases/v0.1.5.md) - 2026-02-08
+
+**Remote Server & VLM (Vision Language Model) Support**
+
+### Added
+- 🌐 **Remote vLLM Server** - Connect to any remote vLLM instance
+  - New "Remote" run mode alongside Subprocess and Container
+  - Remote URL and API key configuration
+  - Auto-detected server info (models, health, max context, root model)
+  - Full feature compatibility: Chat, GuideLLM, Claude Code, MCP Servers, Structured Outputs
+  - Remote mode support for both vLLM Server and vLLM-Omni pages
+- 🖼️ **VLM (Vision Language Model)** - Multimodal chat with vision models
+  - Image upload via drag-and-drop or URL input
+  - One-shot image attachment with inline chat thumbnails
+  - OpenAI-compatible multimodal content format
+  - Works in all modes: Subprocess, Container, Remote
+  - Qwen2.5-VL-3B-Instruct added to model dropdown
+- ✨ **Markdown Rendering** - Rich formatting for assistant messages
+  - Bold, italic, headings, lists, code blocks, tables, blockquotes
+  - Real-time rendering during streaming
+  - Light and dark theme support
+
+### Changed
+- Structured outputs updated for vLLM v0.12+ API (`structured_outputs` dict format)
+- Proxy timeouts increased for VLM image processing (sock_read: 30s -> 120s)
+- Claude Code integration: added `ANTHROPIC_AUTH_TOKEN` for seamless login bypass
+- Tool calling optimistically enabled in remote mode
+
+### Fixed
+- GuideLLM benchmark UI hanging at 98% (subprocess stdout/stderr deadlock)
+- Claude Code "config required" error in remote mode
+- Button label inconsistency when switching between run modes
+- Chat input layout when VLM image indicator is shown
+
+---
+
 ## [v0.1.4](releases/v0.1.4.md) - 2026-02-01
 
 **vLLM-Omni Multimodal Integration**
@@ -166,6 +202,7 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| v0.1.5 | 2026-02-08 | Remote server, VLM vision support, markdown rendering |
 | v0.1.4 | 2026-02-01 | vLLM-Omni multimodal, Studio UI, pre-commit hooks |
 | v0.1.3 | 2026-01-22 | Multi-accelerators, Claude Code, vLLM-Metal |
 | v0.1.2 | 2026-01-19 | ModelScope integration, i18n improvements |
