@@ -3123,8 +3123,14 @@ async def chat(request: ChatRequestWithStopTokens):
             payload["parallel_tool_calls"] = request.parallel_tool_calls
             logger.info(f"🔧 Parallel tool calls: {request.parallel_tool_calls}")
 
-        # Structured Outputs Support (vLLM guided decoding)
-        # See: https://docs.vllm.ai/en/latest/features/structured_outputs.html
+        # Structured Outputs Support
+        # See: https://docs.vllm.ai/en/latest/features/structured_outputs/
+        #
+        # vLLM v0.12+ removed the legacy guided_* fields (guided_choice,
+        # guided_regex, guided_grammar, guided_json) and now expects a
+        # top-level "structured_outputs" dict with the constraint type.
+        # The OpenAI-standard "response_format" for JSON schema is still
+        # supported as-is.
         if request.response_format:
             # JSON Schema mode (OpenAI-compatible response_format)
             if request.response_format.type == "json_schema" and request.response_format.json_schema:
@@ -3142,21 +3148,21 @@ async def chat(request: ChatRequestWithStopTokens):
                 payload["response_format"] = {"type": "json_object"}
                 logger.info(f"📋 JSON Object mode enabled")
         elif request.structured_outputs:
-            # vLLM-specific guided decoding via extra_body
-            extra_body = {}
+            # vLLM structured_outputs format (v0.12+)
+            # Sent as a top-level "structured_outputs" dict in the request body
+            so_body = {}
             if request.structured_outputs.choice:
-                extra_body["guided_choice"] = request.structured_outputs.choice
-                logger.info(f"📋 Guided choice enabled: {request.structured_outputs.choice}")
+                so_body["choice"] = request.structured_outputs.choice
+                logger.info(f"📋 Structured output (choice) enabled: {request.structured_outputs.choice}")
             elif request.structured_outputs.regex:
-                extra_body["guided_regex"] = request.structured_outputs.regex
-                logger.info(f"📋 Guided regex enabled: {request.structured_outputs.regex}")
+                so_body["regex"] = request.structured_outputs.regex
+                logger.info(f"📋 Structured output (regex) enabled: {request.structured_outputs.regex}")
             elif request.structured_outputs.grammar:
-                extra_body["guided_grammar"] = request.structured_outputs.grammar
-                logger.info(f"📋 Guided grammar enabled")
+                so_body["grammar"] = request.structured_outputs.grammar
+                logger.info(f"📋 Structured output (grammar) enabled")
 
-            if extra_body:
-                # vLLM accepts these parameters directly in the request body
-                payload.update(extra_body)
+            if so_body:
+                payload["structured_outputs"] = so_body
 
         # Stop tokens handling:
         # By default, trust vLLM to use appropriate stop tokens from the model's tokenizer
@@ -6928,6 +6934,10 @@ async def claude_code_config():
     env_config = {
         "ANTHROPIC_BASE_URL": base_url,
         "ANTHROPIC_API_KEY": api_key,
+        # ANTHROPIC_AUTH_TOKEN is required by Claude Code to skip the login
+        # prompt.  It can be any non-empty value when using a custom endpoint.
+        # See: https://docs.vllm.ai/en/latest/serving/integrations/claude_code/
+        "ANTHROPIC_AUTH_TOKEN": api_key,
         "ANTHROPIC_DEFAULT_OPUS_MODEL": model_name,
         "ANTHROPIC_DEFAULT_SONNET_MODEL": model_name,
         "ANTHROPIC_DEFAULT_HAIKU_MODEL": model_name,
