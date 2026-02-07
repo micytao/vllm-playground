@@ -3208,7 +3208,9 @@ async def chat(request: ChatRequestWithStopTokens):
             buffer = ""  # Buffer for incomplete lines
             try:
                 # Set reasonable timeout to prevent hanging
-                timeout = aiohttp.ClientTimeout(total=300, connect=10, sock_read=30)
+                # sock_read=120 is needed for VLM models that may take longer
+                # to process images before producing the first token
+                timeout = aiohttp.ClientTimeout(total=300, connect=10, sock_read=120)
                 auth_headers = get_vllm_auth_headers()
                 async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
                     async with session.post(url, json=payload) as response:
@@ -3320,8 +3322,8 @@ async def chat(request: ChatRequestWithStopTokens):
             )
         else:
             # Non-streaming response
-            # Set reasonable timeout to prevent hanging
-            timeout = aiohttp.ClientTimeout(total=60, connect=10)
+            # Set reasonable timeout - VLM image processing may need extra time
+            timeout = aiohttp.ClientTimeout(total=120, connect=10)
             auth_headers = get_vllm_auth_headers()
             async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
                 async with session.post(url, json=payload) as response:
