@@ -21,7 +21,7 @@ uv venv --python 3.12 --seed ~/.venv-vllm-omni
 source ~/.venv-vllm-omni/bin/activate
 
 # Install vLLM base
-uv pip install vllm==0.12.0 --torch-backend=auto
+uv pip install vllm==0.15.0 --torch-backend=auto
 
 # Clone and install vLLM-Omni
 git clone https://github.com/vllm-project/vllm-omni.git
