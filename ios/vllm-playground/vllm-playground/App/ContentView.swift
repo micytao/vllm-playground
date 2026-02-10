@@ -7,6 +7,8 @@ enum AppSection: String, CaseIterable {
     case omni
     case benchmark
     case modelHub
+    case commandGen
+    case apiFinder
     case servers
     case settings
 }
@@ -81,6 +83,10 @@ struct ContentView: View {
             BenchmarkView()
         case .modelHub:
             ModelHubView()
+        case .commandGen:
+            CommandGeneratorView()
+        case .apiFinder:
+            APIFinderView()
         case .servers:
             ServerListView()
         case .settings:
@@ -127,101 +133,120 @@ struct SidebarView: View {
 
             Divider().background(AppColors.border)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    // New Chat button
-                    SidebarButton(
-                        icon: "square.and.pencil",
-                        title: "New Chat",
-                        isSelected: false
-                    ) {
-                        selectedConversationID = nil
-                        selectedSection = .chat
-                        onSelect?()
-                    }
-                    .padding(.top, 8)
+            // Top navigation (non-scrollable)
+            VStack(alignment: .leading, spacing: 4) {
+                SidebarButton(
+                    icon: "square.and.pencil",
+                    title: "New Chat",
+                    isSelected: false
+                ) {
+                    selectedConversationID = nil
+                    selectedSection = .chat
+                    onSelect?()
+                }
+                .padding(.top, 8)
 
-                    // Main navigation
-                    SidebarButton(
-                        icon: "sparkles",
-                        title: "Omni Studio",
-                        isSelected: selectedSection == .omni
-                    ) {
-                        selectedSection = .omni
-                        onSelect?()
-                    }
+                SidebarButton(
+                    icon: "sparkles",
+                    title: "Omni Studio",
+                    isSelected: selectedSection == .omni
+                ) {
+                    selectedSection = .omni
+                    onSelect?()
+                }
 
-                    SidebarButton(
-                        icon: "chart.bar",
-                        title: "Benchmark",
-                        isSelected: selectedSection == .benchmark
-                    ) {
-                        selectedSection = .benchmark
-                        onSelect?()
-                    }
+                SidebarButton(
+                    icon: "chart.bar",
+                    title: "Benchmark",
+                    isSelected: selectedSection == .benchmark
+                ) {
+                    selectedSection = .benchmark
+                    onSelect?()
+                }
 
-                    SidebarButton(
-                        icon: "magnifyingglass",
-                        title: "Model Hub",
-                        isSelected: selectedSection == .modelHub
-                    ) {
-                        selectedSection = .modelHub
-                        onSelect?()
-                    }
+                SidebarButton(
+                    icon: "magnifyingglass",
+                    title: "Model Hub",
+                    isSelected: selectedSection == .modelHub
+                ) {
+                    selectedSection = .modelHub
+                    onSelect?()
+                }
 
-                    SidebarButton(
-                        icon: "server.rack",
-                        title: "Servers",
-                        isSelected: selectedSection == .servers
-                    ) {
-                        selectedSection = .servers
-                        onSelect?()
-                    }
+                SidebarButton(
+                    icon: "terminal",
+                    title: "Command Gen",
+                    isSelected: selectedSection == .commandGen
+                ) {
+                    selectedSection = .commandGen
+                    onSelect?()
+                }
 
-                    // Recent conversations
-                    Divider()
-                        .background(AppColors.border)
-                        .padding(.vertical, 8)
+                SidebarButton(
+                    icon: "book",
+                    title: "API Finder",
+                    isSelected: selectedSection == .apiFinder
+                ) {
+                    selectedSection = .apiFinder
+                    onSelect?()
+                }
 
-                    // RECENT header with Edit button
-                    HStack {
-                        Text("RECENT")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(AppColors.textTertiary)
+                SidebarButton(
+                    icon: "server.rack",
+                    title: "Servers",
+                    isSelected: selectedSection == .servers
+                ) {
+                    selectedSection = .servers
+                    onSelect?()
+                }
+            }
+            .padding(.horizontal, 8)
 
-                        Spacer()
+            // Recent conversations (scrollable)
+            Divider()
+                .background(AppColors.border)
+                .padding(.horizontal, 8)
+                .padding(.top, 12)
 
-                        if !conversations.isEmpty {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.25)) {
-                                    isEditing.toggle()
-                                    if !isEditing {
-                                        selectedForDeletion.removeAll()
-                                    }
-                                }
-                            } label: {
-                                Text(isEditing ? "Done" : "Edit")
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(AppColors.appPrimary)
+            HStack {
+                Text("RECENT")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppColors.textTertiary)
+
+                Spacer()
+
+                if !conversations.isEmpty {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            isEditing.toggle()
+                            if !isEditing {
+                                selectedForDeletion.removeAll()
                             }
-                            .buttonStyle(.plain)
                         }
+                    } label: {
+                        Text(isEditing ? "Done" : "Edit")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(AppColors.appPrimary)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 4)
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 6)
+            .padding(.bottom, 4)
 
-                    if conversations.isEmpty {
-                        // Empty state
-                        VStack(spacing: 6) {
-                            Text("No conversations yet")
-                                .font(.footnote)
-                                .foregroundStyle(AppColors.textTertiary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 12)
-                    }
-
-                    ForEach(conversations.prefix(15)) { convo in
+            if conversations.isEmpty {
+                VStack(spacing: 6) {
+                    Text("No conversations yet")
+                        .font(.footnote)
+                        .foregroundStyle(AppColors.textTertiary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.top, 12)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(conversations.prefix(15)) { convo in
                             if isEditing {
                                 editableConversationRow(convo)
                             } else {
@@ -242,16 +267,15 @@ struct SidebarView: View {
                                 }
                             }
                         }
+                    }
+                    .padding(.horizontal, 8)
                 }
-                .padding(.horizontal, 8)
             }
 
             // Edit mode bottom bar
             if isEditing && !conversations.isEmpty {
                 editBottomBar
             }
-
-            Spacer(minLength: 16)
 
             Divider().background(AppColors.border)
 

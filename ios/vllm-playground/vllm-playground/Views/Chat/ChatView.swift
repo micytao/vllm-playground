@@ -119,6 +119,9 @@ struct ChatView: View {
                 cameraImageData = nil
             }
         }
+        .onChange(of: viewModel.conversation.model) {
+            viewModel.syncModelFromConversation()
+        }
     }
 
     // MARK: - Messages View

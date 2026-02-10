@@ -44,7 +44,7 @@ struct ChatTabView: View {
                 }
 
                 ToolbarItem(placement: .principal) {
-                    if !serversWithModels.isEmpty {
+                    if selectedConversation != nil, !serversWithModels.isEmpty {
                         ServerModelPicker(
                             selectedModel: Binding(
                                 get: { selectedConversation?.model ?? activeServer?.defaultModel ?? "" },
@@ -136,8 +136,9 @@ struct ChatTabView: View {
 
     private func createNewConversation() {
         guard let server = activeServer else { return }
+        let model = server.defaultModel ?? server.availableModels.first ?? ""
         let conversation = Conversation(
-            model: server.defaultModel ?? "",
+            model: model,
             serverProfile: server
         )
         modelContext.insert(conversation)

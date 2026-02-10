@@ -55,8 +55,24 @@ final class ChatViewModel {
         // Load available models
         if let profile = serverProfile {
             self.availableModels = profile.availableModels
-            if selectedModel.isEmpty, let defaultModel = profile.defaultModel, !defaultModel.isEmpty {
-                selectedModel = defaultModel
+            if selectedModel.isEmpty {
+                if let defaultModel = profile.defaultModel, !defaultModel.isEmpty {
+                    selectedModel = defaultModel
+                } else if let firstModel = profile.availableModels.first {
+                    selectedModel = firstModel
+                }
+            }
+        }
+    }
+
+    /// Sync selectedModel from the conversation object (called when toolbar picker changes the model externally)
+    func syncModelFromConversation() {
+        if !conversation.model.isEmpty && conversation.model != selectedModel {
+            selectedModel = conversation.model
+            // Also update the server profile if it changed
+            if let newProfile = conversation.serverProfile {
+                serverProfile = newProfile
+                availableModels = newProfile.availableModels
             }
         }
     }
