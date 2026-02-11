@@ -130,26 +130,28 @@ COPY openshift/kubernetes_container_manager.py ${HOME}/vllm-playground/container
 
 ### GPU Clusters (Default) ⭐
 ```bash
-# 1. Build and push Web UI image
-cd /Users/micyang/vllm-playground
-podman build -f openshift/Containerfile -t vllm-playground-webui:latest .
-podman tag vllm-playground-webui:latest quay.io/yourusername/vllm-playground-webui:latest
-podman push quay.io/yourusername/vllm-playground-webui:latest
+# 1. Clone repo
+git clone https://github.com/micytao/vllm-playground.git
 
-# 2. Update image in manifest
+# 2. Build and push Web UI image
+cd vllm-playground
+podman build -f openshift/Containerfile -t your-registry/vllm-playground:latest .
+podman push your-registry/vllm-playground:latest
+
+# 3. Update image in manifest
 vim openshift/manifests/04-webui-deployment.yaml  # Update image reference
 
-# 3. Deploy to OpenShift (GPU mode)
+# 4. Deploy to OpenShift (GPU mode)
 cd openshift/
 ./deploy.sh --gpu  # Uses vllm/vllm-openai:v0.12.0
 
-# 4. Get Web UI URL
+# 5. Get Web UI URL
 echo "https://$(oc get route vllm-playground -n vllm-playground -o jsonpath='{.spec.host}')"
 ```
 
 ### CPU Clusters
 ```bash
-# Same steps 1-2 as above, then:
+# Same steps 1-3 as above, then:
 
 # 3. Deploy to OpenShift (CPU mode)
 cd openshift/
