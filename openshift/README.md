@@ -1,4 +1,28 @@
 # Deploying vLLM Playground to OpenShift/Kubernetes
+* [Deploying vLLM Playground to OpenShift/Kubernetes](#deploying-vllm-playground-to-openshiftkubernetes)
+
+  * [Architecture Options](#architecture-options)
+
+    * [Option 1: Static Deployment (Simplest) ⭐ RECOMMENDED FOR PROD](#option-1-static-deployment-simplest--recommended-for-prod)
+    * [Option 2: Dynamic Pod Management (Most Flexible) ⭐ RECOMMENDED FOR YOUR USE CASE](#option-2-dynamic-pod-management-most-flexible--recommended-for-your-use-case)
+    * [Option 3: Kubernetes Job Pattern (Good Middle Ground)](#option-3-kubernetes-job-pattern-good-middle-ground)
+  * [✅ Implemented: Option 2 (Dynamic Pod Management)](#-implemented-option-2-dynamic-pod-management)
+
+    * [Implementation Overview](#implementation-overview)
+    * [Key Changes from Local Setup](#key-changes-from-local-setup)
+    * [How It Works](#how-it-works)
+  * [📚 Documentation](#-documentation)
+  * [🚀 Quick Deployment](#-quick-deployment)
+
+    * [GPU Clusters (Default) ⭐](#gpu-clusters-default-)
+    * [CPU Clusters](#cpu-clusters)
+  * [🗑️ Undeployment](#️-undeployment)
+  * [✅ Verification](#-verification)
+  * [🔒 Security Considerations for OpenShift](#-security-considerations-for-openshift)
+  * [📋 Files in This Directory](#-files-in-this-directory)
+  * [🎮 GPU Support](#-gpu-support)
+  * [🖥️ CPU vs GPU Deployment](#️-cpu-vs-gpu-deployment)
+
 
 ## Architecture Options
 
