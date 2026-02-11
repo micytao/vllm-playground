@@ -134,11 +134,11 @@ echo "https://$(oc get route vllm-playground -n vllm-playground -o jsonpath='{.s
 ```bash
 # Same steps 1-3 as above, then:
 
-# 3. Deploy to OpenShift (CPU mode)
+# 4. Deploy to OpenShift (CPU mode)
 cd openshift/
 ./deploy.sh --cpu  # Uses quay.io/rh_ee_micyang/vllm-cpu:v0.11.0 (self-built, publicly accessible)
 
-# 4. Get Web UI URL
+# 5. Get Web UI URL
 echo "https://$(oc get route vllm-playground -n vllm-playground -o jsonpath='{.spec.host}')"
 ```
 
