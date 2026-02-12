@@ -255,6 +255,8 @@ enum SystemPromptTemplate: String, CaseIterable, Identifiable {
     }
 }
 
+#if DEBUG
 #Preview {
     ChatSettingsSheet(viewModel: ChatViewModel.preview())
 }
+#endif

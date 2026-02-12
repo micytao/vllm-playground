@@ -63,9 +63,14 @@ struct HomeView: View {
                 .shadow(color: AppColors.appPrimary.opacity(0.3), radius: 12, y: 4)
 
             VStack(spacing: 6) {
-                Text("vLLM Playground")
-                    .font(.title.weight(.bold))
-                    .foregroundStyle(AppColors.textPrimary)
+                VStack(spacing: 4) {
+                    Text("vLLM")
+                        .font(.largeTitle.weight(.bold))
+                        .foregroundStyle(AppColors.textPrimary)
+                    Text("Playground")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(AppColors.textSecondary)
+                }
 
                 Text("A native iOS client for vLLM servers")
                     .font(.callout)
@@ -85,32 +90,43 @@ struct HomeView: View {
 
     private var statsBar: some View {
         HStack(spacing: 0) {
-            statItem(value: "\(servers.count)", label: "Servers", icon: "server.rack")
+            statItem(value: "\(servers.count)", label: "Servers", icon: "server.rack") {
+                onNavigate?(.servers)
+            }
             Divider().frame(height: 32).background(AppColors.border)
-            statItem(value: "\(healthyCount)", label: "Online", icon: "circle.fill", tint: AppColors.appSuccess)
+            statItem(value: "\(healthyCount)", label: "Online", icon: "circle.fill", tint: AppColors.appSuccess) {
+                onNavigate?(.servers)
+            }
             Divider().frame(height: 32).background(AppColors.border)
-            statItem(value: "\(conversations.count)", label: "Chats", icon: "bubble.left.and.bubble.right")
+            statItem(value: "\(conversations.count)", label: "Chats", icon: "bubble.left.and.bubble.right") {
+                onNavigate?(.chat)
+            }
         }
         .padding(.vertical, 14)
         .background(AppColors.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func statItem(value: String, label: String, icon: String, tint: Color = AppColors.appPrimary) -> some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.caption2)
-                    .foregroundStyle(tint)
-                Text(value)
-                    .font(.title3.weight(.bold).monospacedDigit())
-                    .foregroundStyle(AppColors.textPrimary)
+    private func statItem(value: String, label: String, icon: String, tint: Color = AppColors.appPrimary, action: (() -> Void)? = nil) -> some View {
+        Button {
+            action?()
+        } label: {
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.caption2)
+                        .foregroundStyle(tint)
+                    Text(value)
+                        .font(.title3.weight(.bold).monospacedDigit())
+                        .foregroundStyle(AppColors.textPrimary)
+                }
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(AppColors.textTertiary)
             }
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(AppColors.textTertiary)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
+        .buttonStyle(.plain)
     }
 
     // MARK: - Feature Grid

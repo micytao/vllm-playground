@@ -1,6 +1,6 @@
 name: vllm-playground
 options:
-  bundleIdPrefix: com.vllm-playground
+  bundleIdPrefix: com.micytao
   deploymentTarget:
     iOS: "17.0"
   xcodeVersion: "16.0"
@@ -12,15 +12,22 @@ settings:
     SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: "Q57GVDB537"
     CODE_SIGN_IDENTITY: "Apple Development"
     CODE_SIGN_STYLE: Automatic
+
+packages:
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: "2.4.1"
 
 targets:
   vllm-playground:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
+    dependencies:
+      - package: MarkdownUI
     sources:
       - path: vllm-playground
         excludes:
@@ -41,7 +48,7 @@ targets:
     info:
       path: vllm-playground/Info.plist
       properties:
-        CFBundleDisplayName: "vLLM Playground"
+        CFBundleDisplayName: "vLLM-Play"
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UIApplicationSupportsIndirectInputEvents: true

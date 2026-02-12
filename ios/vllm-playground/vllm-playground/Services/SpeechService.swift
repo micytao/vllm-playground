@@ -17,126 +17,190 @@ final class SpeechService {
     // MARK: - Start Recording
 
     func startRecording() {
-        // Reset state
         transcript = ""
         error = nil
 
-        // Check availability
         guard let speechRecognizer, speechRecognizer.isAvailable else {
             error = "Speech recognition is not available on this device."
             return
         }
 
-        // Request permissions
-        Task {
-            let speechAuthorized = await withCheckedContinuation { continuation in
-                SFSpeechRecognizer.requestAuthorization { status in
-                    continuation.resume(returning: status == .authorized)
-                }
-            }
-
-            guard speechAuthorized else {
-                error = "Speech recognition permission denied. Enable it in Settings."
-                return
-            }
-
-            let micAuthorized: Bool
-            if #available(iOS 17.0, *) {
-                micAuthorized = await AVAudioApplication.requestRecordPermission()
-            } else {
-                micAuthorized = await withCheckedContinuation { continuation in
-                    AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                        continuation.resume(returning: granted)
+        // Step 1: Check speech permission (no async/continuation)
+        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        switch speechStatus {
+        case .authorized:
+            checkMicrophoneAndBegin()
+        case .notDetermined:
+            // Callback fires on arbitrary thread — hop back via Task
+            SFSpeechRecognizer.requestAuthorization { status in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if status == .authorized {
+                        self.checkMicrophoneAndBegin()
+                    } else {
+                        self.error = "Speech recognition permission denied. Enable it in Settings."
                     }
                 }
             }
+        default:
+            error = "Speech recognition permission denied. Enable it in Settings."
+        }
+    }
 
-            guard micAuthorized else {
-                error = "Microphone permission denied. Enable it in Settings."
-                return
+    // MARK: - Step 2: Microphone Permission
+
+    private func checkMicrophoneAndBegin() {
+        if #available(iOS 17.0, *) {
+            Task {
+                let granted = await AVAudioApplication.requestRecordPermission()
+                guard granted else {
+                    error = "Microphone permission denied. Enable it in Settings."
+                    return
+                }
+                // Brief delay to let audio subsystem settle after fresh permission grant
+                try? await Task.sleep(for: .milliseconds(200))
+                beginRecording()
             }
-
-            beginRecording()
+        } else {
+            // Fallback for iOS < 17 — callback fires on arbitrary thread
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    guard granted else {
+                        self.error = "Microphone permission denied. Enable it in Settings."
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(200))
+                    self.beginRecording()
+                }
+            }
         }
     }
 
     // MARK: - Stop Recording
 
     func stopRecording() {
-        audioEngine?.stop()
-        audioEngine?.inputNode.removeTap(onBus: 0)
-        recognitionRequest?.endAudio()
         recognitionTask?.cancel()
-
-        audioEngine = nil
-        recognitionRequest = nil
         recognitionTask = nil
+
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+
+        audioEngine?.stop()
+        if let inputNode = audioEngine?.inputNode {
+            inputNode.removeTap(onBus: 0)
+        }
+        audioEngine = nil
+
         isRecording = false
+
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    // MARK: - Private
+    // MARK: - Begin Recording (audio engine + recognition)
 
     private func beginRecording() {
-        let audioEngine = AVAudioEngine()
-        let request = SFSpeechAudioBufferRecognitionRequest()
-
-        // Prefer on-device recognition if available
-        if speechRecognizer?.supportsOnDeviceRecognition == true {
-            request.requiresOnDeviceRecognition = true
-        }
-        request.shouldReportPartialResults = true
-
-        self.audioEngine = audioEngine
-        self.recognitionRequest = request
-
-        // Configure audio session
+        // 1. Configure audio session BEFORE creating engine
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
-            self.error = "Failed to configure audio session: \(error.localizedDescription)"
+            self.error = "Audio session error: \(error.localizedDescription)"
             return
         }
 
-        // Install audio tap
-        let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            request.append(buffer)
+        guard audioSession.isInputAvailable else {
+            self.error = "No microphone available on this device."
+            return
         }
 
-        // Start audio engine
+        // 2. Create engine AFTER audio session is fully active
+        let audioEngine = AVAudioEngine()
+        self.audioEngine = audioEngine
+
+        // 3. Create recognition request
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        if speechRecognizer?.supportsOnDeviceRecognition == true {
+            request.requiresOnDeviceRecognition = true
+        }
+        request.shouldReportPartialResults = true
+        self.recognitionRequest = request
+
+        // 4. Build a recording format from the hardware sample rate
+        let sampleRate = audioSession.sampleRate
+        guard sampleRate > 0 else {
+            self.error = "Could not determine audio sample rate."
+            cleanup()
+            return
+        }
+        guard let recordingFormat = AVAudioFormat(
+            standardFormatWithSampleRate: sampleRate,
+            channels: 1
+        ) else {
+            self.error = "Failed to create audio format."
+            cleanup()
+            return
+        }
+
+        // 5. Install audio tap
+        let inputNode = audioEngine.inputNode
+        nonisolated(unsafe) let audioRequest = request
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { @Sendable buffer, _ in
+            audioRequest.append(buffer)
+        }
+
+        // 6. Start engine
+        audioEngine.prepare()
         do {
-            audioEngine.prepare()
             try audioEngine.start()
         } catch {
-            self.error = "Failed to start audio engine: \(error.localizedDescription)"
+            self.error = "Audio engine error: \(error.localizedDescription)"
+            cleanup()
             return
         }
 
-        // Start recognition
-        recognitionTask = speechRecognizer?.recognitionTask(with: request) { [weak self] result, error in
+        // 7. Start recognition task
+        recognitionTask = speechRecognizer?.recognitionTask(with: request) { @Sendable [weak self] result, error in
+            // Extract Sendable values before crossing actor boundary
+            let transcriptText = result?.bestTranscription.formattedString
+            let errorDescription: String? = {
+                guard let error else { return nil }
+                let nsError = error as NSError
+                if nsError.domain == "kAFAssistantErrorDomain" &&
+                    (nsError.code == 216 || nsError.code == 209) {
+                    return nil
+                }
+                return error.localizedDescription
+            }()
+
             Task { @MainActor in
                 guard let self else { return }
 
-                if let result {
-                    self.transcript = result.bestTranscription.formattedString
+                if let transcriptText {
+                    self.transcript = transcriptText
                 }
 
-                if let error {
-                    // Ignore cancellation errors
-                    let nsError = error as NSError
-                    if nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 216 {
-                        // User cancelled - not a real error
-                        return
-                    }
-                    self.error = error.localizedDescription
+                if let errorDescription {
+                    self.error = errorDescription
                     self.stopRecording()
                 }
             }
         }
 
         isRecording = true
+    }
+
+    private func cleanup() {
+        audioEngine?.stop()
+        if let inputNode = audioEngine?.inputNode {
+            inputNode.removeTap(onBus: 0)
+        }
+        recognitionRequest?.endAudio()
+        recognitionTask?.cancel()
+        audioEngine = nil
+        recognitionRequest = nil
+        recognitionTask = nil
+        isRecording = false
     }
 }

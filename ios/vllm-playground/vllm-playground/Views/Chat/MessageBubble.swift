@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import MarkdownUI
 
 // MARK: - Emoji Detection
 
@@ -149,9 +150,8 @@ struct MessageBubble: View {
     // MARK: - Assistant Bubble
 
     private var assistantBubble: some View {
-        Text(MarkdownRenderer.renderFull(message.content))
-            .font(.body)
-            .foregroundStyle(AppColors.textPrimary)
+        Markdown(message.content)
+            .markdownTheme(.appTheme)
             .textSelection(.enabled)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)

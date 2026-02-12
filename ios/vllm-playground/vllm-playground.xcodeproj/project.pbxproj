@@ -24,6 +24,7 @@
 		3A2C8331D88618A39AF39981 /* BenchmarkResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 846AFBAFF2F4CE9BBC972993 /* BenchmarkResultsView.swift */; };
 		3D5ECAB6F155F7F8A05057D7 /* ToolSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D8EF2C724D0DB21C2C80482 /* ToolSettingsSheet.swift */; };
 		4568DDE846C323E1270AC2C5 /* OmniAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA54EF29AA11020192350446 /* OmniAPIClient.swift */; };
+		534374BEC330DE6786DD0BD4 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3B2BFCDF0513B8B3C9D02587 /* MarkdownUI */; };
 		590C229D7FD5A85F1B800EBC /* ServerStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BDA2040A9A520AF5B8095FC /* ServerStatusView.swift */; };
 		5B1EFB892FD8290867130569 /* CommandGeneratorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88C326D959B41F663829EC8D /* CommandGeneratorViewModel.swift */; };
 		5F62625C5228F3ED555701C0 /* ModelHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF8796A13157ECAF4A91F5CB /* ModelHubView.swift */; };
@@ -120,6 +121,17 @@
 		F962C800F326F8B480E6EC38 /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
 		FB71F10818104597E164870C /* AudioGenerationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioGenerationView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A8F1D3070CD4C7598CC75614 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				534374BEC330DE6786DD0BD4 /* MarkdownUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		0845D1E340435A6577C80910 = {
@@ -336,6 +348,7 @@
 			buildPhases = (
 				D95A97D1203C9156306C7784 /* Sources */,
 				C7E22C155EAC118CBC217C8A /* Resources */,
+				A8F1D3070CD4C7598CC75614 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -343,6 +356,7 @@
 			);
 			name = "vllm-playground";
 			packageProductDependencies = (
+				3B2BFCDF0513B8B3C9D02587 /* MarkdownUI */,
 			);
 			productName = "vllm-playground";
 			productReference = 5496C0825EFEB7663EC4CF97 /* vllm-playground.app */;
@@ -358,7 +372,7 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					F5446D7C7A2E429AAF948483 = {
-						DevelopmentTeam = "";
+						DevelopmentTeam = Q57GVDB537;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -373,6 +387,9 @@
 			);
 			mainGroup = 0845D1E340435A6577C80910;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				2974DA50029FC2755B705BCA /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
@@ -495,7 +512,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = Q57GVDB537;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -531,7 +548,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.vllm-playground.vllm-playground";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.micytao.vllm-playground";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -578,7 +595,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = Q57GVDB537;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -621,7 +638,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.vllm-playground.vllm-playground";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.micytao.vllm-playground";
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -651,6 +668,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		2974DA50029FC2755B705BCA /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		3B2BFCDF0513B8B3C9D02587 /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2974DA50029FC2755B705BCA /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 037E361E820809C050950EA1 /* Project object */;
 }

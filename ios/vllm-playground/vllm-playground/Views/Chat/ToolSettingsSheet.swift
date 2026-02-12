@@ -348,6 +348,8 @@ struct ToolSettingsSheet: View {
     }
 }
 
+#if DEBUG
 #Preview {
     ToolSettingsSheet(viewModel: ChatViewModel.preview())
 }
+#endif

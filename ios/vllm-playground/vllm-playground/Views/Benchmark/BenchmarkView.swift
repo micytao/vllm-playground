@@ -7,6 +7,7 @@ struct BenchmarkView: View {
     @Query(sort: \ServerProfile.name) private var servers: [ServerProfile]
     @Query(sort: \BenchmarkResult.createdAt, order: .reverse) private var results: [BenchmarkResult]
     @State private var viewModel = BenchmarkViewModel()
+    @State private var showServerPicker = false
 
     private var activeServer: ServerProfile? {
         servers.first(where: \.isDefault) ?? servers.first
@@ -80,8 +81,13 @@ struct BenchmarkView: View {
             paramSlider("Max Tokens", value: $viewModel.maxTokens, range: 32...2048)
 
             Button {
-                if viewModel.isRunning { viewModel.cancel() }
-                else { viewModel.run(context: modelContext) }
+                if viewModel.isRunning {
+                    viewModel.cancel()
+                } else if servers.count > 1 {
+                    showServerPicker = true
+                } else {
+                    viewModel.run(context: modelContext)
+                }
             } label: {
                 HStack {
                     if viewModel.isRunning {
@@ -97,6 +103,15 @@ struct BenchmarkView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .disabled(activeServer == nil)
+            .confirmationDialog("Select Server", isPresented: $showServerPicker, titleVisibility: .visible) {
+                ForEach(servers) { server in
+                    Button("\(server.name)\(server.isHealthy ? "" : " (offline)")") {
+                        viewModel.updateServer(server)
+                        viewModel.run(context: modelContext)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
         }
         .cardStyle()
     }
