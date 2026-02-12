@@ -37,6 +37,10 @@ env/
 .DS_Store
 Thumbs.db
 
+# Xcode user data
+*.xcuserstate
+xcuserdata/
+
 # Logs
 *.log
 logs/
