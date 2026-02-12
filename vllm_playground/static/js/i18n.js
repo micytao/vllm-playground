@@ -35,22 +35,11 @@ class I18n {
         // Store original texts before any translation
         this.storeOriginalTexts();
 
-        // Load saved language preference (no auto-detection, default to English)
-        const savedLocale = localStorage.getItem('vllm-locale');
+        // Start with default locale; loadSettings() in app.js will
+        // call setLocale() with the persisted value once it arrives.
+        this.setLocale(this.defaultLocale);
 
-        // Priority: saved > default (English)
-        // Note: We intentionally don't auto-detect browser language
-        // First visit always shows English, user can manually switch
-        let locale = savedLocale || this.defaultLocale;
-
-        // Ensure locale is available
-        if (!this.availableLocales[locale]) {
-            locale = this.defaultLocale;
-        }
-
-        this.setLocale(locale);
-
-        console.log(`[i18n] Initialized with locale: ${locale}`);
+        console.log(`[i18n] Initialized with locale: ${this.defaultLocale}`);
     }
 
     /**
@@ -111,7 +100,12 @@ class I18n {
         }
 
         this.currentLocale = locale;
-        localStorage.setItem('vllm-locale', locale);
+        // Persist locale to server settings (fire-and-forget)
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locale: locale })
+        }).catch(e => console.warn('Failed to save locale setting:', e));
 
         // Update all translatable elements
         this.updateDOM();

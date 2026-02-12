@@ -121,12 +121,12 @@
                                         <input type="radio" name="run-mode" id="run-mode-subprocess" value="subprocess">
                                         <span data-i18n="serverConfig.runMode.subprocess">⚡ Subprocess</span>
                                     </label>
-                                    <label class="mode-button active" id="run-mode-container-label">
-                                        <input type="radio" name="run-mode" id="run-mode-container" value="container" checked>
+                                    <label class="mode-button" id="run-mode-container-label">
+                                        <input type="radio" name="run-mode" id="run-mode-container" value="container">
                                         <span data-i18n="serverConfig.runMode.container">📦 Container</span>
                                     </label>
-                                    <label class="mode-button" id="run-mode-remote-label">
-                                        <input type="radio" name="run-mode" id="run-mode-remote" value="remote">
+                                    <label class="mode-button active" id="run-mode-remote-label">
+                                        <input type="radio" name="run-mode" id="run-mode-remote" value="remote" checked>
                                         <span data-i18n="serverConfig.runMode.remote">🌐 Remote</span>
                                     </label>
                                 </div>
@@ -136,8 +136,8 @@
                                 </div>
                             </div>
 
-                            <!-- Remote vLLM Settings - Only shown in Remote mode -->
-                            <div id="remote-settings-group" style="display: none;">
+                            <!-- Remote vLLM Settings - Shown in Remote mode (default) -->
+                            <div id="remote-settings-group">
                                 <div class="form-group">
                                     <label for="remote-url" data-i18n="serverConfig.remoteUrl.label">Remote vLLM URL</label>
                                     <input
@@ -159,6 +159,12 @@
                                         data-i18n-placeholder="serverConfig.remoteApiKey.placeholder"
                                     >
                                     <small class="form-help" data-i18n="serverConfig.remoteApiKey.help">Bearer token for authenticated vLLM endpoints</small>
+                                </div>
+
+                                <!-- Settings saved indicator -->
+                                <div id="settings-saved-indicator" class="settings-saved-row" style="display: none;">
+                                    <span class="settings-saved-text">Settings saved</span>
+                                    <button id="clear-saved-settings-btn" class="btn-link-small" title="Clear saved URL and API key">Clear</button>
                                 </div>
 
                                 <!-- Remote Server Info (populated after connecting) -->

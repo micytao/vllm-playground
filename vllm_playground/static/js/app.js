@@ -31,8 +31,8 @@ class VLLMWebUI {
         this.tools = [];  // Array of tool definitions
         this.editingToolIndex = -1;  // Index of tool being edited, -1 for new tool
 
-        // Theme state
-        this.currentTheme = localStorage.getItem('vllm-theme') || 'dark';
+        // Theme state (will be overridden by loadSettings() on init)
+        this.currentTheme = 'dark';
 
         // GuideLLM state
         this.guidellmAvailable = false;
@@ -311,7 +311,7 @@ class VLLMWebUI {
         // Initialize compute mode (CPU is default)
         this.toggleComputeMode();
 
-        // Initialize run mode (Subprocess is default)
+        // Initialize run mode (Remote is default, may be overridden by loadSettings)
         this.toggleRunMode();
 
         // Initialize model source (HF Hub is default)
@@ -339,6 +339,12 @@ class VLLMWebUI {
         document.getElementById('gpu-status-refresh').addEventListener('click', () => {
             this.fetchGpuStatus();
         });
+
+        // "Clear saved settings" button
+        const clearSettingsBtn = document.getElementById('clear-saved-settings-btn');
+        if (clearSettingsBtn) {
+            clearSettingsBtn.addEventListener('click', () => this.clearSavedSettings());
+        }
 
         // Tool Calling event listeners
         this.initToolCalling();
@@ -551,8 +557,164 @@ class VLLMWebUI {
     toggleTheme() {
         const newTheme = this.currentTheme === 'dark' ? 'light' : 'dark';
         this.applyTheme(newTheme);
-        localStorage.setItem('vllm-theme', newTheme);
+        this.saveSettings({ theme: newTheme });
         this.showNotification(`Switched to ${newTheme} mode`, 'info');
+    }
+
+    // ============ Settings Persistence ============
+
+    /**
+     * Load all settings from the server and apply them.
+     * Falls back to hardcoded defaults if the API is unreachable.
+     * Also handles one-time migration from localStorage for existing users.
+     */
+    async loadSettings() {
+        let settings;
+        try {
+            const resp = await fetch('/api/settings');
+            if (resp.ok) {
+                settings = await resp.json();
+            }
+        } catch (e) {
+            console.warn('Failed to load settings from server, using defaults:', e);
+        }
+
+        // Hardcoded fallback defaults (must match backend DEFAULTS)
+        if (!settings) {
+            settings = {
+                theme: 'dark',
+                locale: 'en',
+                layout: null,
+                vllm_run_mode: 'remote',
+                vllm_remote_url: '',
+                vllm_remote_api_key: '',
+                omni_run_mode: 'remote',
+                omni_remote_url: '',
+                omni_remote_api_key: ''
+            };
+        }
+
+        // --- Migration from localStorage (one-time upgrade path) ---
+        const lsTheme = localStorage.getItem('vllm-theme');
+        const lsLocale = localStorage.getItem('vllm-locale');
+        const lsLayout = localStorage.getItem('vllm-webui-layout');
+
+        if (lsTheme || lsLocale || lsLayout) {
+            const migrated = {};
+            if (lsTheme) { migrated.theme = lsTheme; settings.theme = lsTheme; }
+            if (lsLocale) { migrated.locale = lsLocale; settings.locale = lsLocale; }
+            if (lsLayout) {
+                try {
+                    migrated.layout = JSON.parse(lsLayout);
+                    settings.layout = migrated.layout;
+                } catch (e) { /* ignore bad layout JSON */ }
+            }
+            // Push migrated values to the server
+            this.saveSettings(migrated);
+            // Clear old localStorage keys
+            localStorage.removeItem('vllm-theme');
+            localStorage.removeItem('vllm-locale');
+            localStorage.removeItem('vllm-webui-layout');
+            console.log('[settings] Migrated localStorage preferences to server');
+        }
+
+        // --- Apply settings ---
+
+        // Theme
+        if (settings.theme) {
+            this.applyTheme(settings.theme);
+        }
+
+        // Layout
+        if (settings.layout) {
+            this.loadLayoutPreferences(settings.layout);
+        }
+
+        // Locale (pass to i18n module if available)
+        if (settings.locale && window.i18n && window.i18n.currentLocale !== settings.locale) {
+            window.i18n.setLocale(settings.locale);
+        }
+
+        // Run mode
+        if (settings.vllm_run_mode) {
+            const radio = document.getElementById(`run-mode-${settings.vllm_run_mode}`);
+            if (radio) {
+                radio.checked = true;
+                // Update active class on labels
+                document.querySelectorAll('.mode-toggle-buttons label[id^="run-mode-"]').forEach(label => {
+                    label.classList.remove('active');
+                });
+                const label = document.getElementById(`run-mode-${settings.vllm_run_mode}-label`);
+                if (label) label.classList.add('active');
+                this.toggleRunMode();
+            }
+        }
+
+        // Remote URL and API key
+        if (settings.vllm_remote_url) {
+            const urlInput = document.getElementById('remote-url');
+            if (urlInput) urlInput.value = settings.vllm_remote_url;
+        }
+        if (settings.vllm_remote_api_key) {
+            const keyInput = document.getElementById('remote-api-key');
+            if (keyInput) keyInput.value = settings.vllm_remote_api_key;
+        }
+
+        // Show "Settings saved" indicator if remote URL is saved
+        this.updateSettingsSavedIndicator(settings.vllm_remote_url);
+
+        // Store settings for Omni module to consume
+        this._serverSettings = settings;
+    }
+
+    /**
+     * Persist partial settings to the server (fire-and-forget).
+     */
+    saveSettings(updates) {
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+        }).catch(e => console.warn('Failed to save settings:', e));
+    }
+
+    /**
+     * Show/hide the "Settings saved" indicator based on whether
+     * a remote URL is persisted.
+     */
+    updateSettingsSavedIndicator(remoteUrl) {
+        const indicator = document.getElementById('settings-saved-indicator');
+        if (indicator) {
+            indicator.style.display = remoteUrl ? 'flex' : 'none';
+        }
+    }
+
+    /**
+     * Briefly flash the "Settings saved" text after a save.
+     */
+    flashSettingsSaved() {
+        const indicator = document.getElementById('settings-saved-indicator');
+        if (indicator) {
+            indicator.style.display = 'flex';
+            const text = indicator.querySelector('.settings-saved-text');
+            if (text) {
+                text.textContent = '✓ Settings saved';
+                setTimeout(() => { text.textContent = 'Settings saved'; }, 2000);
+            }
+        }
+    }
+
+    /**
+     * Clear saved remote URL and API key.
+     */
+    clearSavedSettings() {
+        this.saveSettings({ vllm_remote_url: '', vllm_remote_api_key: '' });
+        const urlInput = document.getElementById('remote-url');
+        const keyInput = document.getElementById('remote-api-key');
+        if (urlInput) urlInput.value = '';
+        if (keyInput) keyInput.value = '';
+        this.updateSettingsSavedIndicator('');
+        this.showNotification('Saved connection settings cleared', 'info');
     }
 
     // ============ i18n (Internationalization) ============
@@ -2415,7 +2577,7 @@ number ::= [0-9]+`
         }
 
         // Get run mode (subprocess, container, or remote)
-        let runMode = 'container';
+        let runMode = 'remote';
         if (document.getElementById('run-mode-subprocess').checked) {
             runMode = 'subprocess';
         } else if (document.getElementById('run-mode-remote').checked) {
@@ -2632,16 +2794,26 @@ number ::= [0-9]+`
                 this.populateRemoteServerInfo(data);
                 // Enable tool calling controls (assume remote supports it)
                 this.updateToolPanelStatus();
+                // Persist connection settings for next visit
+                this.saveSettings({
+                    vllm_run_mode: 'remote',
+                    vllm_remote_url: config.remote_url || '',
+                    vllm_remote_api_key: config.remote_api_key || ''
+                });
+                this.flashSettingsSaved();
+                this.updateSettingsSavedIndicator(config.remote_url);
             } else if (data.mode === 'container') {
                 this.addLog(`✅ Server started in container mode`, 'success');
                 this.addLog(`Container ID: ${data.container_id}`, 'info');
                 this.addLog('⏳ Waiting for server initialization...', 'info');
                 this.showNotification('Server started successfully', 'success');
+                this.saveSettings({ vllm_run_mode: 'container' });
             } else {
                 this.addLog(`✅ Server started in subprocess mode`, 'success');
                 this.addLog(`Process ID: ${data.pid}`, 'info');
                 this.addLog('⏳ Waiting for server initialization...', 'info');
                 this.showNotification('Server started successfully', 'success');
+                this.saveSettings({ vllm_run_mode: 'subprocess' });
             }
 
         } catch (error) {
@@ -4768,7 +4940,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         // Remove resizing class
         document.body.classList.remove('resizing', 'resizing-vertical');
 
-        // Save layout preferences to localStorage
+        // Save layout preferences to server
         this.saveLayoutPreferences();
     }
 
@@ -4779,19 +4951,12 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             metricsHeight: document.querySelector('.metrics-section .panel')?.offsetHeight
         };
 
-        try {
-            localStorage.setItem('vllm-webui-layout', JSON.stringify(layout));
-        } catch (e) {
-            console.warn('Could not save layout preferences:', e);
-        }
+        this.saveSettings({ layout: layout });
     }
 
-    loadLayoutPreferences() {
+    loadLayoutPreferences(layout) {
         try {
-            const saved = localStorage.getItem('vllm-webui-layout');
-            if (saved) {
-                const layout = JSON.parse(saved);
-
+            if (layout) {
                 if (layout.configWidth) {
                     const configPanel = document.getElementById('config-panel');
                     if (configPanel) configPanel.style.width = `${layout.configWidth}px`;
@@ -4801,7 +4966,6 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                     const logsPanel = document.getElementById('logs-panel');
                     if (logsPanel) logsPanel.style.width = `${layout.logsWidth}px`;
                 }
-
 
                 if (layout.metricsHeight) {
                     const metricsPanel = document.querySelector('.metrics-section .panel');
@@ -6569,8 +6733,8 @@ document.head.appendChild(style);
 document.addEventListener('DOMContentLoaded', () => {
     window.vllmUI = new VLLMWebUI();
 
-    // Load saved layout preferences
-    window.vllmUI.loadLayoutPreferences();
+    // Load settings from server and apply (theme, locale, layout, run mode, remote URL/key)
+    window.vllmUI.loadSettings();
 
     // Add cleanup on page unload
     window.addEventListener('beforeunload', () => {

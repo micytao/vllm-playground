@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any, Literal, Union
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -96,6 +96,11 @@ omni_websocket_connections: List[WebSocket] = []
 
 # In-process model for Stable Audio (bypasses broken vLLM-Omni serving layer)
 omni_inprocess_model: Optional[Any] = None  # Holds the Omni model when using in-process mode
+
+# User settings store (persists to ~/.vllm-playground/settings.json)
+from .settings_store import SettingsStore
+
+settings_store = SettingsStore()
 
 
 def get_model_name_for_api() -> Optional[str]:
@@ -1121,6 +1126,19 @@ async def test_vllm_connection():
         return {"success": False, "error": str(e), "error_type": type(e).__name__, "url_tested": health_url}
 
 
+@app.get("/api/settings")
+async def get_settings():
+    """Return all user settings (merged with defaults)."""
+    return settings_store.get()
+
+
+@app.post("/api/settings")
+async def save_settings(request: Request):
+    """Merge partial updates into user settings and persist to disk."""
+    data = await request.json()
+    return settings_store.update(data)
+
+
 @app.get("/api/features")
 async def get_features():
     """Check which optional features are available.
@@ -1975,16 +1993,13 @@ async def start_server(config: VLLMConfig):
         if not config.remote_url:
             raise HTTPException(
                 status_code=400,
-                detail="Remote URL is required for remote mode. Provide the base URL of a running vLLM instance (e.g., http://gpu-server:8000)."
+                detail="Remote URL is required for remote mode. Provide the base URL of a running vLLM instance (e.g., http://gpu-server:8000).",
             )
 
         # Basic URL validation
         remote_url = config.remote_url.rstrip("/")
         if not remote_url.startswith(("http://", "https://")):
-            raise HTTPException(
-                status_code=400,
-                detail="Remote URL must start with http:// or https://"
-            )
+            raise HTTPException(status_code=400, detail="Remote URL must start with http:// or https://")
 
         await broadcast_log(f"[WEBUI] Run mode: REMOTE")
         await broadcast_log(f"[WEBUI] Connecting to remote vLLM instance at {remote_url}...")
@@ -2011,11 +2026,12 @@ async def start_server(config: VLLMConfig):
                             await broadcast_log("[WEBUI] ✓ Remote server is healthy")
                         else:
                             text = await response.text()
-                            await broadcast_log(f"[WEBUI] ⚠ Health check returned status {response.status}: {text[:200]}")
+                            await broadcast_log(
+                                f"[WEBUI] ⚠ Health check returned status {response.status}: {text[:200]}"
+                            )
                 except aiohttp.ClientError as e:
                     raise HTTPException(
-                        status_code=400,
-                        detail=f"Cannot connect to remote vLLM instance at {remote_url}: {str(e)}"
+                        status_code=400, detail=f"Cannot connect to remote vLLM instance at {remote_url}: {str(e)}"
                     )
 
                 # Probe /v1/models to discover served models and their details
@@ -2086,10 +2102,7 @@ async def start_server(config: VLLMConfig):
             raise
         except Exception as e:
             logger.error(f"Failed to connect to remote vLLM: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to connect to remote vLLM instance: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to connect to remote vLLM instance: {str(e)}")
 
     # =========================================================================
     # Subprocess / Container mode - launch a local vLLM instance
@@ -5345,7 +5358,9 @@ async def start_omni_server(config: OmniConfig):
                                 ]
                                 await broadcast_omni_log(f"[OMNI] ✅ Remote models: {', '.join(model_ids)}")
                                 if models_raw and models_raw[0].get("max_model_len"):
-                                    await broadcast_omni_log(f"[OMNI] ✅ Max context length: {models_raw[0]['max_model_len']}")
+                                    await broadcast_omni_log(
+                                        f"[OMNI] ✅ Max context length: {models_raw[0]['max_model_len']}"
+                                    )
                                 if model_ids:
                                     # Auto-set model name if available
                                     config.model = model_ids[0]
@@ -5686,7 +5701,9 @@ async def generate_omni_image(request: ImageGenerationRequest):
         logger.info(f"Sending image generation request to vLLM-Omni: {omni_url}")
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(omni_url, json=payload, headers=omni_headers, timeout=aiohttp.ClientTimeout(total=300)) as response:
+            async with session.post(
+                omni_url, json=payload, headers=omni_headers, timeout=aiohttp.ClientTimeout(total=300)
+            ) as response:
                 if response.status != 200:
                     error_text = await response.text()
                     logger.error(f"vLLM-Omni error: {error_text}")

@@ -26,6 +26,15 @@ export function initOmniModule(ui) {
     // Make OmniModule globally accessible for retry button
     window.OmniModule = OmniModule;
 
+    // Load persisted Omni settings (run mode, remote URL, API key)
+    OmniModule.loadOmniSettings();
+
+    // Wire up "Clear saved settings" button for Omni
+    const clearBtn = document.getElementById('omni-clear-saved-settings-btn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => OmniModule.clearOmniSavedSettings());
+    }
+
     console.log('vLLM-Omni module initialized, available:', OmniModule.available);
     console.log('vLLM-Omni: ModelScope installed:', OmniModule.modelscopeInstalled);
 }
@@ -2132,6 +2141,12 @@ export const OmniModule = {
                     }
                     // Populate remote server info panel
                     this.populateOmniRemoteServerInfo(result);
+                    // Persist Omni connection settings
+                    this.saveOmniSettings({
+                        omni_run_mode: 'remote',
+                        omni_remote_url: config.remote_url || '',
+                        omni_remote_api_key: config.remote_api_key || ''
+                    });
                 }
                 // In-process mode: model is already loaded and ready
                 else if (result.mode === 'inprocess') {
@@ -2139,11 +2154,13 @@ export const OmniModule = {
                     this.updateServerStatus(true, true);
                     this.ui.showNotification('Stable Audio model loaded and ready!', 'success');
                     this.addLog(`✅ Model loaded in-process mode (no API server needed)`);
+                    this.saveOmniSettings({ omni_run_mode: 'inprocess' });
                 } else {
                     this.serverReady = false;  // Not ready yet, still loading
                     this.updateServerStatus(true, false);
                     this.ui.showNotification('vLLM-Omni server started - loading model...', 'info');
                     this.addLog(`✅ Server started in ${result.mode} mode on port ${result.port}`);
+                    this.saveOmniSettings({ omni_run_mode: result.mode });
                     // Health check polling will be triggered by log messages (watching for "Uvicorn running")
                     // For container mode, also start polling after a delay as logs may be delayed
                     if (result.mode === 'container') {
@@ -2221,7 +2238,7 @@ export const OmniModule = {
     },
 
     buildConfig() {
-        const runMode = document.querySelector('input[name="omni-run-mode"]:checked')?.value || 'subprocess';
+        const runMode = document.querySelector('input[name="omni-run-mode"]:checked')?.value || 'remote';
         const useModelscope = document.getElementById('omni-model-source-modelscope')?.checked || false;
         const hfToken = document.getElementById('omni-hf-token')?.value?.trim() || null;
 
@@ -2273,7 +2290,7 @@ export const OmniModule = {
         if (this.commandManuallyEdited) return;
 
         const config = this.buildConfig();
-        const runMode = document.querySelector('input[name="omni-run-mode"]:checked')?.value || 'subprocess';
+        const runMode = document.querySelector('input[name="omni-run-mode"]:checked')?.value || 'remote';
 
         let command = '';
 
@@ -3678,6 +3695,106 @@ export const OmniModule = {
         document.body.classList.remove('resizing');
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+    },
+
+    // =========================================================================
+    // Settings Persistence
+    // =========================================================================
+
+    /**
+     * Load Omni settings from the server and apply them.
+     * Uses settings already fetched by the main app if available.
+     */
+    async loadOmniSettings() {
+        let settings;
+        try {
+            // Prefer settings already fetched by the main app
+            if (this.ui && this.ui._serverSettings) {
+                settings = this.ui._serverSettings;
+            } else {
+                const resp = await fetch('/api/settings');
+                if (resp.ok) settings = await resp.json();
+            }
+        } catch (e) {
+            console.warn('[Omni] Failed to load settings:', e);
+        }
+
+        if (!settings) return;
+
+        // Apply Omni run mode
+        if (settings.omni_run_mode) {
+            const radio = document.getElementById(`omni-run-mode-${settings.omni_run_mode}`);
+            if (radio) {
+                radio.checked = true;
+                // Update active class on labels
+                document.querySelectorAll('#omni-run-mode-toggle label').forEach(label => {
+                    label.classList.remove('active');
+                });
+                const label = document.getElementById(`omni-run-mode-${settings.omni_run_mode}-label`);
+                if (label) label.classList.add('active');
+                // Trigger run mode toggle to show/hide panels
+                this.onRunModeChange(settings.omni_run_mode);
+            }
+        }
+
+        // Apply remote URL and API key
+        if (settings.omni_remote_url) {
+            const urlInput = document.getElementById('omni-remote-url');
+            if (urlInput) urlInput.value = settings.omni_remote_url;
+        }
+        if (settings.omni_remote_api_key) {
+            const keyInput = document.getElementById('omni-remote-api-key');
+            if (keyInput) keyInput.value = settings.omni_remote_api_key;
+        }
+
+        // Show indicator if URL is saved
+        this.updateOmniSettingsIndicator(settings.omni_remote_url);
+    },
+
+    /**
+     * Save Omni settings (fire-and-forget).
+     */
+    saveOmniSettings(updates) {
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+        }).then(() => {
+            this.updateOmniSettingsIndicator(updates.omni_remote_url);
+            // Flash saved indicator
+            const indicator = document.getElementById('omni-settings-saved-indicator');
+            if (indicator && updates.omni_remote_url) {
+                indicator.style.display = 'flex';
+                const text = indicator.querySelector('.settings-saved-text');
+                if (text) {
+                    text.textContent = '✓ Settings saved';
+                    setTimeout(() => { text.textContent = 'Settings saved'; }, 2000);
+                }
+            }
+        }).catch(e => console.warn('[Omni] Failed to save settings:', e));
+    },
+
+    /**
+     * Show/hide the Omni "Settings saved" indicator.
+     */
+    updateOmniSettingsIndicator(remoteUrl) {
+        const indicator = document.getElementById('omni-settings-saved-indicator');
+        if (indicator) {
+            indicator.style.display = remoteUrl ? 'flex' : 'none';
+        }
+    },
+
+    /**
+     * Clear saved Omni remote URL and API key.
+     */
+    clearOmniSavedSettings() {
+        this.saveOmniSettings({ omni_remote_url: '', omni_remote_api_key: '' });
+        const urlInput = document.getElementById('omni-remote-url');
+        const keyInput = document.getElementById('omni-remote-api-key');
+        if (urlInput) urlInput.value = '';
+        if (keyInput) keyInput.value = '';
+        this.updateOmniSettingsIndicator('');
+        if (this.ui) this.ui.showNotification('Saved Omni connection settings cleared', 'info');
     },
 
     // =========================================================================
