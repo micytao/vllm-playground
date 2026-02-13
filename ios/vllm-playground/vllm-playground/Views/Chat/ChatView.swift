@@ -48,6 +48,7 @@ struct ChatView: View {
     @State private var cameraImageData: Data?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var showErrorDetails = false
+    @State private var voiceChatViewModel: VoiceChatViewModel?
 
     init(conversation: Conversation, serverProfile: ServerProfile?) {
         _viewModel = State(initialValue: ChatViewModel(
@@ -79,6 +80,26 @@ struct ChatView: View {
                     attachmentPreview
                 }
 
+                // Structured output indicator
+                if viewModel.structuredOutput != nil {
+                    HStack(spacing: 6) {
+                        Image(systemName: "text.badge.checkmark")
+                            .font(.caption2)
+                        Text("Structured Output: \(viewModel.structuredOutput!.displayName)")
+                            .font(.caption2)
+                        Spacer()
+                        Button { viewModel.structuredOutput = nil } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption2)
+                                .foregroundStyle(AppColors.textTertiary)
+                        }
+                    }
+                    .foregroundStyle(AppColors.appPrimary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(AppColors.appPrimary.opacity(0.08))
+                }
+
                 // Input bar
                 ChatInputBar(
                     text: $inputText,
@@ -86,7 +107,8 @@ struct ChatView: View {
                     onSend: sendMessage,
                     onImagePicker: { showImagePicker = true },
                     onCameraPicker: { showCameraPicker = true },
-                    onStop: { viewModel.stopStreaming() }
+                    onStop: { viewModel.stopStreaming() },
+                    onVoiceMode: { openVoiceMode() }
                 )
             }
         }
@@ -109,6 +131,9 @@ struct ChatView: View {
         .fullScreenCover(isPresented: $showCameraPicker) {
             CameraPicker(imageData: $cameraImageData)
                 .ignoresSafeArea()
+        }
+        .fullScreenCover(item: $voiceChatViewModel) { vm in
+            VoiceChatView(viewModel: vm, conversation: viewModel.conversation)
         }
         .onChange(of: selectedPhotoItem) { _, newItem in
             loadImage(from: newItem)
@@ -237,6 +262,16 @@ struct ChatView: View {
     }
 
     // MARK: - Actions
+
+    private func openVoiceMode() {
+        voiceChatViewModel = VoiceChatViewModel(
+            serverProfile: viewModel.conversation.serverProfile,
+            model: viewModel.selectedModel,
+            systemPrompt: viewModel.systemPrompt,
+            temperature: viewModel.temperature,
+            maxTokens: viewModel.maxTokens
+        )
+    }
 
     private func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)

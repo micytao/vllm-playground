@@ -10,6 +10,7 @@ enum AppSection: String, CaseIterable {
     case commandGen
     case apiFinder
     case servers
+    case tutorials
     case settings
 }
 
@@ -104,6 +105,8 @@ struct ContentView: View {
             APIFinderView()
         case .servers:
             ServerListView()
+        case .tutorials:
+            TutorialsView()
         case .settings:
             AppSettingsView()
         }
@@ -294,7 +297,18 @@ struct SidebarView: View {
 
             Divider().background(AppColors.border)
 
-            // Bottom: Settings
+            // Bottom: Tutorials & Settings
+            SidebarButton(
+                icon: "graduationcap",
+                title: "Tutorials",
+                isSelected: selectedSection == .tutorials
+            ) {
+                selectedSection = .tutorials
+                onSelect?()
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+
             SidebarButton(
                 icon: "gear",
                 title: "Settings",
@@ -304,7 +318,7 @@ struct SidebarView: View {
                 onSelect?()
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 8)
+            .padding(.bottom, 8)
         }
         .background(AppColors.sidebarBg)
         .confirmationDialog(

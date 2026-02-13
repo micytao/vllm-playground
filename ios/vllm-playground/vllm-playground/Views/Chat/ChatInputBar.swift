@@ -7,10 +7,10 @@ struct ChatInputBar: View {
     let onImagePicker: () -> Void
     let onCameraPicker: () -> Void
     let onStop: () -> Void
+    let onVoiceMode: () -> Void
     @State private var showAttachMenu = false
 
     @FocusState private var isFocused: Bool
-    @State private var speechService = SpeechService()
 
     private var textIsEmpty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -18,46 +18,6 @@ struct ChatInputBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Live transcription preview
-            if speechService.isRecording, !speechService.transcript.isEmpty {
-                HStack(spacing: 8) {
-                    Image(systemName: "waveform")
-                        .font(.caption)
-                        .foregroundStyle(AppColors.appRed)
-                    Text(speechService.transcript)
-                        .font(.footnote)
-                        .foregroundStyle(AppColors.textSecondary)
-                        .lineLimit(2)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(AppColors.cardBg)
-            }
-
-            // Speech error
-            if let error = speechService.error {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(AppColors.appRed)
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(AppColors.appRed)
-                    Spacer()
-                    Button {
-                        speechService.error = nil
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(AppColors.textTertiary)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-                .background(AppColors.appRed.opacity(0.1))
-            }
-
             // Thin top border
             Divider()
                 .background(AppColors.border)
@@ -71,8 +31,8 @@ struct ChatInputBar: View {
                         .font(.title2)
                         .foregroundStyle(AppColors.appPrimary)
                 }
-                .disabled(isStreaming || speechService.isRecording)
-                .opacity((isStreaming || speechService.isRecording) ? 0.4 : 1)
+                .disabled(isStreaming)
+                .opacity(isStreaming ? 0.4 : 1)
                 .padding(.bottom, 6)
                 .confirmationDialog("Add Attachment", isPresented: $showAttachMenu, titleVisibility: .hidden) {
                     Button {
@@ -102,7 +62,18 @@ struct ChatInputBar: View {
                         RoundedRectangle(cornerRadius: 20)
                             .stroke(isFocused ? AppColors.appPrimary.opacity(0.5) : AppColors.border, lineWidth: 1)
                     )
-                    .disabled(speechService.isRecording)
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button {
+                                isFocused = false
+                            } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(AppColors.textSecondary)
+                            }
+                        }
+                    }
 
                 // Action button
                 actionButton
@@ -129,35 +100,15 @@ struct ChatInputBar: View {
                     .clipShape(Circle())
             }
             .padding(.bottom, 4)
-        } else if speechService.isRecording {
-            // Stop recording — pulsing red mic
-            Button(action: stopRecordingAndApply) {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(AppColors.appRed)
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle()
-                            .stroke(AppColors.appRed.opacity(0.4), lineWidth: 3)
-                            .scaleEffect(1.4)
-                    )
-            }
-            .padding(.bottom, 4)
         } else if textIsEmpty {
-            // Mic button
-            Button(action: { speechService.startRecording() }) {
-                Image(systemName: "mic.fill")
+            // Voice mode button
+            Button(action: onVoiceMode) {
+                Image(systemName: "waveform.circle.fill")
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(AppColors.textSecondary)
+                    .foregroundStyle(AppColors.appPrimary)
                     .frame(width: 34, height: 34)
-                    .background(AppColors.inputBg)
+                    .background(AppColors.appPrimary.opacity(0.12))
                     .clipShape(Circle())
-                    .overlay(
-                        Circle()
-                            .stroke(AppColors.border, lineWidth: 1)
-                    )
             }
             .padding(.bottom, 4)
         } else {
@@ -173,21 +124,6 @@ struct ChatInputBar: View {
             .padding(.bottom, 4)
         }
     }
-
-    // MARK: - Actions
-
-    private func stopRecordingAndApply() {
-        let transcribedText = speechService.transcript
-        speechService.stopRecording()
-
-        if !transcribedText.isEmpty {
-            if text.isEmpty {
-                text = transcribedText
-            } else {
-                text += " " + transcribedText
-            }
-        }
-    }
 }
 
 #Preview {
@@ -199,7 +135,8 @@ struct ChatInputBar: View {
             onSend: {},
             onImagePicker: {},
             onCameraPicker: {},
-            onStop: {}
+            onStop: {},
+            onVoiceMode: {}
         )
     }
     .background(AppColors.pageBg)

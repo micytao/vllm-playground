@@ -9,12 +9,17 @@ enum StreamEvent: Sendable {
 
 // MARK: - API Types
 
+struct StreamOptionsPayload: Encodable, Sendable {
+    let include_usage: Bool
+}
+
 struct ChatCompletionRequest: Encodable {
     var model: String
     var messages: [ChatMessagePayload]
     var temperature: Double
     var max_tokens: Int
     var stream: Bool
+    var stream_options: StreamOptionsPayload?
 
     // Tool calling (optional)
     var tools: [ToolDefinition]?
@@ -26,7 +31,7 @@ struct ChatCompletionRequest: Encodable {
     var structured_outputs: StructuredOutputsPayload?
 
     enum CodingKeys: String, CodingKey {
-        case model, messages, temperature, max_tokens, stream
+        case model, messages, temperature, max_tokens, stream, stream_options
         case tools, tool_choice, parallel_tool_calls
         case response_format, structured_outputs
     }
@@ -35,9 +40,12 @@ struct ChatCompletionRequest: Encodable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(model, forKey: .model)
         try container.encode(messages, forKey: .messages)
-        try container.encode(temperature, forKey: .temperature)
+        // Use Decimal to avoid Double's IEEE 754 artifacts (e.g. 0.7 → 0.69999999999999996)
+        let roundedTemp = Decimal(string: String(format: "%.1f", temperature)) ?? Decimal(temperature)
+        try container.encode(roundedTemp, forKey: .temperature)
         try container.encode(max_tokens, forKey: .max_tokens)
         try container.encode(stream, forKey: .stream)
+        try container.encodeIfPresent(stream_options, forKey: .stream_options)
         try container.encodeIfPresent(tools, forKey: .tools)
         try container.encodeIfPresent(tool_choice, forKey: .tool_choice)
         try container.encodeIfPresent(parallel_tool_calls, forKey: .parallel_tool_calls)
@@ -145,6 +153,16 @@ enum ToolChoiceValue: Encodable, Sendable {
 struct ResponseFormatPayload: Encodable, Sendable {
     let type: String
     let json_schema: JsonSchemaPayload?
+
+    enum CodingKeys: String, CodingKey {
+        case type, json_schema
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encodeIfPresent(json_schema, forKey: .json_schema)
+    }
 }
 
 struct JsonSchemaPayload: Encodable, Sendable {
@@ -156,6 +174,17 @@ struct StructuredOutputsPayload: Encodable, Sendable {
     let choice: [String]?
     let regex: String?
     let grammar: String?
+
+    enum CodingKeys: String, CodingKey {
+        case choice, regex, grammar
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(choice, forKey: .choice)
+        try container.encodeIfPresent(regex, forKey: .regex)
+        try container.encodeIfPresent(grammar, forKey: .grammar)
+    }
 }
 
 // MARK: - Tool Call Response Types
@@ -482,6 +511,7 @@ final class VLLMAPIClient: VLLMAPIClientProtocol, @unchecked Sendable {
                 do {
                     var streamBody = body
                     streamBody.stream = true
+                    streamBody.stream_options = StreamOptionsPayload(include_usage: true)
 
                     let request = try buildChatRequest(baseURL: baseURL, apiKey: apiKey, body: streamBody)
 
@@ -492,11 +522,18 @@ final class VLLMAPIClient: VLLMAPIClientProtocol, @unchecked Sendable {
                         return
                     }
 
+                    #if DEBUG
+                    print("[VLLMAPIClient] Stream response status: \(httpResponse.statusCode)")
+                    #endif
+
                     if httpResponse.statusCode != 200 {
                         var errorBody = ""
                         for try await line in bytes.lines {
                             errorBody += line
                         }
+                        #if DEBUG
+                        print("[VLLMAPIClient] Stream error body: \(errorBody)")
+                        #endif
                         continuation.finish(throwing: VLLMAPIError.httpError(
                             statusCode: httpResponse.statusCode, body: errorBody
                         ))
@@ -599,6 +636,22 @@ final class VLLMAPIClient: VLLMAPIClientProtocol, @unchecked Sendable {
         applyAuth(&request, apiKey: apiKey)
 
         request.httpBody = try encoder.encode(body)
+
+        #if DEBUG
+        if let httpBody = request.httpBody {
+            if let json = String(data: httpBody, encoding: .utf8) {
+                print("[VLLMAPIClient] Request URL: \(url)")
+                print("[VLLMAPIClient] Request body: \(json)")
+            }
+            // Pretty-print for readability
+            if let jsonObj = try? JSONSerialization.jsonObject(with: httpBody),
+               let pretty = try? JSONSerialization.data(withJSONObject: jsonObj, options: [.prettyPrinted, .sortedKeys]),
+               let prettyStr = String(data: pretty, encoding: .utf8) {
+                print("[VLLMAPIClient] Pretty request:\n\(prettyStr)")
+            }
+        }
+        #endif
+
         return request
     }
 

@@ -31,8 +31,8 @@ final class SpeechService {
         case .authorized:
             checkMicrophoneAndBegin()
         case .notDetermined:
-            // Callback fires on arbitrary thread — hop back via Task
-            SFSpeechRecognizer.requestAuthorization { status in
+            // Callback fires on arbitrary thread — must be @Sendable to avoid @MainActor assertion
+            SFSpeechRecognizer.requestAuthorization { @Sendable status in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     if status == .authorized {
@@ -63,7 +63,7 @@ final class SpeechService {
             }
         } else {
             // Fallback for iOS < 17 — callback fires on arbitrary thread
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+            AVAudioSession.sharedInstance().requestRecordPermission { @Sendable granted in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     guard granted else {

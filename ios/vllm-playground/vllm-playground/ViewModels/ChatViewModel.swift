@@ -146,6 +146,15 @@ final class ChatViewModel {
         // Add structured output if configured
         if let config = structuredOutput {
             config.applyTo(request: &request)
+            #if DEBUG
+            print("[ChatViewModel] Structured output applied: \(config.displayName)")
+            print("[ChatViewModel] request.structured_outputs is nil: \(request.structured_outputs == nil)")
+            print("[ChatViewModel] request.response_format is nil: \(request.response_format == nil)")
+            #endif
+        } else {
+            #if DEBUG
+            print("[ChatViewModel] No structured output configured")
+            #endif
         }
 
         if !tools.isEmpty {
@@ -333,6 +342,12 @@ final class ChatViewModel {
         if !tools.isEmpty {
             request.tools = tools
             request.tool_choice = toolChoice == "none" ? .none : .auto
+            if parallelToolCalls { request.parallel_tool_calls = true }
+        }
+
+        // Add structured output if configured
+        if let config = structuredOutput {
+            config.applyTo(request: &request)
         }
 
         sendWithToolCalls(request: request, profile: profile, apiKey: apiKey, context: context)

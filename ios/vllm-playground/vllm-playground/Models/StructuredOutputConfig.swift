@@ -34,6 +34,10 @@ enum StructuredOutputConfig: Equatable {
                     type: "json_schema",
                     json_schema: JsonSchemaPayload(name: name, schema: schemaValue)
                 )
+            } else {
+                #if DEBUG
+                print("[StructuredOutput] Failed to parse JSON schema: \(schema.prefix(200))")
+                #endif
             }
 
         case .choice(let choices):

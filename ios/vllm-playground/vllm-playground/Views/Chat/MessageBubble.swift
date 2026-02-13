@@ -216,14 +216,14 @@ struct MessageBubble: View {
                     Image(systemName: showMetrics ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8, weight: .bold))
                 }
-                .foregroundStyle(AppColors.textTertiary)
+                .foregroundStyle(AppColors.textSecondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(AppColors.inputBg)
+                .background(AppColors.textSecondary.opacity(0.12))
                 .clipShape(Capsule())
                 .overlay(
                     Capsule()
-                        .stroke(AppColors.border, lineWidth: 1)
+                        .stroke(AppColors.textSecondary.opacity(0.2), lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -265,7 +265,7 @@ struct MessageBubble: View {
                     .foregroundStyle(tint)
                 Text(label)
                     .font(.caption2)
-                    .foregroundStyle(AppColors.textTertiary)
+                    .foregroundStyle(tint)
             }
             Text(value)
                 .font(.footnote.monospacedDigit().weight(.semibold))
