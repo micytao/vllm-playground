@@ -1,14 +1,20 @@
 import SwiftUI
+import SwiftData
 import AVFoundation
 
 struct AudioGenerationView: View {
     @Bindable var viewModel: OmniViewModel
+    @Query(sort: \GeneratedAudio.createdAt, order: .reverse) private var audioList: [GeneratedAudio]
     @State private var audioPlayer: AVAudioPlayer?
     @State private var isPlaying = false
-    @State private var currentlyPlayingIndex: Int?
+    @State private var currentlyPlayingID: UUID?
     @State private var showTemplates = false
     @State private var showNegativePrompt = false
     @State private var showAdvanced = false
+
+    init(viewModel: OmniViewModel) {
+        self.viewModel = viewModel
+    }
 
     var body: some View {
         ScrollView {
@@ -173,14 +179,14 @@ struct AudioGenerationView: View {
                 .disabled(viewModel.audioPrompt.isEmpty || viewModel.isGeneratingAudio)
 
                 // Generated audio list or empty state
-                if viewModel.generatedAudioList.isEmpty {
+                if audioList.isEmpty {
                     emptyState
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
                         sectionLabel("Generated Audio")
 
-                        ForEach(Array(viewModel.generatedAudioList.enumerated()), id: \.element.id) { index, item in
-                            audioCard(item: item, index: index)
+                        ForEach(audioList) { item in
+                            audioCard(item: item)
                         }
                     }
                 }
@@ -275,8 +281,8 @@ struct AudioGenerationView: View {
 
     // MARK: - Audio Card
 
-    private func audioCard(item: AudioItem, index: Int) -> some View {
-        let isCurrentlyPlaying = isPlaying && currentlyPlayingIndex == index
+    private func audioCard(item: GeneratedAudio) -> some View {
+        let isCurrentlyPlaying = isPlaying && currentlyPlayingID == item.id
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
@@ -291,10 +297,22 @@ struct AudioGenerationView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.prompt)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(AppColors.textPrimary)
-                        .lineLimit(2)
+                    HStack(spacing: 6) {
+                        Text(item.prompt)
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(AppColors.textPrimary)
+                            .lineLimit(2)
+
+                        if item.demoText != nil {
+                            Text("DEMO")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(AppColors.appWarning)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(AppColors.appWarning.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                    }
 
                     Text(item.createdAt, style: .relative)
                         .font(.caption2)
@@ -308,7 +326,7 @@ struct AudioGenerationView: View {
             }
 
             HStack(spacing: 12) {
-                Button { togglePlayback(for: index) } label: {
+                Button { togglePlayback(for: item) } label: {
                     HStack(spacing: 6) {
                         Image(systemName: isCurrentlyPlaying ? "pause.fill" : "play.fill")
                             .font(.caption)
@@ -341,11 +359,12 @@ struct AudioGenerationView: View {
                 Spacer()
 
                 Button {
-                    if currentlyPlayingIndex == index {
+                    if currentlyPlayingID == item.id {
                         stopPlayback()
                     }
                     withAnimation(.spring(response: 0.3)) {
-                        viewModel.generatedAudioList.remove(at: index)
+                        viewModel.modelContext?.delete(item)
+                        try? viewModel.modelContext?.save()
                     }
                 } label: {
                     Image(systemName: "trash")
@@ -365,10 +384,11 @@ struct AudioGenerationView: View {
 
     // MARK: - Helpers
 
-    private func sectionLabel(_ text: String) -> some View {
-        Text(text.uppercased())
+    private func sectionLabel(_ text: LocalizedStringKey) -> some View {
+        Text(text)
             .font(.footnote.weight(.semibold))
             .foregroundStyle(AppColors.textSecondary)
+            .textCase(.uppercase)
     }
 
     private func settingCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -380,8 +400,23 @@ struct AudioGenerationView: View {
 
     // MARK: - Playback
 
-    private func togglePlayback(for index: Int) {
-        if currentlyPlayingIndex == index, let player = audioPlayer {
+    private func togglePlayback(for item: GeneratedAudio) {
+        // Demo items use AVSpeechSynthesizer for playback
+        if let demoText = item.demoText {
+            if currentlyPlayingID == item.id && viewModel.isDemoSpeaking {
+                viewModel.stopDemoSpeech()
+                isPlaying = false
+            } else {
+                stopPlayback()
+                viewModel.speakWithSynthesizer(demoText)
+                isPlaying = true
+                currentlyPlayingID = item.id
+            }
+            return
+        }
+
+        // Real items use AVAudioPlayer
+        if currentlyPlayingID == item.id, let player = audioPlayer {
             if player.isPlaying {
                 player.pause()
                 isPlaying = false
@@ -391,13 +426,12 @@ struct AudioGenerationView: View {
             }
         } else {
             stopPlayback()
-            let data = viewModel.generatedAudioList[index].data
             do {
-                audioPlayer = try AVAudioPlayer(data: data)
+                audioPlayer = try AVAudioPlayer(data: item.audioData)
                 audioPlayer?.prepareToPlay()
                 audioPlayer?.play()
                 isPlaying = true
-                currentlyPlayingIndex = index
+                currentlyPlayingID = item.id
             } catch {
                 viewModel.error = "Failed to play audio: \(error.localizedDescription)"
             }
@@ -405,11 +439,12 @@ struct AudioGenerationView: View {
     }
 
     private func stopPlayback() {
+        viewModel.stopDemoSpeech()
         audioPlayer?.stop()
         audioPlayer?.currentTime = 0
         audioPlayer = nil
         isPlaying = false
-        currentlyPlayingIndex = nil
+        currentlyPlayingID = nil
     }
 }
 
@@ -497,4 +532,5 @@ private struct AudioTemplateSheet: View {
 
 #Preview {
     AudioGenerationView(viewModel: OmniViewModel())
+        .modelContainer(for: GeneratedAudio.self, inMemory: true)
 }

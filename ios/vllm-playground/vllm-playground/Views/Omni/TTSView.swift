@@ -1,11 +1,18 @@
 import SwiftUI
+import SwiftData
 import AVFoundation
 
 struct TTSView: View {
     @Bindable var viewModel: OmniViewModel
+    @Query(sort: \GeneratedTTS.createdAt, order: .reverse) private var ttsList: [GeneratedTTS]
     @State private var audioPlayer: AVAudioPlayer?
     @State private var isPlaying = false
+    @State private var currentlyPlayingID: UUID?
     @State private var showTemplates = false
+
+    init(viewModel: OmniViewModel) {
+        self.viewModel = viewModel
+    }
 
     var body: some View {
         ScrollView {
@@ -142,33 +149,20 @@ struct TTSView: View {
                 }
                 .disabled(viewModel.ttsText.isEmpty || viewModel.isGeneratingTTS)
 
-                // Player
-                if viewModel.generatedAudioData != nil {
-                    HStack(spacing: 20) {
-                        Button { togglePlayback() } label: {
-                            Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.largeTitle)
-                                .imageScale(.large)
-                                .foregroundStyle(AppColors.appPrimary)
-                        }
+                // Generated speech gallery
+                if ttsList.isEmpty {
+                    emptyState
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        sectionLabel("Generated Speech")
 
-                        Button { stopPlayback() } label: {
-                            Image(systemName: "stop.circle.fill")
-                                .font(.largeTitle)
-                                .imageScale(.large)
-                                .foregroundStyle(AppColors.textTertiary)
+                        ForEach(ttsList) { item in
+                            ttsCard(item: item)
                         }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(AppColors.cardBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
             }
             .padding(16)
-        }
-        .onChange(of: viewModel.generatedAudioData) {
-            preparePlayer()
         }
         .sheet(isPresented: $showTemplates) {
             TTSTemplateSheet(viewModel: viewModel)
@@ -193,33 +187,200 @@ struct TTSView: View {
         return info[voice] ?? voice
     }
 
-    // MARK: - Playback
+    // MARK: - Empty State
 
-    private func preparePlayer() {
-        guard let data = viewModel.generatedAudioData else { return }
-        do {
-            audioPlayer = try AVAudioPlayer(data: data)
-            audioPlayer?.prepareToPlay()
-        } catch {
-            viewModel.error = "Failed to prepare audio: \(error.localizedDescription)"
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Spacer().frame(height: 20)
+            ZStack {
+                Circle()
+                    .fill(AppColors.appPrimary.opacity(0.08))
+                    .frame(width: 72, height: 72)
+                Image(systemName: "speaker.wave.2")
+                    .font(.title)
+                    .foregroundStyle(AppColors.appPrimary.opacity(0.5))
+            }
+            Text("Generate your first speech")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(AppColors.textTertiary)
+            Text("Enter text above or choose a preset")
+                .font(.caption)
+                .foregroundStyle(AppColors.textTertiary.opacity(0.7))
+            Spacer().frame(height: 20)
         }
+        .frame(maxWidth: .infinity)
     }
 
-    private func togglePlayback() {
-        guard let player = audioPlayer else {
-            preparePlayer()
-            audioPlayer?.play()
-            isPlaying = true
+    // MARK: - TTS Card
+
+    private func ttsCard(item: GeneratedTTS) -> some View {
+        let isCurrentlyPlaying = isPlaying && currentlyPlayingID == item.id
+        let isDemo = item.demoText != nil
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(isCurrentlyPlaying ? AppColors.appPrimary.opacity(0.15) : AppColors.inputBg)
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "speaker.wave.2")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(isCurrentlyPlaying ? AppColors.appPrimary : AppColors.textTertiary)
+                        .symbolEffect(.variableColor.iterative, isActive: isCurrentlyPlaying)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(item.text)
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(AppColors.textPrimary)
+                            .lineLimit(2)
+
+                        if isDemo {
+                            Text("DEMO")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(AppColors.appWarning)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(AppColors.appWarning.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                    }
+
+                    HStack(spacing: 6) {
+                        Text(item.voice)
+                            .font(.caption2)
+                            .foregroundStyle(AppColors.textTertiary)
+
+                        Text("·")
+                            .font(.caption2)
+                            .foregroundStyle(AppColors.textTertiary)
+
+                        Text(item.createdAt, style: .relative)
+                            .font(.caption2)
+                            .foregroundStyle(AppColors.textTertiary)
+                        + Text(" ago")
+                            .font(.caption2)
+                            .foregroundStyle(AppColors.textTertiary)
+                    }
+                }
+
+                Spacer()
+            }
+
+            HStack(spacing: 12) {
+                Button { togglePlayback(for: item) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: isCurrentlyPlaying ? "pause.fill" : "play.fill")
+                            .font(.caption)
+                        Text(isCurrentlyPlaying ? "Pause" : "Play")
+                            .font(.caption.weight(.medium))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(AppColors.appPrimary)
+                    .clipShape(Capsule())
+                }
+
+                if isCurrentlyPlaying {
+                    Button { stopPlayback() } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "stop.fill")
+                                .font(.caption2)
+                            Text("Stop")
+                                .font(.caption.weight(.medium))
+                        }
+                        .foregroundStyle(AppColors.textSecondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(AppColors.inputBg)
+                        .clipShape(Capsule())
+                    }
+                }
+
+                Spacer()
+
+                Button {
+                    if currentlyPlayingID == item.id {
+                        stopPlayback()
+                    }
+                    withAnimation(.spring(response: 0.3)) {
+                        viewModel.modelContext?.delete(item)
+                        try? viewModel.modelContext?.save()
+                    }
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.caption)
+                        .foregroundStyle(AppColors.appRed.opacity(0.7))
+                        .padding(6)
+                        .background(AppColors.appRed.opacity(0.08))
+                        .clipShape(Circle())
+                }
+            }
+        }
+        .padding(14)
+        .background(AppColors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .animation(.easeInOut(duration: 0.2), value: isCurrentlyPlaying)
+    }
+
+    // MARK: - Helpers
+
+    private func sectionLabel(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(AppColors.textSecondary)
+            .textCase(.uppercase)
+    }
+
+    // MARK: - Playback
+
+    private func togglePlayback(for item: GeneratedTTS) {
+        // Demo items use AVSpeechSynthesizer
+        if let demoText = item.demoText {
+            if currentlyPlayingID == item.id && viewModel.isDemoSpeaking {
+                viewModel.stopDemoSpeech()
+                isPlaying = false
+            } else {
+                stopPlayback()
+                viewModel.speakWithSynthesizer(demoText)
+                isPlaying = true
+                currentlyPlayingID = item.id
+            }
             return
         }
-        if player.isPlaying { player.pause(); isPlaying = false }
-        else { player.play(); isPlaying = true }
+
+        // Real items use AVAudioPlayer
+        if currentlyPlayingID == item.id, let player = audioPlayer {
+            if player.isPlaying {
+                player.pause()
+                isPlaying = false
+            } else {
+                player.play()
+                isPlaying = true
+            }
+        } else {
+            stopPlayback()
+            do {
+                audioPlayer = try AVAudioPlayer(data: item.audioData)
+                audioPlayer?.prepareToPlay()
+                audioPlayer?.play()
+                isPlaying = true
+                currentlyPlayingID = item.id
+            } catch {
+                viewModel.error = "Failed to play audio: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func stopPlayback() {
+        viewModel.stopDemoSpeech()
         audioPlayer?.stop()
         audioPlayer?.currentTime = 0
+        audioPlayer = nil
         isPlaying = false
+        currentlyPlayingID = nil
     }
 }
 
@@ -308,4 +469,5 @@ private struct TTSTemplateSheet: View {
 
 #Preview {
     TTSView(viewModel: OmniViewModel())
+        .modelContainer(for: GeneratedTTS.self, inMemory: true)
 }

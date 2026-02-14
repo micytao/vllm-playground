@@ -298,6 +298,17 @@ struct ServerMetricsView: View {
     // MARK: - Data Fetching
 
     private func fetchMetrics() async {
+        // Demo server: return static demo metrics, no network
+        if server.isDemo {
+            isLoading = true
+            metrics = try? await DemoAPIClient().fetchMetrics(baseURL: "", apiKey: nil)
+            lastUpdated = Date()
+            isLoading = false
+            stopTimer()
+            autoRefresh = false
+            return
+        }
+
         let client = VLLMAPIClient.shared
         let apiKey = KeychainService.load(for: server.id)
 

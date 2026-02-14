@@ -142,92 +142,94 @@ struct ServerStatusView: View {
                         }
                     }
 
-                    // Action buttons
-                    HStack(spacing: 12) {
-                        Button {
-                            Task {
-                                await viewModel.checkHealth(for: server)
-                                await viewModel.fetchModels(for: server)
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Refresh")
-                            }
-                            .font(.callout.weight(.medium))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(AppColors.cardBg)
-                            .foregroundStyle(AppColors.textPrimary)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }
-
-                        Button {
-                            testConnection()
-                        } label: {
-                            HStack {
-                                if isTesting {
-                                    ProgressView()
-                                        .tint(.white)
-                                        .controlSize(.small)
-                                } else {
-                                    Image(systemName: "bolt.fill")
+                    if !server.isDemo {
+                        // Action buttons
+                        HStack(spacing: 12) {
+                            Button {
+                                Task {
+                                    await viewModel.checkHealth(for: server)
+                                    await viewModel.fetchModels(for: server)
                                 }
-                                Text(isTesting ? "Testing..." : "Test")
+                            } label: {
+                                HStack {
+                                    Image(systemName: "arrow.clockwise")
+                                    Text("Refresh")
+                                }
+                                .font(.callout.weight(.medium))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(AppColors.cardBg)
+                                .foregroundStyle(AppColors.textPrimary)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
-                            .font(.callout.weight(.medium))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(AppColors.appPrimary)
-                            .foregroundStyle(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }
-                        .disabled(isTesting)
-                    }
 
-                    // Test result
-                    if let result = testResult {
-                        HStack(spacing: 10) {
-                            switch result {
-                            case .success(let latency, let modelCount):
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(AppColors.appSuccess)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Connection successful")
-                                        .font(.subheadline.weight(.medium))
+                            Button {
+                                testConnection()
+                            } label: {
+                                HStack {
+                                    if isTesting {
+                                        ProgressView()
+                                            .tint(.white)
+                                            .controlSize(.small)
+                                    } else {
+                                        Image(systemName: "bolt.fill")
+                                    }
+                                    Text(isTesting ? "Testing..." : "Test")
+                                }
+                                .font(.callout.weight(.medium))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(AppColors.appPrimary)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            .disabled(isTesting)
+                        }
+
+                        // Test result
+                        if let result = testResult {
+                            HStack(spacing: 10) {
+                                switch result {
+                                case .success(let latency, let modelCount):
+                                    Image(systemName: "checkmark.circle.fill")
                                         .foregroundStyle(AppColors.appSuccess)
-                                    Text("\(modelCount) model(s) · \(String(format: "%.0fms", latency * 1000)) latency")
-                                        .font(.caption)
-                                        .foregroundStyle(AppColors.textSecondary)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Connection successful")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundStyle(AppColors.appSuccess)
+                                        Text("\(modelCount) model(s) · \(String(format: "%.0fms", latency * 1000)) latency")
+                                            .font(.caption)
+                                            .foregroundStyle(AppColors.textSecondary)
+                                    }
+                                case .failure(let msg):
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(AppColors.appRed)
+                                    Text(msg)
+                                        .font(.subheadline)
+                                        .foregroundStyle(AppColors.appRed)
                                 }
-                            case .failure(let msg):
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(AppColors.appRed)
-                                Text(msg)
-                                    .font(.subheadline)
-                                    .foregroundStyle(AppColors.appRed)
+                                Spacer()
                             }
-                            Spacer()
+                            .padding(14)
+                            .background(AppColors.cardBg)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
-                        .padding(14)
-                        .background(AppColors.cardBg)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
 
-                    // Delete button
-                    Button(role: .destructive) {
-                        showDeleteConfirmation = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "trash")
-                            Text("Delete Server")
+                        // Delete button
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "trash")
+                                Text("Delete Server")
+                            }
+                            .font(.callout.weight(.medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .foregroundStyle(AppColors.appRed)
                         }
-                        .font(.callout.weight(.medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .foregroundStyle(AppColors.appRed)
+                        .padding(.top, 8)
                     }
-                    .padding(.top, 8)
                 }
                 .padding(16)
             }
@@ -235,10 +237,12 @@ struct ServerStatusView: View {
         .navigationTitle(server.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            Button("Edit") {
-                showEditSheet = true
+            if !server.isDemo {
+                Button("Edit") {
+                    showEditSheet = true
+                }
+                .foregroundStyle(AppColors.appPrimary)
             }
-            .foregroundStyle(AppColors.appPrimary)
         }
         .sheet(isPresented: $showEditSheet) {
             ServerFormView(mode: .edit(server))

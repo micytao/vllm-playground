@@ -10,11 +10,11 @@ enum StructuredOutputConfig: Equatable {
 
     var displayName: String {
         switch self {
-        case .choice: return "Choice"
-        case .regex: return "Regex"
-        case .jsonSchema: return "JSON Schema"
-        case .jsonObject: return "JSON Object"
-        case .grammar: return "Grammar"
+        case .choice: return String(localized: "Choice")
+        case .regex: return String(localized: "Regex")
+        case .jsonSchema: return String(localized: "JSON Schema")
+        case .jsonObject: return String(localized: "JSON Object")
+        case .grammar: return String(localized: "Grammar")
         }
     }
 
@@ -73,4 +73,14 @@ enum StructuredOutputType: String, CaseIterable, Identifiable {
     case grammar = "Grammar (EBNF)"
 
     var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .choice: return String(localized: "Choice")
+        case .regex: return String(localized: "Regex")
+        case .jsonSchema: return String(localized: "JSON Schema")
+        case .jsonObject: return String(localized: "JSON Object")
+        case .grammar: return String(localized: "Grammar (EBNF)")
+        }
+    }
 }

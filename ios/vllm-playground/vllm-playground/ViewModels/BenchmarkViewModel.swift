@@ -52,6 +52,12 @@ final class BenchmarkViewModel {
         progress = nil
         latestResult = nil
 
+        // Route demo to simulated benchmark
+        if profile.isDemo {
+            runTask = Task { await runDemoBenchmark(profile: profile, context: context) }
+            return
+        }
+
         let config = BenchmarkService.BenchmarkConfig(
             baseURL: profile.baseURL,
             apiKey: KeychainService.load(for: profile.id),
@@ -81,6 +87,74 @@ final class BenchmarkViewModel {
                 self.isRunning = false
             }
         }
+    }
+
+    // MARK: - Demo Benchmark
+
+    /// Simulates benchmark requests with realistic randomized metrics.
+    private func runDemoBenchmark(profile: ServerProfile, context: ModelContext) async {
+        var metrics: [RequestMetric] = []
+        let total = totalRequests
+
+        for i in 0..<total {
+            guard !Task.isCancelled else { break }
+
+            // Simulate request latency
+            let delay = Double.random(in: 0.5...2.0)
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+
+            let ttft = Double.random(in: 0.08...0.25)
+            let tps = Double.random(in: 25...60)
+            let tokens = Int(Double(maxTokens) * Double.random(in: 0.7...1.0))
+            let latency = ttft + Double(tokens) / tps
+
+            let metric = RequestMetric(
+                requestIndex: i,
+                timeToFirstToken: ttft,
+                tokensPerSecond: tps,
+                totalLatency: latency,
+                totalTokens: tokens,
+                success: true
+            )
+            metrics.append(metric)
+
+            progress = BenchmarkService.BenchmarkProgress(
+                completed: i + 1,
+                total: total,
+                latestMetric: metric
+            )
+        }
+
+        guard !metrics.isEmpty else {
+            isRunning = false
+            return
+        }
+
+        let successful = metrics.filter(\.success)
+        let avgTTFT = successful.map(\.timeToFirstToken).reduce(0, +) / Double(successful.count)
+        let avgTPS = successful.map(\.tokensPerSecond).reduce(0, +) / Double(successful.count)
+        let avgLatency = successful.map(\.totalLatency).reduce(0, +) / Double(successful.count)
+
+        let result = BenchmarkResult(
+            model: "Demo Model",
+            totalRequests: total,
+            concurrentConnections: concurrentConnections,
+            maxTokens: maxTokens,
+            prompt: prompt,
+            avgTimeToFirstToken: avgTTFT,
+            avgTokensPerSecond: avgTPS,
+            avgTotalLatency: avgLatency,
+            errorCount: 0,
+            successCount: successful.count,
+            requestMetricsJSON: try? JSONEncoder().encode(metrics),
+            serverProfile: profile
+        )
+
+        context.insert(result)
+        try? context.save()
+
+        latestResult = result
+        isRunning = false
     }
 
     // MARK: - Cancel

@@ -11,28 +11,30 @@ enum OmniTab: String, CaseIterable {
 
 struct OmniView: View {
     @Environment(\.showSidebar) private var showSidebar
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \ServerProfile.name) private var servers: [ServerProfile]
     @State private var selectedTab: OmniTab = .imageGen
-    @State private var viewModel = OmniViewModel()
+    @Bindable var viewModel: OmniViewModel
     @State private var selectedServerID: UUID?
 
-    /// Prefer Omni servers, fall back to default or first.
+    /// Prefer Omni servers, then real servers, fall back to demo only when nothing else exists.
     private var preferredServer: ServerProfile? {
         // If the user has manually selected a server, use it
         if let id = selectedServerID,
            let server = servers.first(where: { $0.id == id }) {
             return server
         }
-        // Auto: prefer an Omni-type server
-        let omniServers = servers.filter { $0.serverType == .vllmOmni }
+        // Auto: prefer an Omni-type server (non-demo)
+        let realServers = servers.filter { !$0.isDemo }
+        let omniServers = realServers.filter { $0.serverType == .vllmOmni }
         if let defaultOmni = omniServers.first(where: \.isDefault) {
             return defaultOmni
         }
         if let firstOmni = omniServers.first {
             return firstOmni
         }
-        // Fall back to any server
-        return servers.first(where: \.isDefault) ?? servers.first
+        // Fall back to any real server, then demo
+        return realServers.first(where: \.isDefault) ?? realServers.first ?? servers.first
     }
 
     var body: some View {
@@ -66,8 +68,31 @@ struct OmniView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
 
-                    // No Omni server warning
-                    if servers.filter({ $0.serverType == .vllmOmni }).isEmpty && !servers.isEmpty {
+                    // Demo mode banner — shown when using the demo server
+                    if preferredServer?.isDemo == true {
+                        HStack(spacing: 8) {
+                            Image(systemName: "sparkle")
+                                .font(.caption)
+                                .foregroundStyle(AppColors.appWarning)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Demo mode — outputs are simulated")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(AppColors.appWarning)
+                                Text("Add a vLLM-Omni server for real generation")
+                                    .font(.caption2)
+                                    .foregroundStyle(AppColors.textTertiary)
+                            }
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(AppColors.appWarning.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                    }
+                    // No Omni server warning (only for real servers without Omni type)
+                    else if servers.filter({ $0.serverType == .vllmOmni }).isEmpty
+                                && servers.contains(where: { !$0.isDemo }) {
                         HStack(spacing: 8) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(AppColors.appWarning)
@@ -140,6 +165,7 @@ struct OmniView: View {
             }
             .toolbarBackground(AppColors.pageBg, for: .navigationBar)
             .onAppear {
+                viewModel.modelContext = modelContext
                 syncServer()
             }
             .onChange(of: selectedServerID) {
@@ -163,7 +189,10 @@ struct OmniView: View {
                         selectedServerID = server.id
                     } label: {
                         HStack {
-                            Label(server.name, systemImage: server.serverType.icon)
+                            Label(
+                                server.isDemo ? "\(server.name) (Demo)" : server.name,
+                                systemImage: server.isDemo ? "sparkle" : server.serverType.icon
+                            )
                             if server.id == preferredServer?.id {
                                 Image(systemName: "checkmark")
                             }
@@ -223,6 +252,6 @@ struct OmniView: View {
 }
 
 #Preview {
-    OmniView()
-        .modelContainer(for: ServerProfile.self, inMemory: true)
+    OmniView(viewModel: OmniViewModel())
+        .modelContainer(for: [ServerProfile.self, GeneratedImage.self, GeneratedTTS.self, GeneratedAudio.self, GeneratedVideo.self], inMemory: true)
 }

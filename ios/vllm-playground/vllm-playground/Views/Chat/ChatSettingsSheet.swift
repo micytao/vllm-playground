@@ -207,7 +207,7 @@ struct ChatSettingsSheet: View {
 
     // MARK: - Helpers
 
-    private func sectionLabel(_ text: String) -> some View {
+    private func sectionLabel(_ text: LocalizedStringKey) -> some View {
         Text(text)
             .font(.footnote.weight(.semibold))
             .foregroundStyle(AppColors.textSecondary)

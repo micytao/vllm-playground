@@ -82,11 +82,11 @@ final class ChatViewModel {
     func sendMessage(_ text: String, context: ModelContext) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard !selectedModel.isEmpty else {
-            error = "Please select a model first"
+            error = String(localized: "Please select a model first")
             return
         }
         guard let profile = serverProfile else {
-            error = "No server selected"
+            error = String(localized: "No server selected")
             return
         }
 
@@ -253,7 +253,7 @@ final class ChatViewModel {
                 let generationTime = Date().timeIntervalSince(startTime) * 1000
 
                 guard let choice = response.choices.first else {
-                    self.error = "No response from model"
+                    self.error = String(localized: "No response from model")
                     isStreaming = false
                     return
                 }

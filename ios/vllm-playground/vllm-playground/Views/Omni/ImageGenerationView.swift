@@ -1,14 +1,20 @@
 import SwiftUI
+import SwiftData
 import PhotosUI
 import UIKit
 
 struct ImageGenerationView: View {
     @Bindable var viewModel: OmniViewModel
+    @Query(sort: \GeneratedImage.createdAt, order: .reverse) private var images: [GeneratedImage]
     @State private var showTemplates = false
     @State private var showNegativePrompt = false
     @State private var showAdvanced = false
     @State private var showSourceImage = false
     @State private var photoPickerItem: PhotosPickerItem?
+
+    init(viewModel: OmniViewModel) {
+        self.viewModel = viewModel
+    }
 
     private var isImageToImage: Bool { viewModel.imageInputData != nil }
 
@@ -299,8 +305,8 @@ struct ImageGenerationView: View {
                 .disabled(viewModel.imagePrompt.isEmpty || viewModel.isGeneratingImage)
 
                 // Result
-                if let latestImageData = viewModel.generatedImages.first,
-                   let uiImage = UIImage(data: latestImageData) {
+                if let latestImage = images.first,
+                   let uiImage = UIImage(data: latestImage.imageData) {
                     Image(uiImage: uiImage)
                         .resizable()
                         .scaledToFit()
@@ -463,4 +469,5 @@ private struct ImageTemplateSheet: View {
 
 #Preview {
     ImageGenerationView(viewModel: OmniViewModel())
+        .modelContainer(for: GeneratedImage.self, inMemory: true)
 }

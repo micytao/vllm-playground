@@ -9,8 +9,8 @@ enum ServerType: String, Codable, CaseIterable, Identifiable {
 
     var description: String {
         switch self {
-        case .vllm: return "Standard vLLM server for text and vision models"
-        case .vllmOmni: return "vLLM-Omni server with image, audio & TTS generation"
+        case .vllm: return String(localized: "Standard vLLM server for text and vision models")
+        case .vllmOmni: return String(localized: "vLLM-Omni server with image, audio & TTS generation")
         }
     }
 
@@ -99,5 +99,26 @@ final class ServerProfile {
         }
         components.port = 8091
         return components.string ?? base
+    }
+
+    // MARK: - Demo Server
+
+    /// Whether this profile is the built-in demo server (identified by sentinel URL).
+    var isDemo: Bool {
+        baseURL == "demo://playground"
+    }
+
+    /// Creates the built-in demo server profile.
+    static func createDemo() -> ServerProfile {
+        let profile = ServerProfile(
+            name: "Demo Server",
+            baseURL: "demo://playground",
+            serverType: .vllm,
+            isDefault: false,
+            availableModels: ["Demo Model"],
+            defaultModel: "Demo Model"
+        )
+        profile.isHealthy = true
+        return profile
     }
 }

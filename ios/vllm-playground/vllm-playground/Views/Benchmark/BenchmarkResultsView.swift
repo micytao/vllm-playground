@@ -37,6 +37,21 @@ struct BenchmarkResultsView: View {
 
     private var summarySection: some View {
         VStack(spacing: 12) {
+            if result.serverProfile?.isDemo == true {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkle")
+                        .font(.caption)
+                        .foregroundStyle(AppColors.appWarning)
+                    Text("DEMO — simulated benchmark results")
+                        .font(.caption)
+                        .foregroundStyle(AppColors.appWarning)
+                    Spacer()
+                }
+                .padding(10)
+                .background(AppColors.appWarning.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+
             HStack(spacing: 8) {
                 metricBox("Avg TTFT", String(format: "%.3fs", result.avgTimeToFirstToken))
                 metricBox("Avg TPS", String(format: "%.1f", result.avgTokensPerSecond))

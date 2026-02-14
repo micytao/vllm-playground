@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import AVFoundation
 import AVKit
 import UIKit
@@ -14,13 +15,15 @@ enum GalleryFilter: String, CaseIterable {
 
 // Unified gallery item for all generated content
 enum GalleryItem: Identifiable {
-    case image(index: Int, data: Data)
-    case audio(item: AudioItem)
-    case video(item: VideoItem)
+    case image(item: GeneratedImage)
+    case tts(item: GeneratedTTS)
+    case audio(item: GeneratedAudio)
+    case video(item: GeneratedVideo)
 
     var id: String {
         switch self {
-        case .image(let index, _): return "img-\(index)"
+        case .image(let item): return "img-\(item.id.uuidString)"
+        case .tts(let item): return "tts-\(item.id.uuidString)"
         case .audio(let item): return "aud-\(item.id.uuidString)"
         case .video(let item): return "vid-\(item.id.uuidString)"
         }
@@ -29,10 +32,18 @@ enum GalleryItem: Identifiable {
 
 struct OmniGalleryView: View {
     @Bindable var viewModel: OmniViewModel
+    @Query(sort: \GeneratedImage.createdAt, order: .reverse) private var images: [GeneratedImage]
+    @Query(sort: \GeneratedTTS.createdAt, order: .reverse) private var ttsList: [GeneratedTTS]
+    @Query(sort: \GeneratedAudio.createdAt, order: .reverse) private var audioList: [GeneratedAudio]
+    @Query(sort: \GeneratedVideo.createdAt, order: .reverse) private var videos: [GeneratedVideo]
     @State private var selectedImage: Data?
-    @State private var selectedVideo: VideoItem?
+    @State private var selectedVideo: GeneratedVideo?
     @State private var showClearConfirmation = false
     @State private var activeFilter: GalleryFilter = .all
+
+    init(viewModel: OmniViewModel) {
+        self.viewModel = viewModel
+    }
 
     private let columns = [
         GridItem(.flexible(), spacing: 8),
@@ -41,23 +52,33 @@ struct OmniGalleryView: View {
 
     private var allItems: [GalleryItem] {
         var items: [GalleryItem] = []
-        for (index, data) in viewModel.generatedImages.enumerated() {
-            items.append(.image(index: index, data: data))
-        }
-        for audioItem in viewModel.generatedAudioList {
-            items.append(.audio(item: audioItem))
-        }
-        for videoItem in viewModel.generatedVideos {
-            items.append(.video(item: videoItem))
-        }
+        for img in images { items.append(.image(item: img)) }
+        for tts in ttsList { items.append(.tts(item: tts)) }
+        for audio in audioList { items.append(.audio(item: audio)) }
+        for video in videos { items.append(.video(item: video)) }
+        // Sort all by createdAt descending
+        items.sort { lhsDate(for: $0) > lhsDate(for: $1) }
         return items
+    }
+
+    private func lhsDate(for item: GalleryItem) -> Date {
+        switch item {
+        case .image(let i): return i.createdAt
+        case .tts(let i): return i.createdAt
+        case .audio(let i): return i.createdAt
+        case .video(let i): return i.createdAt
+        }
     }
 
     private var filteredItems: [GalleryItem] {
         switch activeFilter {
         case .all: return allItems
         case .images: return allItems.filter { if case .image = $0 { return true }; return false }
-        case .audio: return allItems.filter { if case .audio = $0 { return true }; return false }
+        case .audio: return allItems.filter {
+            if case .audio = $0 { return true }
+            if case .tts = $0 { return true }
+            return false
+        }
         case .video: return allItems.filter { if case .video = $0 { return true }; return false }
         }
     }
@@ -65,7 +86,7 @@ struct OmniGalleryView: View {
     private var totalCount: Int { allItems.count }
 
     private var isEmpty: Bool {
-        viewModel.generatedImages.isEmpty && viewModel.generatedAudioList.isEmpty && viewModel.generatedVideos.isEmpty
+        images.isEmpty && ttsList.isEmpty && audioList.isEmpty && videos.isEmpty
     }
 
     var body: some View {
@@ -146,8 +167,10 @@ struct OmniGalleryView: View {
                     LazyVGrid(columns: columns, spacing: 8) {
                         ForEach(filteredItems) { item in
                             switch item {
-                            case .image(let index, let imageData):
-                                imageCard(imageData: imageData, index: index)
+                            case .image(let imgItem):
+                                imageCard(item: imgItem)
+                            case .tts(let ttsItem):
+                                ttsCard(ttsItem: ttsItem)
                             case .audio(let audioItem):
                                 audioCard(audioItem: audioItem)
                             case .video(let videoItem):
@@ -178,8 +201,8 @@ struct OmniGalleryView: View {
     // MARK: - Image Card
 
     @ViewBuilder
-    private func imageCard(imageData: Data, index: Int) -> some View {
-        if let uiImage = UIImage(data: imageData) {
+    private func imageCard(item: GeneratedImage) -> some View {
+        if let uiImage = UIImage(data: item.imageData) {
             Image(uiImage: uiImage)
                 .resizable()
                 .scaledToFit()
@@ -189,18 +212,18 @@ struct OmniGalleryView: View {
                     HStack(spacing: 3) {
                         Image(systemName: "photo")
                             .font(.system(size: 8, weight: .bold))
-                        Text("Image")
+                        Text(item.isDemo ? "Image · DEMO" : "Image")
                             .font(.system(size: 9, weight: .semibold))
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(.black.opacity(0.5))
+                    .background(item.isDemo ? Color.orange.opacity(0.7) : .black.opacity(0.5))
                     .clipShape(Capsule())
                     .padding(6),
                     alignment: .topTrailing
                 )
-                .onTapGesture { selectedImage = imageData }
+                .onTapGesture { selectedImage = item.imageData }
                 .contextMenu {
                     Button {
                         UIImageWriteToSavedPhotosAlbum(uiImage, nil, nil, nil)
@@ -208,7 +231,8 @@ struct OmniGalleryView: View {
                         Label("Save to Photos", systemImage: "square.and.arrow.down")
                     }
                     Button(role: .destructive) {
-                        viewModel.generatedImages.remove(at: index)
+                        viewModel.modelContext?.delete(item)
+                        try? viewModel.modelContext?.save()
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
@@ -216,37 +240,152 @@ struct OmniGalleryView: View {
         }
     }
 
+    // MARK: - TTS Card
+
+    private func ttsCard(ttsItem: GeneratedTTS) -> some View {
+        TTSGalleryCard(ttsItem: ttsItem, viewModel: viewModel) {
+            viewModel.modelContext?.delete(ttsItem)
+            try? viewModel.modelContext?.save()
+        }
+    }
+
     // MARK: - Audio Card
 
-    private func audioCard(audioItem: AudioItem) -> some View {
-        AudioGalleryCard(audioItem: audioItem) {
-            if let idx = viewModel.generatedAudioList.firstIndex(where: { $0.id == audioItem.id }) {
-                viewModel.generatedAudioList.remove(at: idx)
-            }
+    private func audioCard(audioItem: GeneratedAudio) -> some View {
+        AudioGalleryCard(audioItem: audioItem, viewModel: viewModel) {
+            viewModel.modelContext?.delete(audioItem)
+            try? viewModel.modelContext?.save()
         }
     }
 
     // MARK: - Video Card
 
-    private func videoCard(videoItem: VideoItem) -> some View {
+    private func videoCard(videoItem: GeneratedVideo) -> some View {
         VideoGalleryCard(videoItem: videoItem, onTap: {
             selectedVideo = videoItem
         }, onDelete: {
-            if let idx = viewModel.generatedVideos.firstIndex(where: { $0.id == videoItem.id }) {
-                viewModel.generatedVideos.remove(at: idx)
-            }
+            viewModel.modelContext?.delete(videoItem)
+            try? viewModel.modelContext?.save()
         })
+    }
+}
+
+// MARK: - TTS Gallery Card
+
+struct TTSGalleryCard: View {
+    let ttsItem: GeneratedTTS
+    let viewModel: OmniViewModel
+    var onDelete: () -> Void
+
+    @State private var isPlaying = false
+    @State private var audioPlayer: AVAudioPlayer?
+
+    private var isDemo: Bool { ttsItem.demoText != nil }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.green.opacity(0.15), Color.green.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(minHeight: 120)
+
+                VStack(spacing: 10) {
+                    Button {
+                        togglePlayback()
+                    } label: {
+                        Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.green)
+                    }
+
+                    Text(ttsItem.text)
+                        .font(.caption2)
+                        .foregroundStyle(AppColors.textSecondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                HStack(spacing: 3) {
+                    Image(systemName: "speaker.wave.2")
+                        .font(.system(size: 8, weight: .bold))
+                    Text("TTS")
+                        .font(.system(size: 9, weight: .semibold))
+                    if isDemo {
+                        Text("· DEMO")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(isDemo ? AppColors.appWarning.opacity(0.9) : Color.green.opacity(0.8))
+                .clipShape(Capsule())
+                .padding(6),
+                alignment: .topTrailing
+            )
+        }
+        .contextMenu {
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .onDisappear {
+            audioPlayer?.stop()
+            if isPlaying { viewModel.stopDemoSpeech() }
+        }
+    }
+
+    private func togglePlayback() {
+        if isPlaying {
+            if let demoText = ttsItem.demoText {
+                viewModel.stopDemoSpeech()
+                _ = demoText // suppress unused warning
+            } else {
+                audioPlayer?.stop()
+            }
+            isPlaying = false
+        } else {
+            if let demoText = ttsItem.demoText {
+                viewModel.speakWithSynthesizer(demoText)
+                isPlaying = true
+            } else {
+                do {
+                    audioPlayer = try AVAudioPlayer(data: ttsItem.audioData)
+                    audioPlayer?.play()
+                    isPlaying = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + (audioPlayer?.duration ?? 0) + 0.1) {
+                        isPlaying = false
+                    }
+                } catch {
+                    isPlaying = false
+                }
+            }
+        }
     }
 }
 
 // MARK: - Audio Gallery Card
 
 struct AudioGalleryCard: View {
-    let audioItem: AudioItem
+    let audioItem: GeneratedAudio
+    let viewModel: OmniViewModel
     var onDelete: () -> Void
 
     @State private var isPlaying = false
     @State private var audioPlayer: AVAudioPlayer?
+
+    private var isDemo: Bool { audioItem.demoText != nil }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -285,11 +424,15 @@ struct AudioGalleryCard: View {
                         .font(.system(size: 8, weight: .bold))
                     Text("Audio")
                         .font(.system(size: 9, weight: .semibold))
+                    if isDemo {
+                        Text("· DEMO")
+                            .font(.system(size: 9, weight: .bold))
+                    }
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(AppColors.appPrimary.opacity(0.8))
+                .background(isDemo ? AppColors.appWarning.opacity(0.9) : AppColors.appPrimary.opacity(0.8))
                 .clipShape(Capsule())
                 .padding(6),
                 alignment: .topTrailing
@@ -304,23 +447,34 @@ struct AudioGalleryCard: View {
         }
         .onDisappear {
             audioPlayer?.stop()
+            if isPlaying { viewModel.stopDemoSpeech() }
         }
     }
 
     private func togglePlayback() {
         if isPlaying {
-            audioPlayer?.stop()
+            if let demoText = audioItem.demoText {
+                viewModel.stopDemoSpeech()
+                _ = demoText
+            } else {
+                audioPlayer?.stop()
+            }
             isPlaying = false
         } else {
-            do {
-                audioPlayer = try AVAudioPlayer(data: audioItem.data)
-                audioPlayer?.play()
+            if let demoText = audioItem.demoText {
+                viewModel.speakWithSynthesizer(demoText)
                 isPlaying = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + (audioPlayer?.duration ?? 0) + 0.1) {
+            } else {
+                do {
+                    audioPlayer = try AVAudioPlayer(data: audioItem.audioData)
+                    audioPlayer?.play()
+                    isPlaying = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + (audioPlayer?.duration ?? 0) + 0.1) {
+                        isPlaying = false
+                    }
+                } catch {
                     isPlaying = false
                 }
-            } catch {
-                isPlaying = false
             }
         }
     }
@@ -329,7 +483,7 @@ struct AudioGalleryCard: View {
 // MARK: - Video Gallery Card
 
 struct VideoGalleryCard: View {
-    let videoItem: VideoItem
+    let videoItem: GeneratedVideo
     var onTap: () -> Void
     var onDelete: () -> Void
 
@@ -391,10 +545,6 @@ extension Data: @retroactive Identifiable {
     public var id: Int { hashValue }
 }
 
-// MARK: - VideoItem Identifiable conformance for sheet
-
-extension VideoItem: @unchecked Sendable {}
-
 // MARK: - Image Detail View
 
 struct ImageDetailView: View {
@@ -439,7 +589,7 @@ struct ImageDetailView: View {
 // MARK: - Video Detail View
 
 struct VideoDetailView: View {
-    let videoItem: VideoItem
+    let videoItem: GeneratedVideo
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
 
@@ -474,7 +624,7 @@ struct VideoDetailView: View {
     private func setupPlayer() {
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("gallery-\(videoItem.id).mp4")
         if !FileManager.default.fileExists(atPath: tempURL.path) {
-            try? videoItem.data.write(to: tempURL)
+            try? videoItem.videoData.write(to: tempURL)
         }
         let avPlayer = AVPlayer(url: tempURL)
         self.player = avPlayer
@@ -484,4 +634,5 @@ struct VideoDetailView: View {
 
 #Preview {
     OmniGalleryView(viewModel: OmniViewModel())
+        .modelContainer(for: [GeneratedImage.self, GeneratedTTS.self, GeneratedAudio.self, GeneratedVideo.self], inMemory: true)
 }

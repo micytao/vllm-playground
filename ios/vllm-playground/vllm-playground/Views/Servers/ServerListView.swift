@@ -7,34 +7,65 @@ struct ServerListView: View {
     @Query(sort: \ServerProfile.createdAt, order: .reverse) private var servers: [ServerProfile]
     @State private var showAddServer = false
     @State private var viewModel = ServerProfileViewModel()
+    @State private var showResetDemoConfirmation = false
+
+    /// Real (non-demo) servers.
+    private var realServers: [ServerProfile] {
+        servers.filter { !$0.isDemo }
+    }
+
+    /// The demo server, if present.
+    private var demoServer: ServerProfile? {
+        servers.first(where: \.isDemo)
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 AppColors.pageBg.ignoresSafeArea()
 
-                if servers.isEmpty {
-                    emptyState
-                } else {
-                    List {
-                        ForEach(servers) { server in
-                            NavigationLink(destination: ServerStatusView(server: server)) {
-                                ServerCard(server: server)
-                            }
-                            .buttonStyle(.plain)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                List {
+                    // Demo server card (always first, if present)
+                    if let demo = demoServer {
+                        Section {
+                            DemoServerCard(server: demo, showResetConfirmation: $showResetDemoConfirmation)
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                         }
-                        .onDelete { indexSet in
-                            for index in indexSet {
-                                viewModel.delete(servers[index], context: modelContext)
+                    }
+
+                    // Real servers
+                    if realServers.isEmpty {
+                        Section {
+                            emptyState
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .frame(maxWidth: .infinity)
+                        }
+                    } else {
+                        Section {
+                            ForEach(realServers) { server in
+                                NavigationLink(destination: ServerStatusView(server: server)) {
+                                    ServerCard(server: server)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            }
+                            .onDelete { indexSet in
+                                for index in indexSet {
+                                    let server = realServers[index]
+                                    guard !server.isDemo else { continue }
+                                    viewModel.delete(server, context: modelContext)
+                                }
                             }
                         }
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
             .navigationTitle("Servers")
             .navigationBarTitleDisplayMode(.inline)
@@ -62,6 +93,18 @@ struct ServerListView: View {
             .sheet(isPresented: $showAddServer) {
                 ServerFormView(mode: .add)
             }
+            .confirmationDialog(
+                "Reset Demo",
+                isPresented: $showResetDemoConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Reset", role: .destructive) {
+                    resetDemoData()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This will delete all demo conversations and benchmark results. The demo server itself will remain.")
+            }
         }
     }
 
@@ -75,9 +118,10 @@ struct ServerListView: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(AppColors.textPrimary)
 
-            Text("Add a remote vLLM server to get started.")
+            Text("Run `vllm serve <model>` on your machine, then add the server here.")
                 .font(.callout)
                 .foregroundStyle(AppColors.textSecondary)
+                .multilineTextAlignment(.center)
 
             Button {
                 showAddServer = true
@@ -94,6 +138,95 @@ struct ServerListView: View {
                 .clipShape(Capsule())
             }
         }
+        .padding(.vertical, 24)
+    }
+
+    /// Delete all conversations and benchmark results linked to the demo server.
+    private func resetDemoData() {
+        guard let demo = demoServer else { return }
+        for convo in demo.conversations {
+            modelContext.delete(convo)
+        }
+        for result in demo.benchmarkResults {
+            modelContext.delete(result)
+        }
+        // Also clear demo-generated Omni content
+        let imageDescriptor = FetchDescriptor<GeneratedImage>(predicate: #Predicate { $0.isDemo == true })
+        if let demoImages = try? modelContext.fetch(imageDescriptor) {
+            for img in demoImages { modelContext.delete(img) }
+        }
+        let ttsDescriptor = FetchDescriptor<GeneratedTTS>(predicate: #Predicate { $0.demoText != nil })
+        if let demoTTS = try? modelContext.fetch(ttsDescriptor) {
+            for tts in demoTTS { modelContext.delete(tts) }
+        }
+        let audioDescriptor = FetchDescriptor<GeneratedAudio>(predicate: #Predicate { $0.demoText != nil })
+        if let demoAudio = try? modelContext.fetch(audioDescriptor) {
+            for audio in demoAudio { modelContext.delete(audio) }
+        }
+        let videoDescriptor = FetchDescriptor<GeneratedVideo>(predicate: #Predicate { $0.isDemo == true })
+        if let demoVideos = try? modelContext.fetch(videoDescriptor) {
+            for video in demoVideos { modelContext.delete(video) }
+        }
+        try? modelContext.save()
+    }
+}
+
+// MARK: - Demo Server Card
+
+private struct DemoServerCard: View {
+    let server: ServerProfile
+    @Binding var showResetConfirmation: Bool
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(AppColors.appSuccess.opacity(0.15))
+                    .frame(width: 44, height: 44)
+
+                Image(systemName: "sparkle")
+                    .font(.body)
+                    .foregroundStyle(AppColors.appSuccess)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(server.name)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(AppColors.textPrimary)
+
+                    Text("DEMO")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(AppColors.appWarning)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(AppColors.appWarning.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+
+                Text("Built-in demo with simulated responses")
+                    .font(.footnote)
+                    .foregroundStyle(AppColors.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Menu {
+                Button(role: .destructive) {
+                    showResetConfirmation = true
+                } label: {
+                    Label("Reset Demo Data", systemImage: "arrow.counterclockwise")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.body)
+                    .foregroundStyle(AppColors.textTertiary)
+            }
+        }
+        .padding(14)
+        .background(AppColors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 

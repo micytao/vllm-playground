@@ -13,6 +13,12 @@ final class ServerProfileViewModel {
     // MARK: - Health Check
 
     func checkHealth(for profile: ServerProfile) async {
+        // Demo server is always healthy — skip network call
+        guard !profile.isDemo else {
+            profile.isHealthy = true
+            return
+        }
+
         isCheckingHealth = true
         healthError = nil
 
@@ -38,6 +44,9 @@ final class ServerProfileViewModel {
     // MARK: - Fetch Models
 
     func fetchModels(for profile: ServerProfile) async {
+        // Demo server models are pre-populated — skip network call
+        guard !profile.isDemo else { return }
+
         let apiKey = KeychainService.load(for: profile.id)
 
         do {
@@ -73,6 +82,8 @@ final class ServerProfileViewModel {
     // MARK: - Set Default
 
     func setDefault(_ profile: ServerProfile, allProfiles: [ServerProfile]) {
+        // Demo should never become the default server
+        guard !profile.isDemo else { return }
         for p in allProfiles {
             p.isDefault = (p.id == profile.id)
         }
@@ -81,6 +92,8 @@ final class ServerProfileViewModel {
     // MARK: - Delete
 
     func delete(_ profile: ServerProfile, context: ModelContext) {
+        // Demo server is permanent — cannot be deleted
+        guard !profile.isDemo else { return }
         KeychainService.delete(for: profile.id)
         context.delete(profile)
     }

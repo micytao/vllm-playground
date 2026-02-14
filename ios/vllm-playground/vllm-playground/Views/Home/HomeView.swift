@@ -8,8 +8,13 @@ struct HomeView: View {
 
     var onNavigate: ((AppSection) -> Void)?
 
+    /// Real (non-demo) servers for stats and quick-action logic.
+    private var realServers: [ServerProfile] {
+        servers.filter { !$0.isDemo }
+    }
+
     private var healthyCount: Int {
-        servers.filter(\.isHealthy).count
+        realServers.filter(\.isHealthy).count
     }
 
     var body: some View {
@@ -90,7 +95,7 @@ struct HomeView: View {
 
     private var statsBar: some View {
         HStack(spacing: 0) {
-            statItem(value: "\(servers.count)", label: "Servers", icon: "server.rack") {
+            statItem(value: "\(realServers.count)", label: "Servers", icon: "server.rack") {
                 onNavigate?(.servers)
             }
             Divider().frame(height: 32).background(AppColors.border)
@@ -107,7 +112,7 @@ struct HomeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func statItem(value: String, label: String, icon: String, tint: Color = AppColors.appPrimary, action: (() -> Void)? = nil) -> some View {
+    private func statItem(value: String, label: LocalizedStringKey, icon: String, tint: Color = AppColors.appPrimary, action: (() -> Void)? = nil) -> some View {
         Button {
             action?()
         } label: {
@@ -187,7 +192,7 @@ struct HomeView: View {
         }
     }
 
-    private func featureCard(icon: String, title: String, subtitle: String, gradient: [Color]) -> some View {
+    private func featureCard(icon: String, title: LocalizedStringKey, subtitle: LocalizedStringKey, gradient: [Color]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
@@ -228,7 +233,16 @@ struct HomeView: View {
                 .padding(.leading, 4)
 
             VStack(spacing: 10) {
-                if servers.isEmpty {
+                if realServers.isEmpty {
+                    quickActionRow(
+                        icon: "sparkle",
+                        title: "Try Demo",
+                        subtitle: "Explore the app with simulated responses",
+                        tint: AppColors.appWarning
+                    ) {
+                        onNavigate?(.chat)
+                    }
+
                     quickActionRow(
                         icon: "plus.circle.fill",
                         title: "Add a Server",
@@ -269,7 +283,7 @@ struct HomeView: View {
         }
     }
 
-    private func quickActionRow(icon: String, title: String, subtitle: String, tint: Color, action: @escaping () -> Void) -> some View {
+    private func quickActionRow(icon: String, title: LocalizedStringKey, subtitle: LocalizedStringKey, tint: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 14) {
                 ZStack {

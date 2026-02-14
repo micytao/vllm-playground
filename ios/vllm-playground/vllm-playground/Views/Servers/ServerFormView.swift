@@ -23,6 +23,8 @@ struct ServerFormView: View {
     @State private var testResult: TestResult?
     @State private var defaultModel = ""
     @State private var detectedModels: [String] = []
+    @State private var showDemoURLError = false
+    @State private var showGuide = false
 
     var viewModel = ServerProfileViewModel()
 
@@ -43,6 +45,11 @@ struct ServerFormView: View {
 
                 ScrollView {
                     VStack(spacing: 20) {
+                        // Quick Setup templates (add mode only)
+                        if !isEditing {
+                            quickSetupSection
+                        }
+
                         // Info banner
                         infoBanner
 
@@ -295,6 +302,11 @@ struct ServerFormView: View {
                 }
             }
             .onAppear(perform: loadExisting)
+            .alert("Reserved URL Scheme", isPresented: $showDemoURLError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("The \"demo://\" URL scheme is reserved for the built-in demo server. Please enter a valid server URL (http:// or https://).")
+            }
         }
     }
 
@@ -362,7 +374,7 @@ struct ServerFormView: View {
         }
     }
 
-    private func sectionLabel(_ text: String) -> some View {
+    private func sectionLabel(_ text: LocalizedStringKey) -> some View {
         Text(text)
             .font(.footnote.weight(.semibold))
             .foregroundStyle(AppColors.textSecondary)
@@ -392,10 +404,112 @@ struct ServerFormView: View {
         }
     }
 
+    // MARK: - Quick Setup
+
+    private var quickSetupSection: some View {
+        formCard {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionLabel("Quick Setup")
+
+                HStack(spacing: 10) {
+                    quickSetupButton(
+                        icon: "desktopcomputer",
+                        title: "Local Server",
+                        tint: .blue
+                    ) {
+                        name = "Local vLLM"
+                        baseURL = "http://localhost:8000"
+                        serverType = .vllm
+                    }
+
+                    quickSetupButton(
+                        icon: "network",
+                        title: "LAN Server",
+                        tint: .purple
+                    ) {
+                        name = "LAN vLLM"
+                        baseURL = "http://192.168.1.100:8000"
+                        serverType = .vllm
+                    }
+
+                    quickSetupButton(
+                        icon: "waveform.and.mic",
+                        title: "Omni Server",
+                        tint: .orange
+                    ) {
+                        name = "Local Omni"
+                        omniBaseURL = "http://localhost:8091"
+                        serverType = .vllmOmni
+                    }
+                }
+
+                DisclosureGroup(isExpanded: $showGuide) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        codeHint("pip install vllm")
+                        codeHint("vllm serve Qwen/Qwen2.5-7B-Instruct")
+                        Text("Server starts on port 8000 by default")
+                            .font(.caption)
+                            .foregroundStyle(AppColors.textTertiary)
+                        Link("vLLM Documentation", destination: URL(string: "https://docs.vllm.ai")!)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(AppColors.appPrimary)
+                    }
+                    .padding(.top, 8)
+                } label: {
+                    Text("How to start vLLM")
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(AppColors.textSecondary)
+                }
+                .tint(AppColors.textTertiary)
+            }
+        }
+    }
+
+    private func quickSetupButton(icon: String, title: LocalizedStringKey, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(tint.opacity(0.12))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: icon)
+                        .font(.callout)
+                        .foregroundStyle(tint)
+                }
+                Text(title)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(AppColors.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(AppColors.inputBg)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func codeHint(_ text: String) -> some View {
+        Text(text)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(AppColors.textPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColors.inputBg)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
     // MARK: - Actions
 
     private func loadExisting() {
         if case .edit(let profile) = mode {
+            // Block editing demo server
+            guard !profile.isDemo else {
+                dismiss()
+                return
+            }
             name = profile.name
             serverType = profile.serverType
             baseURL = profile.baseURL
@@ -438,6 +552,13 @@ struct ServerFormView: View {
     }
 
     private func save() {
+        // Block demo:// URL scheme — reserved for the built-in demo server
+        let urlToCheck = serverType == .vllmOmni ? omniBaseURL : baseURL
+        if urlToCheck.lowercased().trimmingCharacters(in: .whitespaces).hasPrefix("demo://") {
+            showDemoURLError = true
+            return
+        }
+
         // For vLLM servers: baseURL is the primary URL, omniBaseURL stays empty.
         // For vLLM-Omni servers: omniBaseURL is the primary URL, baseURL is set to same
         //   (so health checks, model listing, etc. all work via baseURL).
@@ -499,15 +620,21 @@ struct ServerFormView: View {
         dismiss()
     }
 
-    /// Auto-prefix http:// if no scheme is provided.
+    /// Auto-prefix http:// if no scheme is provided. Rejects demo:// URLs.
     private func normalizeURL(_ url: String) -> String {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Block demo:// scheme (reserved for built-in demo server)
+        if trimmed.lowercased().hasPrefix("demo://") {
+            return ""
+        }
         if !trimmed.hasPrefix("http://") && !trimmed.hasPrefix("https://") {
             return "http://\(trimmed)"
         }
         return trimmed
     }
 }
+
+
 
 #Preview("Add") {
     ServerFormView(mode: .add)

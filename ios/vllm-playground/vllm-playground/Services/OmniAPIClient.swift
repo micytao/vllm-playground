@@ -172,16 +172,6 @@ struct ChatCompletionsGenerationResponse: Decodable {
     }
 }
 
-// MARK: - Video Types
-
-struct VideoItem: Identifiable {
-    let id = UUID()
-    let prompt: String
-    let data: Data
-    let duration: Int  // seconds
-    let createdAt: Date = Date()
-}
-
 // MARK: - Omni API Client
 
 final class OmniAPIClient: @unchecked Sendable {

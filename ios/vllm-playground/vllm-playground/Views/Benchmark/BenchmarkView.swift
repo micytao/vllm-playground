@@ -9,8 +9,10 @@ struct BenchmarkView: View {
     @State private var viewModel = BenchmarkViewModel()
     @State private var showServerPicker = false
 
+    /// Prefer real servers; fall back to demo only when no real servers exist.
     private var activeServer: ServerProfile? {
-        servers.first(where: \.isDefault) ?? servers.first
+        let real = servers.filter { !$0.isDemo }
+        return real.first(where: \.isDefault) ?? real.first ?? servers.first
     }
 
     var body: some View {
@@ -105,7 +107,8 @@ struct BenchmarkView: View {
             .disabled(activeServer == nil)
             .confirmationDialog("Select Server", isPresented: $showServerPicker, titleVisibility: .visible) {
                 ForEach(servers) { server in
-                    Button("\(server.name)\(server.isHealthy ? "" : " (offline)")") {
+                    let suffix = server.isDemo ? " (Demo)" : (server.isHealthy ? "" : " (offline)")
+                    Button("\(server.name)\(suffix)") {
                         viewModel.updateServer(server)
                         viewModel.run(context: modelContext)
                     }
@@ -213,7 +216,18 @@ struct BenchmarkResultCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(result.model).font(.subheadline.weight(.semibold)).foregroundStyle(AppColors.textPrimary).lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(result.model).font(.subheadline.weight(.semibold)).foregroundStyle(AppColors.textPrimary).lineLimit(1)
+                        if result.serverProfile?.isDemo == true {
+                            Text("DEMO")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(AppColors.appWarning)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(AppColors.appWarning.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+                    }
                     Text(result.createdAt.shortFormatted).font(.caption).foregroundStyle(AppColors.textTertiary)
                 }
                 Spacer()

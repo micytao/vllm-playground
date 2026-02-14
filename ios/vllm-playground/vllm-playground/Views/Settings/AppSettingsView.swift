@@ -1,11 +1,41 @@
 import SwiftUI
 
+enum AppLanguage: String, CaseIterable {
+    case system
+    case en
+    case zhHans = "zh-Hans"
+
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .system: return "System"
+        case .en: return "English"
+        case .zhHans: return "简体中文"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .system: return "globe"
+        case .en: return "a.circle"
+        case .zhHans: return "character.textbox"
+        }
+    }
+
+    var locale: Locale? {
+        switch self {
+        case .system: return nil
+        case .en: return Locale(identifier: "en")
+        case .zhHans: return Locale(identifier: "zh-Hans")
+        }
+    }
+}
+
 enum AppTheme: String, CaseIterable {
     case system
     case light
     case dark
 
-    var displayName: String {
+    var displayName: LocalizedStringKey {
         switch self {
         case .system: return "System"
         case .light: return "Light"
@@ -33,6 +63,7 @@ enum AppTheme: String, CaseIterable {
 struct AppSettingsView: View {
     @Environment(\.showSidebar) private var showSidebar
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
+    @AppStorage("appLanguage") private var appLanguage: AppLanguage = .system
     @AppStorage("defaultTemperature") private var defaultTemperature: Double = 0.7
     @AppStorage("defaultMaxTokens") private var defaultMaxTokens: Int = 1024
 
@@ -75,6 +106,48 @@ struct AppSettingsView: View {
                                                 RoundedRectangle(cornerRadius: 12)
                                                     .stroke(
                                                         appTheme == theme ? AppColors.appPrimary.opacity(0.4) : Color.clear,
+                                                        lineWidth: 1.5
+                                                    )
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Language
+                        settingCard {
+                            VStack(alignment: .leading, spacing: 12) {
+                                sectionLabel("Language")
+
+                                HStack(spacing: 8) {
+                                    ForEach(AppLanguage.allCases, id: \.self) { lang in
+                                        Button {
+                                            withAnimation { appLanguage = lang }
+                                        } label: {
+                                            VStack(spacing: 6) {
+                                                Image(systemName: lang.icon)
+                                                    .font(.title3)
+                                                    .foregroundStyle(
+                                                        appLanguage == lang ? AppColors.appPrimary : AppColors.textTertiary
+                                                    )
+                                                Text(lang.displayName)
+                                                    .font(.caption.weight(.medium))
+                                                    .foregroundStyle(
+                                                        appLanguage == lang ? AppColors.textPrimary : AppColors.textSecondary
+                                                    )
+                                            }
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 12)
+                                            .background(
+                                                appLanguage == lang ? AppColors.appPrimary.opacity(0.1) : AppColors.inputBg
+                                            )
+                                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 12)
+                                                    .stroke(
+                                                        appLanguage == lang ? AppColors.appPrimary.opacity(0.4) : Color.clear,
                                                         lineWidth: 1.5
                                                     )
                                             )
@@ -230,7 +303,7 @@ struct AppSettingsView: View {
 
     // MARK: - Helpers
 
-    private func sectionLabel(_ text: String) -> some View {
+    private func sectionLabel(_ text: LocalizedStringKey) -> some View {
         Text(text)
             .font(.caption.weight(.semibold))
             .foregroundStyle(AppColors.textSecondary)
@@ -244,7 +317,7 @@ struct AppSettingsView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func infoRow(_ label: String, _ value: String) -> some View {
+    private func infoRow(_ label: LocalizedStringKey, _ value: String) -> some View {
         HStack {
             Text(label).font(.subheadline).foregroundStyle(AppColors.textSecondary)
             Spacer()

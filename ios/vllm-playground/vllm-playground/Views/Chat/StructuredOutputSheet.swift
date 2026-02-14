@@ -131,7 +131,7 @@ struct StructuredOutputSheet: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(type.rawValue)
+                    Text(type.displayName)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(AppColors.textPrimary)
                     Text(typeDescription(type))
@@ -323,7 +323,7 @@ struct StructuredOutputSheet: View {
 
     // MARK: - Helpers
 
-    private func sectionLabel(_ text: String) -> some View {
+    private func sectionLabel(_ text: LocalizedStringKey) -> some View {
         Text(text)
             .font(.footnote.weight(.semibold))
             .foregroundStyle(AppColors.textSecondary)

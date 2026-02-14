@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var selectedSection: AppSection = .home
     @State private var showSidebar = false
     @State private var selectedConversationID: UUID?
+    @State private var omniViewModel = OmniViewModel()
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
@@ -94,7 +95,7 @@ struct ContentView: View {
         case .chat:
             ChatTabView(selectedConversationID: $selectedConversationID)
         case .omni:
-            OmniView()
+            OmniView(viewModel: omniViewModel)
         case .benchmark:
             BenchmarkView()
         case .modelHub:
@@ -120,6 +121,7 @@ struct SidebarView: View {
     @Binding var selectedSection: AppSection
     @Binding var selectedConversationID: UUID?
     @Query(sort: \Conversation.updatedAt, order: .reverse) private var conversations: [Conversation]
+    @Query private var servers: [ServerProfile]
     var onSelect: (() -> Void)?
 
     @State private var isEditing = false
@@ -153,6 +155,13 @@ struct SidebarView: View {
 
             // Top navigation (non-scrollable)
             VStack(alignment: .leading, spacing: 4) {
+                // MARK: vLLM group
+                Text("vLLM")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppColors.textTertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 10)
+
                 SidebarButton(
                     icon: "square.and.pencil",
                     title: "New Chat",
@@ -162,7 +171,6 @@ struct SidebarView: View {
                     selectedSection = .chat
                     onSelect?()
                 }
-                .padding(.top, 8)
 
                 SidebarButton(
                     icon: "sparkles",
@@ -181,6 +189,22 @@ struct SidebarView: View {
                     selectedSection = .benchmark
                     onSelect?()
                 }
+
+                SidebarButton(
+                    icon: "server.rack",
+                    title: "Servers",
+                    isSelected: selectedSection == .servers
+                ) {
+                    selectedSection = .servers
+                    onSelect?()
+                }
+
+                // MARK: Tools group
+                Text("Tools")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppColors.textTertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 12)
 
                 SidebarButton(
                     icon: "magnifyingglass",
@@ -208,15 +232,6 @@ struct SidebarView: View {
                     selectedSection = .apiFinder
                     onSelect?()
                 }
-
-                SidebarButton(
-                    icon: "server.rack",
-                    title: "Servers",
-                    isSelected: selectedSection == .servers
-                ) {
-                    selectedSection = .servers
-                    onSelect?()
-                }
             }
             .padding(.horizontal, 8)
 
@@ -242,7 +257,13 @@ struct SidebarView: View {
                             }
                         }
                     } label: {
-                        Text(isEditing ? "Done" : "Edit")
+                        Group {
+                            if isEditing {
+                                Text("Done")
+                            } else {
+                                Text("Edit")
+                            }
+                        }
                             .font(.caption.weight(.medium))
                             .foregroundStyle(AppColors.appPrimary)
                     }
@@ -274,8 +295,8 @@ struct SidebarView: View {
                                     }
                                 ) {
                                     SidebarButton(
-                                        icon: "bubble.left",
-                                        title: convo.title,
+                                        icon: convo.serverProfile?.isDemo == true ? "sparkle" : "bubble.left",
+                                        verbatimTitle: convo.title,
                                         isSelected: selectedSection == .chat && selectedConversationID == convo.id
                                     ) {
                                         selectedConversationID = convo.id
@@ -297,7 +318,18 @@ struct SidebarView: View {
 
             Divider().background(AppColors.border)
 
-            // Bottom: Tutorials & Settings
+            // Bottom: Try Demo, Tutorials & Settings
+            SidebarButton(
+                icon: "sparkle",
+                title: "Try Demo",
+                isSelected: false,
+                tint: AppColors.appWarning
+            ) {
+                createDemoConversation()
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+
             SidebarButton(
                 icon: "graduationcap",
                 title: "Tutorials",
@@ -307,7 +339,6 @@ struct SidebarView: View {
                 onSelect?()
             }
             .padding(.horizontal, 8)
-            .padding(.top, 8)
 
             SidebarButton(
                 icon: "gear",
@@ -408,7 +439,13 @@ struct SidebarView: View {
             Button {
                 deleteSelectedConversations()
             } label: {
-                Text(selectedForDeletion.isEmpty ? "Select Items" : "Delete (\(selectedForDeletion.count))")
+                Group {
+                    if selectedForDeletion.isEmpty {
+                        Text("Select Items")
+                    } else {
+                        Text("Delete (\(selectedForDeletion.count))")
+                    }
+                }
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(selectedForDeletion.isEmpty ? AppColors.textTertiary : .white)
                     .padding(.horizontal, 14)
@@ -459,6 +496,19 @@ struct SidebarView: View {
             selectedForDeletion.removeAll()
             isEditing = false
         }
+    }
+
+    /// Create a new conversation linked to the demo server and navigate to it.
+    private func createDemoConversation() {
+        guard let demo = servers.first(where: \.isDemo) else { return }
+        let conversation = Conversation(
+            model: demo.defaultModel ?? "Demo Model",
+            serverProfile: demo
+        )
+        modelContext.insert(conversation)
+        selectedConversationID = conversation.id
+        selectedSection = .chat
+        onSelect?()
     }
 }
 
@@ -538,21 +588,56 @@ struct SwipeToDeleteRow<Content: View>: View {
 
 struct SidebarButton: View {
     let icon: String
-    let title: String
     let isSelected: Bool
+    let tint: Color?
     let action: () -> Void
+
+    private let localizedTitle: LocalizedStringKey?
+    private let verbatimTitle: String?
+
+    /// Localizable title – used for fixed menu items.
+    init(icon: String, title: LocalizedStringKey, isSelected: Bool, tint: Color? = nil, action: @escaping () -> Void) {
+        self.icon = icon
+        self.localizedTitle = title
+        self.verbatimTitle = nil
+        self.isSelected = isSelected
+        self.tint = tint
+        self.action = action
+    }
+
+    /// Verbatim title – used for dynamic content like conversation names.
+    init(icon: String, verbatimTitle: String, isSelected: Bool, tint: Color? = nil, action: @escaping () -> Void) {
+        self.icon = icon
+        self.localizedTitle = nil
+        self.verbatimTitle = verbatimTitle
+        self.isSelected = isSelected
+        self.tint = tint
+        self.action = action
+    }
+
+    private var foregroundColor: Color {
+        tint ?? (isSelected ? AppColors.textPrimary : AppColors.textSecondary)
+    }
+
+    private var titleText: Text {
+        if let verbatimTitle {
+            Text(verbatimTitle)
+        } else {
+            Text(localizedTitle ?? "")
+        }
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
                     .font(.subheadline)
-                    .foregroundStyle(isSelected ? AppColors.textPrimary : AppColors.textSecondary)
+                    .foregroundStyle(foregroundColor)
                     .frame(width: 20)
 
-                Text(title)
+                titleText
                     .font(.subheadline)
-                    .foregroundStyle(isSelected ? AppColors.textPrimary : AppColors.textSecondary)
+                    .foregroundStyle(foregroundColor)
                     .lineLimit(1)
 
                 Spacer()

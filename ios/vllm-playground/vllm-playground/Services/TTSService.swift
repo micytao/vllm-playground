@@ -157,8 +157,8 @@ final class TTSService: NSObject {
     // MARK: - Server TTS
 
     private func speakWithServer(_ text: String) async {
-        guard let profile = serverProfile else {
-            // Fallback to Apple TTS
+        guard let profile = serverProfile, !profile.isDemo else {
+            // Demo server or no profile: silently fall back to Apple TTS (no error)
             speakWithApple(text)
             return
         }

@@ -50,11 +50,16 @@ struct ChatView: View {
     @State private var showErrorDetails = false
     @State private var voiceChatViewModel: VoiceChatViewModel?
 
-    init(conversation: Conversation, serverProfile: ServerProfile?) {
+    private let isDemo: Bool
+
+    init(conversation: Conversation, serverProfile: ServerProfile?, apiClient: VLLMAPIClientProtocol = VLLMAPIClient.shared) {
+        let effectiveClient = serverProfile?.isDemo == true ? DemoAPIClient() : apiClient
         _viewModel = State(initialValue: ChatViewModel(
             conversation: conversation,
-            serverProfile: serverProfile
+            serverProfile: serverProfile,
+            apiClient: effectiveClient
         ))
+        self.isDemo = serverProfile?.isDemo == true
     }
 
     var body: some View {
@@ -62,6 +67,11 @@ struct ChatView: View {
             AppColors.pageBg.ignoresSafeArea()
 
             VStack(spacing: 0) {
+                // Demo mode banner
+                if isDemo {
+                    demoBanner
+                }
+
                 // Messages
                 messagesView
 
@@ -263,13 +273,33 @@ struct ChatView: View {
 
     // MARK: - Actions
 
+    // MARK: - Demo Banner
+
+    private var demoBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "sparkle")
+                .font(.caption)
+                .foregroundStyle(AppColors.appWarning)
+            Text("Demo mode — responses are simulated")
+                .font(.caption)
+                .foregroundStyle(AppColors.appWarning)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(AppColors.appWarning.opacity(0.08))
+    }
+
     private func openVoiceMode() {
+        let profile = viewModel.conversation.serverProfile
+        let client: VLLMAPIClientProtocol = profile?.isDemo == true ? DemoAPIClient() : VLLMAPIClient.shared
         voiceChatViewModel = VoiceChatViewModel(
-            serverProfile: viewModel.conversation.serverProfile,
+            serverProfile: profile,
             model: viewModel.selectedModel,
             systemPrompt: viewModel.systemPrompt,
             temperature: viewModel.temperature,
-            maxTokens: viewModel.maxTokens
+            maxTokens: viewModel.maxTokens,
+            apiClient: client
         )
     }
 

@@ -1,11 +1,17 @@
 import SwiftUI
+import SwiftData
 import AVKit
 
 struct VideoGenerationView: View {
     @Bindable var viewModel: OmniViewModel
+    @Query(sort: \GeneratedVideo.createdAt, order: .reverse) private var videos: [GeneratedVideo]
     @State private var showTemplates = false
     @State private var showNegativePrompt = false
     @State private var showAdvanced = false
+
+    init(viewModel: OmniViewModel) {
+        self.viewModel = viewModel
+    }
 
     var body: some View {
         ScrollView {
@@ -208,7 +214,7 @@ struct VideoGenerationView: View {
                 .disabled(viewModel.videoPrompt.isEmpty || viewModel.isGeneratingVideo)
 
                 // Latest result preview
-                if let latestVideo = viewModel.generatedVideos.first {
+                if let latestVideo = videos.first {
                     VideoPreviewCard(videoItem: latestVideo)
                 }
             }
@@ -276,7 +282,7 @@ struct VideoGenerationView: View {
 // MARK: - Video Preview Card
 
 struct VideoPreviewCard: View {
-    let videoItem: VideoItem
+    let videoItem: GeneratedVideo
     @State private var player: AVPlayer?
 
     var body: some View {
@@ -316,7 +322,7 @@ struct VideoPreviewCard: View {
     private func setupPlayer() {
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(videoItem.id).mp4")
         if !FileManager.default.fileExists(atPath: tempURL.path) {
-            try? videoItem.data.write(to: tempURL)
+            try? videoItem.videoData.write(to: tempURL)
         }
         let avPlayer = AVPlayer(url: tempURL)
         avPlayer.isMuted = true
@@ -405,4 +411,5 @@ private struct VideoTemplateSheet: View {
 
 #Preview {
     VideoGenerationView(viewModel: OmniViewModel())
+        .modelContainer(for: GeneratedVideo.self, inMemory: true)
 }

@@ -152,7 +152,7 @@ struct ModelPillSelector: View {
     }
 
     private var displayName: String {
-        if selectedModel.isEmpty { return "Select Model" }
+        if selectedModel.isEmpty { return String(localized: "Select Model") }
         let parts = selectedModel.split(separator: "/")
         return String(parts.last ?? Substring(selectedModel))
     }
@@ -204,7 +204,7 @@ struct ServerModelPicker: View {
     }
 
     private var displayName: String {
-        if selectedModel.isEmpty { return "Select Model" }
+        if selectedModel.isEmpty { return String(localized: "Select Model") }
         let parts = selectedModel.split(separator: "/")
         return String(parts.last ?? Substring(selectedModel))
     }
