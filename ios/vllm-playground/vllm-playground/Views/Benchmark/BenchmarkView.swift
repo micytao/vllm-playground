@@ -38,6 +38,7 @@ struct BenchmarkView: View {
                     }
                     .padding(16)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle("Benchmark")
             .navigationBarTitleDisplayMode(.inline)

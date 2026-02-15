@@ -321,6 +321,7 @@ struct ModelHubView: View {
                     }
                     .padding(16)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .onAppear {
@@ -645,6 +646,10 @@ struct TokenSettingsSheet: View {
             }
             .padding(20)
             .background(AppColors.pageBg)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
             .navigationTitle("API Tokens")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

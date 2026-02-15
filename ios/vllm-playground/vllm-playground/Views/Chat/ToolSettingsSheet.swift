@@ -255,6 +255,7 @@ struct ToolSettingsSheet: View {
                     }
                     .padding(16)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle("Tool Calling")
             .navigationBarTitleDisplayMode(.inline)

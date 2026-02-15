@@ -187,6 +187,7 @@ struct ChatSettingsSheet: View {
                     }
                     .padding(16)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)

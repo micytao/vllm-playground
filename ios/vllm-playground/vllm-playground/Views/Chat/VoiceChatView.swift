@@ -494,6 +494,7 @@ struct VoiceChatSettingsSheet: View {
                         .lineLimit(2...4)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Voice Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

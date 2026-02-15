@@ -15,7 +15,6 @@
 		148688DC858BADC89C3B57AE /* ToolPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75B991B4DD29E4D74B8A4D17 /* ToolPresets.swift */; };
 		19D988A0C8E36716935F069F /* ToolCallsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DE93C33A5EC6A5903DB62EF /* ToolCallsView.swift */; };
 		24C6508F13EF9DB31ABAFED2 /* BenchmarkResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07263CBC9ABA5AB89E0803C0 /* BenchmarkResult.swift */; };
-		B1C2D3E4F5A6B7C8D9E0F1A2 /* GeneratedContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B3C4D5E6F7A8B9C0D1E2F3 /* GeneratedContent.swift */; };
 		2B9EDDC1CBA497FF4AF97B5F /* APIReferenceData.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6D2BBA5FAE2D8F4C5F8481A /* APIReferenceData.swift */; };
 		2C23B7CF2B89B5E257C04CA3 /* TTSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C257D4AC81451A24EC60DCE /* TTSView.swift */; };
 		2CDA149E904AEEFF29EF7CDB /* StructuredOutputSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7453C8CD76F2DD04BB46AE /* StructuredOutputSheet.swift */; };
@@ -38,6 +37,7 @@
 		84C245FAA54BFE253AB023EB /* ModelHubViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B0379617D8E1C06CCC809D /* ModelHubViewModel.swift */; };
 		85FD85DC8CFFE70FBCC35DEF /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 978921AF61058E503D561D1A /* MarkdownRenderer.swift */; };
 		898002A930AB4509917F1FB3 /* ServerProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A472D8FCFD5B3E8DD7B3FDC1 /* ServerProfile.swift */; };
+		8B0C018659947818DF405182 /* GeneratedContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 741DB605D09AFECB2C300635 /* GeneratedContent.swift */; };
 		8E89B785669CB74889EF23AD /* BenchmarkViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36982B614E624AEEDADFAEA6 /* BenchmarkViewModel.swift */; };
 		8FEFE4F0A73CFCDFBC1815F1 /* VideoGenerationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD2C0DA25101FCCBC609C286 /* VideoGenerationView.swift */; };
 		9185F03CB3EC2828050B00BA /* ChatSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C99EC8B09296000E42B6D7D8 /* ChatSettingsSheet.swift */; };
@@ -75,7 +75,6 @@
 /* Begin PBXFileReference section */
 		06ED726F8883ADF83AC89CA2 /* ModelHubAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelHubAPIClient.swift; sourceTree = "<group>"; };
 		07263CBC9ABA5AB89E0803C0 /* BenchmarkResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkResult.swift; sourceTree = "<group>"; };
-		A2B3C4D5E6F7A8B9C0D1E2F3 /* GeneratedContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedContent.swift; sourceTree = "<group>"; };
 		0C475D7759586E100C2891AF /* OmniPromptTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmniPromptTemplates.swift; sourceTree = "<group>"; };
 		2D0C02AEECCF475F8BA237C2 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		2D2231FE384B8B7398FA3559 /* StructuredOutputConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredOutputConfig.swift; sourceTree = "<group>"; };
@@ -95,6 +94,7 @@
 		69FA2C9C9593C32A3093F9C2 /* CommandGeneratorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandGeneratorView.swift; sourceTree = "<group>"; };
 		6F07B5814ECAC93542D4CC72 /* BenchmarkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkView.swift; sourceTree = "<group>"; };
 		6FAF5A6060E0EE390DB72F9F /* APIFinderViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIFinderViewModel.swift; sourceTree = "<group>"; };
+		741DB605D09AFECB2C300635 /* GeneratedContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedContent.swift; sourceTree = "<group>"; };
 		75B991B4DD29E4D74B8A4D17 /* ToolPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolPresets.swift; sourceTree = "<group>"; };
 		7DA501D7355895F96A82BB28 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		81642597D37ADDC567BB43F5 /* TTSService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSService.swift; sourceTree = "<group>"; };
@@ -263,8 +263,8 @@
 			children = (
 				D6D2BBA5FAE2D8F4C5F8481A /* APIReferenceData.swift */,
 				07263CBC9ABA5AB89E0803C0 /* BenchmarkResult.swift */,
-				A2B3C4D5E6F7A8B9C0D1E2F3 /* GeneratedContent.swift */,
 				BAF777F0F07BD2130F378283 /* Conversation.swift */,
+				741DB605D09AFECB2C300635 /* GeneratedContent.swift */,
 				D1F0608F1092A56FD7225104 /* Message.swift */,
 				0C475D7759586E100C2891AF /* OmniPromptTemplates.swift */,
 				A472D8FCFD5B3E8DD7B3FDC1 /* ServerProfile.swift */,
@@ -455,7 +455,6 @@
 				13744F18A94345D46953B3D2 /* AppSettingsView.swift in Sources */,
 				A6B8576C6E775A4994A5C682 /* AudioGenerationView.swift in Sources */,
 				24C6508F13EF9DB31ABAFED2 /* BenchmarkResult.swift in Sources */,
-				B1C2D3E4F5A6B7C8D9E0F1A2 /* GeneratedContent.swift in Sources */,
 				3A2C8331D88618A39AF39981 /* BenchmarkResultsView.swift in Sources */,
 				B00D2AD796E5331B5B562DC9 /* BenchmarkService.swift in Sources */,
 				2D1BE5EFD32DCF5422B4FD4B /* BenchmarkView.swift in Sources */,
@@ -472,6 +471,7 @@
 				09D411D5BE2216ADE280E510 /* ConversationListView.swift in Sources */,
 				A7466C37E319C26FFE0BA6A7 /* DemoAPIClient.swift in Sources */,
 				F8D2C512D7ACD892735FE7FD /* Extensions.swift in Sources */,
+				8B0C018659947818DF405182 /* GeneratedContent.swift in Sources */,
 				FFF8911D64A416EA8155DCBC /* HomeView.swift in Sources */,
 				93ADFDFDE6DC48DAC00CCD72 /* ImageGenerationView.swift in Sources */,
 				A45AD552CDF392C7C71E5D71 /* KeychainService.swift in Sources */,

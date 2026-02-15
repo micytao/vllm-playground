@@ -220,6 +220,7 @@ struct VideoGenerationView: View {
             }
             .padding(16)
         }
+        .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $showTemplates) {
             VideoTemplateSheet(viewModel: viewModel, showNegativePrompt: $showNegativePrompt)
                 .presentationDetents([.medium, .large])

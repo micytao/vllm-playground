@@ -193,6 +193,7 @@ struct AudioGenerationView: View {
             }
             .padding(16)
         }
+        .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $showTemplates) {
             AudioTemplateSheet(viewModel: viewModel, showNegativePrompt: $showNegativePrompt)
                 .presentationDetents([.medium, .large])

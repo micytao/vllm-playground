@@ -284,6 +284,7 @@ struct ServerFormView: View {
                     }
                     .padding(16)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle(isEditing ? "Edit Server" : "Add Server")
             .navigationBarTitleDisplayMode(.inline)

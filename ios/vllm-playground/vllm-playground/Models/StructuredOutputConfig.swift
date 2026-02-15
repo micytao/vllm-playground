@@ -19,7 +19,7 @@ enum StructuredOutputConfig: Equatable {
     }
 
     /// Apply this configuration to a ChatCompletionRequest by setting the
-    /// appropriate `response_format` or `structured_outputs` field.
+    /// appropriate `response_format` or vLLM guided decoding parameters.
     func applyTo(request: inout ChatCompletionRequest) {
         switch self {
         case .jsonObject:
@@ -41,25 +41,13 @@ enum StructuredOutputConfig: Equatable {
             }
 
         case .choice(let choices):
-            request.structured_outputs = StructuredOutputsPayload(
-                choice: choices,
-                regex: nil,
-                grammar: nil
-            )
+            request.guided_choice = choices
 
         case .regex(let pattern):
-            request.structured_outputs = StructuredOutputsPayload(
-                choice: nil,
-                regex: pattern,
-                grammar: nil
-            )
+            request.guided_regex = pattern
 
         case .grammar(let grammarStr):
-            request.structured_outputs = StructuredOutputsPayload(
-                choice: nil,
-                regex: nil,
-                grammar: grammarStr
-            )
+            request.guided_grammar = grammarStr
         }
     }
 }

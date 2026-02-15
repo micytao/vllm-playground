@@ -28,12 +28,18 @@ struct ChatCompletionRequest: Encodable {
 
     // Structured outputs (optional)
     var response_format: ResponseFormatPayload?
-    var structured_outputs: StructuredOutputsPayload?
+
+    // vLLM guided decoding — top-level extra body parameters
+    var guided_choice: [String]?
+    var guided_regex: String?
+    var guided_grammar: String?
+    var guided_json: JSONValue?
 
     enum CodingKeys: String, CodingKey {
         case model, messages, temperature, max_tokens, stream, stream_options
         case tools, tool_choice, parallel_tool_calls
-        case response_format, structured_outputs
+        case response_format
+        case guided_choice, guided_regex, guided_grammar, guided_json
     }
 
     func encode(to encoder: Encoder) throws {
@@ -50,7 +56,10 @@ struct ChatCompletionRequest: Encodable {
         try container.encodeIfPresent(tool_choice, forKey: .tool_choice)
         try container.encodeIfPresent(parallel_tool_calls, forKey: .parallel_tool_calls)
         try container.encodeIfPresent(response_format, forKey: .response_format)
-        try container.encodeIfPresent(structured_outputs, forKey: .structured_outputs)
+        try container.encodeIfPresent(guided_choice, forKey: .guided_choice)
+        try container.encodeIfPresent(guided_regex, forKey: .guided_regex)
+        try container.encodeIfPresent(guided_grammar, forKey: .guided_grammar)
+        try container.encodeIfPresent(guided_json, forKey: .guided_json)
     }
 }
 
@@ -170,22 +179,6 @@ struct JsonSchemaPayload: Encodable, Sendable {
     let schema: JSONValue
 }
 
-struct StructuredOutputsPayload: Encodable, Sendable {
-    let choice: [String]?
-    let regex: String?
-    let grammar: String?
-
-    enum CodingKeys: String, CodingKey {
-        case choice, regex, grammar
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(choice, forKey: .choice)
-        try container.encodeIfPresent(regex, forKey: .regex)
-        try container.encodeIfPresent(grammar, forKey: .grammar)
-    }
-}
 
 // MARK: - Tool Call Response Types
 

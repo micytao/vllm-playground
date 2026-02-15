@@ -91,6 +91,7 @@ struct StructuredOutputSheet: View {
                     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isEnabled)
                     .animation(.spring(response: 0.3, dampingFraction: 0.8), value: selectedType)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle("Structured Output")
             .navigationBarTitleDisplayMode(.inline)

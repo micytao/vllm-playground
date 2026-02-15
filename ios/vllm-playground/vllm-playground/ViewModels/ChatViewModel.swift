@@ -148,8 +148,7 @@ final class ChatViewModel {
             config.applyTo(request: &request)
             #if DEBUG
             print("[ChatViewModel] Structured output applied: \(config.displayName)")
-            print("[ChatViewModel] request.structured_outputs is nil: \(request.structured_outputs == nil)")
-            print("[ChatViewModel] request.response_format is nil: \(request.response_format == nil)")
+            print("[ChatViewModel] response_format: \(request.response_format != nil), guided_choice: \(request.guided_choice != nil), guided_regex: \(request.guided_regex != nil), guided_grammar: \(request.guided_grammar != nil)")
             #endif
         } else {
             #if DEBUG

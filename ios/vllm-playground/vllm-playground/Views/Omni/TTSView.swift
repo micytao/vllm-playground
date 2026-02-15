@@ -164,6 +164,7 @@ struct TTSView: View {
             }
             .padding(16)
         }
+        .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $showTemplates) {
             TTSTemplateSheet(viewModel: viewModel)
                 .presentationDetents([.medium, .large])

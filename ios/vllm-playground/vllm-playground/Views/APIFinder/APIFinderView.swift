@@ -45,6 +45,7 @@ struct APIFinderView: View {
                         }
                         .padding(16)
                     }
+                    .scrollDismissesKeyboard(.interactively)
                 }
 
                 // Copied toast

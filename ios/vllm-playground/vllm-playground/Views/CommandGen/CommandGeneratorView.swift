@@ -4,6 +4,7 @@ struct CommandGeneratorView: View {
     @Environment(\.showSidebar) private var showSidebar
     @State private var viewModel = CommandGeneratorViewModel()
     @State private var showCopiedToast = false
+    @State private var showResetConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -30,6 +31,7 @@ struct CommandGeneratorView: View {
                         }
                         .padding(16)
                     }
+                    .scrollDismissesKeyboard(.interactively)
                 }
 
                 // Copied toast
@@ -68,7 +70,7 @@ struct CommandGeneratorView: View {
 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        viewModel.resetToDefaults()
+                        showResetConfirmation = true
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.counterclockwise")
@@ -79,6 +81,14 @@ struct CommandGeneratorView: View {
                         .foregroundStyle(AppColors.appPrimary)
                     }
                 }
+            }
+            .alert("Reset All Parameters?", isPresented: $showResetConfirmation) {
+                Button("Reset", role: .destructive) {
+                    viewModel.resetToDefaults()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This will reset all parameters to their default values.")
             }
         }
     }

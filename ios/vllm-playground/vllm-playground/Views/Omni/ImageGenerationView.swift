@@ -322,6 +322,7 @@ struct ImageGenerationView: View {
             }
             .padding(16)
         }
+        .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $showTemplates) {
             ImageTemplateSheet(viewModel: viewModel, showNegativePrompt: $showNegativePrompt)
                 .presentationDetents([.medium, .large])
