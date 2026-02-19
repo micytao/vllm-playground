@@ -354,6 +354,39 @@ const zhCN = {
         prefixCacheHitRate: '前缀缓存命中率：'
     },
 
+    // 上下文可观测性（PagedAttention 可视化）
+    contextObs: {
+        title: '🧠 上下文可观测性',
+        noData: '等待 vLLM 服务器指标数据...<br><small>KV 缓存指标需要自托管的 vLLM 实例并启用 Prometheus，或使用模拟 API 进行测试。</small>',
+        kvCache: {
+            label: 'KV 缓存利用率',
+            legendNow: '现在',
+            legendAgo: '~2 分钟前'
+        },
+        prefixCache: {
+            active: '前缀缓存已激活',
+            inactive: '前缀缓存未激活',
+            noData: '无前缀缓存数据',
+            reusingMemory: '系统提示词内存正在被复用'
+        },
+        demo: {
+            runButton: '▶ 运行演示模拟',
+            running: '⏳ 模拟中...',
+            tooltip: '运行演示模拟',
+            clearTooltip: '清除演示数据',
+            badge: '模拟数据'
+        },
+        eviction: {
+            pressureTitle: '内存压力',
+            pressureDetail: 'KV 缓存利用率较高，可能即将开始上下文驱逐。',
+            criticalTitle: '内存压力严重',
+            criticalDetail: 'KV 缓存接近满载，上下文驱逐即将发生。',
+            activeTitle: '上下文驱逐进行中',
+            activeDetail: '模型内存已满。最早的对话上下文正在被丢弃，以为新令牌腾出空间。',
+            toast: '内存已满 — 模型正在丢弃较早的对话上下文以继续生成。'
+        }
+    },
+
     // Logs Panel
     logs: {
         title: '📋 服务器日志',

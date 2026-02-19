@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/css/guidellm.css">
     <link rel="stylesheet" href="/static/css/claudecode.css">
     <link rel="stylesheet" href="/static/css/omni.css">
+    <link rel="stylesheet" href="/static/css/paged-attention.css">
     <!-- xterm.js for Claude Code terminal -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -1010,6 +1011,63 @@
                             </div>
                         </div>
                     </aside>
+                    </div>
+
+                    <!-- Context Observability Panel (PagedAttention Visualizer) -->
+                    <div class="context-observability-panel" id="context-observability-panel">
+                        <div class="context-obs-header" id="context-obs-toggle">
+                            <h2 data-i18n="contextObs.title">🧠 Context Observability</h2><span class="pa-simulated-badge" id="pa-simulated-badge" data-i18n="contextObs.demo.badge">SIMULATED</span>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <button class="btn btn-sm btn-secondary pa-demo-header-btn" id="pa-demo-clear-btn" title="Clear demo data" data-i18n-title="contextObs.demo.clearTooltip" style="display: none;">Clear</button>
+                                <button class="btn btn-sm btn-secondary pa-demo-header-btn" id="pa-demo-header-btn" title="Run demo simulation" data-i18n-title="contextObs.demo.tooltip">Demo</button>
+                                <span class="context-obs-toggle">▼</span>
+                            </div>
+                        </div>
+                        <div class="context-obs-body" id="context-obs-body">
+                            <!-- No Data State -->
+                            <div class="context-obs-no-data" id="context-obs-no-data">
+                                <div class="context-obs-no-data-icon">📡</div>
+                                <div data-i18n-html="contextObs.noData">Waiting for metrics from vLLM server...<br><small>KV cache metrics require a self-hosted vLLM instance with Prometheus enabled.</small></div>
+                                <button class="btn btn-sm btn-secondary" id="pa-run-demo-btn" style="margin-top: 10px;" data-i18n="contextObs.demo.runButton">▶ Run Demo Simulation</button>
+                            </div>
+
+                            <!-- Eviction Alert Banner -->
+                            <div class="eviction-banner" id="eviction-banner">
+                                <span class="eviction-banner-icon" id="eviction-banner-icon">⚠</span>
+                                <div class="eviction-banner-content">
+                                    <div class="eviction-banner-title" id="eviction-banner-title" data-i18n="contextObs.eviction.pressureTitle">Memory Pressure</div>
+                                    <div class="eviction-banner-detail" id="eviction-banner-detail" data-i18n="contextObs.eviction.pressureDetail">KV cache utilization is high. Context eviction may begin soon.</div>
+                                </div>
+                            </div>
+
+                            <!-- KV Cache Heatmap -->
+                            <div class="kv-heatmap-section">
+                                <div class="kv-heatmap-header">
+                                    <span class="kv-heatmap-label" data-i18n="contextObs.kvCache.label">KV Cache Utilization</span>
+                                    <span class="kv-cache-current level-ok" id="kv-cache-current-value">--%</span>
+                                </div>
+                                <div class="kv-utilization-bar">
+                                    <div class="kv-utilization-fill" id="kv-utilization-fill" style="width: 0%; background: var(--success-color);"></div>
+                                </div>
+                                <div class="kv-heatmap-canvas-wrap">
+                                    <canvas id="kv-heatmap-canvas"></canvas>
+                                </div>
+                                <div class="kv-heatmap-legend">
+                                    <span data-i18n="contextObs.kvCache.legendNow">Now</span>
+                                    <span data-i18n="contextObs.kvCache.legendAgo">~2 min ago</span>
+                                </div>
+                            </div>
+
+                            <!-- Prefix Cache Indicator -->
+                            <div class="prefix-cache-section">
+                                <div class="prefix-cache-badge" id="prefix-cache-badge"></div>
+                                <div class="prefix-cache-info">
+                                    <span class="prefix-cache-status" id="prefix-cache-status" data-i18n="contextObs.prefixCache.inactive">Prefix Cache Inactive</span>
+                                    <span class="prefix-cache-details" id="prefix-cache-details" data-i18n="contextObs.prefixCache.noData">No prefix cache data available</span>
+                                </div>
+                                <span class="prefix-cache-rate" id="prefix-cache-rate">--</span>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Row 2: Server Logs (full width, collapsible) -->
