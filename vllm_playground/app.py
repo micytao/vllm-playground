@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import shutil
 import time
+from collections import deque
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Literal, Union
 from pathlib import Path
@@ -81,6 +82,7 @@ log_queue: asyncio.Queue = asyncio.Queue()
 websocket_connections: List[WebSocket] = []
 latest_vllm_metrics: Dict[str, Any] = {}  # Store latest metrics from logs
 metrics_timestamp: Optional[datetime] = None  # Track when metrics were last updated
+metrics_history: deque = deque(maxlen=120)  # ~6 min of history at 3s intervals
 current_model_identifier: Optional[str] = None  # Track the actual model identifier passed to vLLM
 current_served_model_name: Optional[str] = None  # Track the served model name alias (for API calls)
 
@@ -2836,6 +2838,20 @@ async def broadcast_log(message: str):
         latest_vllm_metrics["timestamp"] = metrics_timestamp.isoformat()
         logger.info(f"📊 Metrics updated at: {metrics_timestamp.strftime('%H:%M:%S')}")
 
+        # Append snapshot to metrics history for time-series visualization
+        metrics_history.append(
+            {
+                "timestamp": metrics_timestamp.isoformat(),
+                "kv_cache_usage_perc": latest_vllm_metrics.get("kv_cache_usage_perc"),
+                "prefix_cache_hit_rate": latest_vllm_metrics.get("prefix_cache_hit_rate"),
+                "num_preemptions": latest_vllm_metrics.get("num_preemptions"),
+                "num_requests_running": latest_vllm_metrics.get("num_requests_running"),
+                "num_requests_waiting": latest_vllm_metrics.get("num_requests_waiting"),
+                "prefix_cache_hits": latest_vllm_metrics.get("prefix_cache_hits"),
+                "prefix_cache_queries": latest_vllm_metrics.get("prefix_cache_queries"),
+            }
+        )
+
     disconnected = []
     for ws in websocket_connections:
         try:
@@ -4417,32 +4433,61 @@ async def get_vllm_metrics():
                         # Parse Prometheus-style metrics
                         metrics = {}
 
-                        # Look for KV cache usage
+                        prometheus_gauge_map = {
+                            "vllm:gpu_cache_usage_perc": "gpu_cache_usage_perc",
+                            "vllm:cpu_cache_usage_perc": "cpu_cache_usage_perc",
+                            "vllm:kv_cache_usage_perc": "kv_cache_usage_perc",
+                            "vllm:num_requests_running": "num_requests_running",
+                            "vllm:num_requests_waiting": "num_requests_waiting",
+                            "vllm:avg_prompt_throughput_toks_per_s": "avg_prompt_throughput",
+                            "vllm:avg_generation_throughput_toks_per_s": "avg_generation_throughput",
+                        }
+                        prometheus_counter_map = {
+                            "vllm:num_preemptions_total": "num_preemptions",
+                            "vllm:prefix_cache_hits_total": "prefix_cache_hits",
+                            "vllm:prefix_cache_queries_total": "prefix_cache_queries",
+                        }
+
                         for line in text.split("\n"):
-                            if "vllm:gpu_cache_usage_perc" in line and not line.startswith("#"):
-                                try:
-                                    value = float(line.split()[-1])
-                                    metrics["gpu_cache_usage_perc"] = value
-                                except:
-                                    pass
-                            elif "vllm:cpu_cache_usage_perc" in line and not line.startswith("#"):
-                                try:
-                                    value = float(line.split()[-1])
-                                    metrics["cpu_cache_usage_perc"] = value
-                                except:
-                                    pass
-                            elif "vllm:avg_prompt_throughput_toks_per_s" in line and not line.startswith("#"):
-                                try:
-                                    value = float(line.split()[-1])
-                                    metrics["avg_prompt_throughput"] = value
-                                except:
-                                    pass
-                            elif "vllm:avg_generation_throughput_toks_per_s" in line and not line.startswith("#"):
-                                try:
-                                    value = float(line.split()[-1])
-                                    metrics["avg_generation_throughput"] = value
-                                except:
-                                    pass
+                            if line.startswith("#"):
+                                continue
+                            for prom_name, key in prometheus_gauge_map.items():
+                                if prom_name in line:
+                                    try:
+                                        metrics[key] = float(line.split()[-1])
+                                    except (ValueError, IndexError):
+                                        pass
+                                    break
+                            else:
+                                for prom_name, key in prometheus_counter_map.items():
+                                    if prom_name in line:
+                                        try:
+                                            metrics[key] = float(line.split()[-1])
+                                        except (ValueError, IndexError):
+                                            pass
+                                        break
+
+                        # Store enriched metrics globally so history captures them
+                        if metrics:
+                            latest_vllm_metrics.update(metrics)
+                            now = datetime.now()
+                            metrics_history.append(
+                                {
+                                    "timestamp": now.isoformat(),
+                                    **{
+                                        k: metrics.get(k)
+                                        for k in [
+                                            "kv_cache_usage_perc",
+                                            "gpu_cache_usage_perc",
+                                            "num_preemptions",
+                                            "num_requests_running",
+                                            "num_requests_waiting",
+                                            "prefix_cache_hits",
+                                            "prefix_cache_queries",
+                                        ]
+                                    },
+                                }
+                            )
 
                         return metrics
                     else:
@@ -4456,6 +4501,64 @@ async def get_vllm_metrics():
     except Exception as e:
         logger.debug(f"Error in get_vllm_metrics: {e}")
         return {}
+
+
+@app.get("/api/vllm/metrics/history")
+async def get_vllm_metrics_history():
+    """Return time-series metrics for the PagedAttention visualizer heatmap."""
+    return list(metrics_history)
+
+
+# --- Simulation endpoints for testing Context Observability without a live vLLM server ---
+
+
+class SimulateMetricsRequest(BaseModel):
+    kv_cache_usage_perc: Optional[float] = None
+    prefix_cache_hit_rate: Optional[float] = None
+    num_preemptions: Optional[float] = None
+    num_requests_running: Optional[float] = None
+    num_requests_waiting: Optional[float] = None
+    prefix_cache_hits: Optional[float] = None
+    prefix_cache_queries: Optional[float] = None
+    gpu_cache_usage_perc: Optional[float] = None
+    cpu_cache_usage_perc: Optional[float] = None
+
+
+@app.post("/api/vllm/metrics/simulate")
+async def simulate_vllm_metrics(req: SimulateMetricsRequest):
+    """Inject simulated metrics for testing the Context Observability panel."""
+    global latest_vllm_metrics, metrics_timestamp
+
+    now = datetime.now()
+    payload = req.model_dump(exclude_none=True)
+    latest_vllm_metrics.update(payload)
+    latest_vllm_metrics["timestamp"] = now.isoformat()
+    metrics_timestamp = now
+
+    metrics_history.append(
+        {
+            "timestamp": now.isoformat(),
+            "kv_cache_usage_perc": latest_vllm_metrics.get("kv_cache_usage_perc"),
+            "prefix_cache_hit_rate": latest_vllm_metrics.get("prefix_cache_hit_rate"),
+            "num_preemptions": latest_vllm_metrics.get("num_preemptions"),
+            "num_requests_running": latest_vllm_metrics.get("num_requests_running"),
+            "num_requests_waiting": latest_vllm_metrics.get("num_requests_waiting"),
+            "prefix_cache_hits": latest_vllm_metrics.get("prefix_cache_hits"),
+            "prefix_cache_queries": latest_vllm_metrics.get("prefix_cache_queries"),
+        }
+    )
+
+    return {"status": "ok", "metrics": latest_vllm_metrics}
+
+
+@app.post("/api/vllm/metrics/simulate/reset")
+async def simulate_reset_metrics():
+    """Clear all simulated metrics and history."""
+    global latest_vllm_metrics, metrics_timestamp
+    latest_vllm_metrics.clear()
+    metrics_timestamp = None
+    metrics_history.clear()
+    return {"status": "ok", "message": "Metrics reset"}
 
 
 @app.post("/api/benchmark/start")

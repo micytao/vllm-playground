@@ -3,6 +3,7 @@ import { initMCPModule } from './modules/mcp.js';
 import { initGuideLLMModule } from './modules/guidellm.js';
 import { initClaudeCodeModule } from './modules/claudecode.js';
 import { initOmniModule } from './modules/omni.js';
+import { initPagedAttentionModule } from './modules/paged-attention.js';
 
 class VLLMWebUI {
     constructor() {
@@ -1688,6 +1689,9 @@ number ::= [0-9]+`
             this.omniAvailable = features.vllm_omni_installed || false;
             this.omniVersion = features.vllm_omni_version || null;
             initOmniModule(this);
+
+            // Initialize PagedAttention Visualizer (Context Observability)
+            initPagedAttentionModule(this);
 
             // Preload vLLM-Omni template immediately (like MCP/Claude Code which are inline)
             this.loadOmniTemplate();
