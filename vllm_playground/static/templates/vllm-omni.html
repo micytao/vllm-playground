@@ -52,24 +52,24 @@ uv pip install onnxruntime</code></pre>
             <div class="form-group mode-toggle-group">
                 <label>Run Mode</label>
                 <div class="mode-toggle-buttons" id="omni-run-mode-toggle">
-                    <label class="mode-button active" id="omni-run-mode-subprocess-label">
-                        <input type="radio" id="omni-run-mode-subprocess" name="omni-run-mode" value="subprocess" checked>
+                    <label class="mode-button" id="omni-run-mode-subprocess-label">
+                        <input type="radio" id="omni-run-mode-subprocess" name="omni-run-mode" value="subprocess">
                         <span>⚡ Subprocess</span>
                     </label>
                     <label class="mode-button" id="omni-run-mode-container-label">
                         <input type="radio" id="omni-run-mode-container" name="omni-run-mode" value="container">
                         <span>📦 Container</span>
                     </label>
-                    <label class="mode-button" id="omni-run-mode-remote-label">
-                        <input type="radio" id="omni-run-mode-remote" name="omni-run-mode" value="remote">
+                    <label class="mode-button active" id="omni-run-mode-remote-label">
+                        <input type="radio" id="omni-run-mode-remote" name="omni-run-mode" value="remote" checked>
                         <span>🌐 Remote</span>
                     </label>
                 </div>
                 <small class="form-help" id="omni-run-mode-help">Subprocess requires local vLLM-Omni installation</small>
             </div>
 
-            <!-- Remote vLLM-Omni Settings - Only shown in Remote mode -->
-            <div id="omni-remote-settings-group" style="display: none;">
+            <!-- Remote vLLM-Omni Settings - Shown in Remote mode (default) -->
+            <div id="omni-remote-settings-group">
                 <div class="form-group">
                     <label for="omni-remote-url">Remote vLLM-Omni URL</label>
                     <input type="text" id="omni-remote-url" class="form-control" placeholder="http://gpu-server:8091">
@@ -79,6 +79,12 @@ uv pip install onnxruntime</code></pre>
                     <label for="omni-remote-api-key">API Key (Optional)</label>
                     <input type="password" id="omni-remote-api-key" class="form-control" placeholder="sk-...">
                     <small class="form-help">Bearer token for authenticated vLLM-Omni endpoints</small>
+                </div>
+
+                <!-- Settings saved indicator -->
+                <div id="omni-settings-saved-indicator" class="settings-saved-row" style="display: none;">
+                    <span class="settings-saved-text">Settings saved</span>
+                    <button id="omni-clear-saved-settings-btn" class="btn-link-small" title="Clear saved URL and API key">Clear</button>
                 </div>
 
                 <!-- Remote Server Info (populated after connecting) -->

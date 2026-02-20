@@ -1647,6 +1647,44 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
    Displayed after connecting to a remote vLLM instance
    ═══════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════
+   Settings Saved Indicator
+   ═══════════════════════════════════════════════════════════════════ */
+
+.settings-saved-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    margin-top: 8px;
+    margin-bottom: 4px;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.settings-saved-text {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.btn-link-small {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    opacity: 0.7;
+    transition: opacity 0.15s, background 0.15s;
+}
+
+.btn-link-small:hover {
+    opacity: 1;
+    background: var(--bg-tertiary);
+}
+
 .remote-server-info {
     margin-top: 12px;
     margin-bottom: 16px;
