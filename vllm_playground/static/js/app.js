@@ -2640,7 +2640,7 @@ number ::= [0-9]+`
         // Build speculative decoding config from UI fields
         const specMethod = document.getElementById('spec-decode-method')?.value || '';
         if (specMethod) {
-            const modelRequiredMethods = ['draft_model', 'eagle', 'eagle3', 'mlp_speculator', 'medusa', 'mtp'];
+            const modelRequiredMethods = ['eagle', 'eagle3', 'mlp_speculator', 'medusa', 'mtp'];
             const needsModel = modelRequiredMethods.includes(specMethod);
             const specModelVal = document.getElementById('speculative-model')?.value.trim() || '';
 
@@ -4247,13 +4247,13 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         }
 
         if (timeTakenEl) {
-            timeTakenEl.textContent = `${metrics.timeTaken.toFixed(2)}s`;
+            timeTakenEl.textContent = metrics.timeTaken != null ? `${metrics.timeTaken.toFixed(2)}s` : '-';
             timeTakenEl.classList.add('updated');
             setTimeout(() => timeTakenEl.classList.remove('updated'), 500);
         }
 
         if (tokensPerSecEl) {
-            const tokensPerSec = metrics.completionTokens / metrics.timeTaken;
+            const tokensPerSec = (metrics.completionTokens && metrics.timeTaken) ? metrics.completionTokens / metrics.timeTaken : 0;
             tokensPerSecEl.textContent = tokensPerSec.toFixed(2);
             tokensPerSecEl.classList.add('updated');
             setTimeout(() => tokensPerSecEl.classList.remove('updated'), 500);
@@ -4261,22 +4261,21 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
         // New metrics
         if (promptThroughputEl) {
-            // Calculate prompt throughput: prompt_tokens / time_to_first_token
             if (metrics.timeToFirstToken && metrics.timeToFirstToken > 0) {
                 const promptThroughput = metrics.promptTokens / metrics.timeToFirstToken;
                 promptThroughputEl.textContent = `${promptThroughput.toFixed(2)} tok/s`;
-            } else {
-                // Fallback: use overall time if time_to_first_token not available
+            } else if (metrics.timeTaken && metrics.timeTaken > 0) {
                 const promptThroughput = metrics.promptTokens / metrics.timeTaken;
                 promptThroughputEl.textContent = `${promptThroughput.toFixed(2)} tok/s`;
+            } else {
+                promptThroughputEl.textContent = '-';
             }
             promptThroughputEl.classList.add('updated');
             setTimeout(() => promptThroughputEl.classList.remove('updated'), 500);
         }
 
         if (generationThroughputEl) {
-            // Calculate generation throughput: completion_tokens / (total_time - time_to_first_token)
-            if (metrics.timeToFirstToken) {
+            if (metrics.timeToFirstToken && metrics.timeTaken) {
                 const generationTime = metrics.timeTaken - metrics.timeToFirstToken;
                 if (generationTime > 0) {
                     const generationThroughput = metrics.completionTokens / generationTime;
@@ -4284,10 +4283,11 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 } else {
                     generationThroughputEl.textContent = '-';
                 }
-            } else {
-                // Fallback: use overall throughput
+            } else if (metrics.timeTaken && metrics.timeTaken > 0) {
                 const generationThroughput = metrics.completionTokens / metrics.timeTaken;
                 generationThroughputEl.textContent = `${generationThroughput.toFixed(2)} tok/s`;
+            } else {
+                generationThroughputEl.textContent = '-';
             }
             generationThroughputEl.classList.add('updated');
             setTimeout(() => generationThroughputEl.classList.remove('updated'), 500);
@@ -4301,10 +4301,10 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 const percentage = metrics.kvCacheUsage.toFixed(1);
 
                 // Add staleness indicator if metrics are old
-                if (metrics.metricsAge !== undefined && metrics.metricsAge > 5) {
+                if (metrics.metricsAge != null && metrics.metricsAge > 5) {
                     kvCacheUsageEl.textContent = `${percentage}% ⚠️`;
                     kvCacheUsageEl.title = `Metrics age: ${metrics.metricsAge.toFixed(1)}s - may not reflect this response`;
-                } else if (metrics.metricsAge !== undefined) {
+                } else if (metrics.metricsAge != null) {
                     kvCacheUsageEl.textContent = `${percentage}%`;
                     kvCacheUsageEl.title = `Fresh metrics (${metrics.metricsAge.toFixed(1)}s old) - from this response`;
                 } else {
@@ -4327,10 +4327,10 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 const percentage = metrics.prefixCacheHitRate.toFixed(1);
 
                 // Add staleness indicator if metrics are old
-                if (metrics.metricsAge !== undefined && metrics.metricsAge > 5) {
+                if (metrics.metricsAge != null && metrics.metricsAge > 5) {
                     prefixCacheHitEl.textContent = `${percentage}% ⚠️`;
                     prefixCacheHitEl.title = `Metrics age: ${metrics.metricsAge.toFixed(1)}s - may not reflect this response`;
-                } else if (metrics.metricsAge !== undefined) {
+                } else if (metrics.metricsAge != null) {
                     prefixCacheHitEl.textContent = `${percentage}%`;
                     prefixCacheHitEl.title = `Fresh metrics (${metrics.metricsAge.toFixed(1)}s old) - from this response`;
                 } else {

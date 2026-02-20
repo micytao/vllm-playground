@@ -36,7 +36,7 @@ const SpecDecodeMethods = {
         if (specMethodSelect) {
             const updateSpecFields = () => {
                 const method = specMethodSelect.value;
-                const needsModel = ['draft_model', 'eagle', 'eagle3', 'mlp_speculator', 'medusa', 'mtp'].includes(method);
+                const needsModel = ['eagle', 'eagle3', 'mlp_speculator', 'medusa', 'mtp'].includes(method);
                 const needsTP = ['eagle', 'eagle3', 'mlp_speculator'].includes(method);
                 const needsNgram = method === 'ngram';
                 const active = !!method;
@@ -54,7 +54,6 @@ const SpecDecodeMethods = {
 
                 if (modelHelp) {
                     const hints = {
-                        draft_model: 'e.g., Qwen/Qwen3-0.6B',
                         eagle: 'e.g., yuhuili/EAGLE-LLaMA3-Instruct-8B',
                         eagle3: 'e.g., RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3',
                         mlp_speculator: 'e.g., ibm-ai-platform/llama3-70b-accelerator',
