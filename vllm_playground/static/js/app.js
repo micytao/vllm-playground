@@ -4,6 +4,9 @@ import { initGuideLLMModule } from './modules/guidellm.js';
 import { initClaudeCodeModule } from './modules/claudecode.js';
 import { initOmniModule } from './modules/omni.js';
 import { initPagedAttentionModule } from './modules/paged-attention.js';
+import { initTokenCounterModule } from './modules/token-counter.js';
+import { initLogprobsModule } from './modules/logprobs.js';
+import { initSpecDecodeModule } from './modules/spec-decode.js';
 
 class VLLMWebUI {
     constructor() {
@@ -1693,6 +1696,27 @@ number ::= [0-9]+`
             // Initialize PagedAttention Visualizer (Context Observability)
             initPagedAttentionModule(this);
 
+            // Initialize Live Token Counter
+            initTokenCounterModule(this);
+
+            // Initialize Logprobs Visualizer
+            initLogprobsModule(this);
+
+            // Initialize Speculative Decoding Dashboard
+            initSpecDecodeModule(this);
+
+            // Response Metrics collapsible toggle
+            const rmToggle = document.getElementById('response-metrics-toggle');
+            const rmSection = document.getElementById('response-metrics-section');
+            if (rmToggle && rmSection) {
+                rmToggle.addEventListener('click', () => {
+                    rmSection.classList.toggle('collapsed');
+                });
+            }
+
+            // Sidebar panel resize handles
+            this.initSidebarResize();
+
             // Preload vLLM-Omni template immediately (like MCP/Claude Code which are inline)
             this.loadOmniTemplate();
 
@@ -2605,8 +2629,45 @@ number ::= [0-9]+`
             modelscope_token: isModelscope && modelscopeToken ? modelscopeToken : null,  // ModelScope token
             enable_tool_calling: this.elements.enableToolCalling.checked,
             tool_call_parser: this.elements.toolCallParser.value || null,  // null = auto-detect
-            served_model_name: this.elements.servedModelName?.value.trim() || null  // null = use model path
+            served_model_name: this.elements.servedModelName?.value.trim() || null,  // null = use model path
+            speculative_method: null,
+            speculative_model: null,
+            num_speculative_tokens: null,
+            draft_tensor_parallel_size: null,
+            prompt_lookup_max: null,
         };
+
+        // Build speculative decoding config from UI fields
+        const specMethod = document.getElementById('spec-decode-method')?.value || '';
+        if (specMethod) {
+            const modelRequiredMethods = ['eagle', 'eagle3', 'mlp_speculator', 'medusa', 'mtp'];
+            const needsModel = modelRequiredMethods.includes(specMethod);
+            const specModelVal = document.getElementById('speculative-model')?.value.trim() || '';
+
+            if (needsModel && !specModelVal) {
+                this.showAlert({
+                    title: 'Missing Draft Model',
+                    message: `The "${specMethod}" speculative decoding method requires a draft model path. Please enter a HuggingFace model ID in the "Draft / Speculator Model" field.`,
+                    icon: '⚠️',
+                    type: 'danger',
+                });
+                return;
+            }
+
+            config.speculative_method = specMethod;
+            if (needsModel) {
+                config.speculative_model = specModelVal;
+            }
+            config.num_speculative_tokens = parseInt(document.getElementById('num-speculative-tokens')?.value) || null;
+            if (['eagle', 'eagle3', 'mlp_speculator'].includes(specMethod)) {
+                const dtp = parseInt(document.getElementById('draft-tensor-parallel-size')?.value);
+                if (dtp && dtp > 0) config.draft_tensor_parallel_size = dtp;
+            }
+            if (specMethod === 'ngram') {
+                const plm = parseInt(document.getElementById('prompt-lookup-max')?.value);
+                if (plm && plm > 0) config.prompt_lookup_max = plm;
+            }
+        }
 
         // Add remote mode settings
         if (runMode === 'remote') {
@@ -2898,6 +2959,7 @@ number ::= [0-9]+`
             const maxLen = data.models[0].max_model_len;
             if (maxLen !== undefined && maxLen !== null) {
                 maxCtxEl.textContent = Number(maxLen).toLocaleString() + ' tokens';
+                if (this.tcSetMaxModelLen) this.tcSetMaxModelLen(maxLen);
             } else {
                 maxCtxEl.textContent = 'N/A';
             }
@@ -3065,6 +3127,11 @@ number ::= [0-9]+`
                 console.log('Structured outputs enabled:', structuredConfig);
             }
 
+            // Add logprobs if enabled
+            if (this.getLogprobsPayload) {
+                Object.assign(requestBody, this.getLogprobsPayload());
+            }
+
             // Use streaming
             const response = await fetch('/api/chat', {
                 method: 'POST',
@@ -3129,6 +3196,11 @@ number ::= [0-9]+`
                         textSpan.classList.add('markdown-body');
                         textSpan.innerHTML = this.renderMarkdown(message.content);
                         this.chatHistory.push({role: 'assistant', content: message.content});
+
+                        // Overlay logprobs for non-streaming response
+                        if (choice.logprobs?.content && this.isLogprobsEnabled?.() && this.renderLogprobs) {
+                            this.renderLogprobs(textSpan, message.content, choice.logprobs.content);
+                        }
                     } else {
                         textSpan.textContent = 'No response from model';
                         textSpan.classList.add('message-text');
@@ -3161,6 +3233,7 @@ number ::= [0-9]+`
                     timeTaken: timeTaken,
                     tokensPerSecond: completionTokens > 0 ? (completionTokens / timeTaken).toFixed(2) : 0
                 });
+                if (this.tcUpdateFromUsage) this.tcUpdateFromUsage(promptTokens, completionTokens);
 
                 console.log('Non-streaming response completed');
                 return;
@@ -3175,6 +3248,7 @@ number ::= [0-9]+`
             // Track raw response data for debugging tool call failures
             let rawChunks = [];
             let toolsWereRequested = requestBody.tools && requestBody.tools.length > 0;
+            let accumulatedLogprobs = [];
 
             while (true) {
                 const {done, value} = await reader.read();
@@ -3273,6 +3347,11 @@ number ::= [0-9]+`
 
                                     // Auto-scroll to bottom
                                     this.elements.chatContainer.scrollTop = this.elements.chatContainer.scrollHeight;
+                                }
+
+                                // Accumulate logprobs data from streaming chunks
+                                if (choice.logprobs?.content) {
+                                    accumulatedLogprobs.push(...choice.logprobs.content);
                                 }
                             }
 
@@ -3378,6 +3457,11 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                     textSpan.classList.add('markdown-body');
                     textSpan.innerHTML = this.renderMarkdown(fullText);
                     this.chatHistory.push({role: 'assistant', content: fullText});
+
+                    // Overlay logprobs heatmap if data was collected
+                    if (accumulatedLogprobs.length > 0 && this.isLogprobsEnabled?.() && this.renderLogprobs) {
+                        this.renderLogprobs(textSpan, fullText, accumulatedLogprobs);
+                    }
                 }
             } else {
                 // No content and no tool calls - show detailed error
@@ -3451,7 +3535,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             // Estimate prompt tokens if not provided (rough estimate: ~4 chars per token)
             const estimatedPromptTokens = usageData?.prompt_tokens || Math.ceil(
                 this.chatHistory
-                    .filter(msg => msg.role === 'user')
+                    .filter(msg => msg.content)
                     .map(msg => msg.content.length)
                     .reduce((a, b) => a + b, 0) / 4
             );
@@ -3541,6 +3625,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 prefixCacheHitRate: prefixCacheHitRate,
                 metricsAge: metricsAge
             });
+            if (this.tcUpdateFromUsage) this.tcUpdateFromUsage(estimatedPromptTokens, completionTokens);
 
         } catch (error) {
             console.error('Chat error details:', error);
@@ -3601,7 +3686,16 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         if (role !== 'system') {
             const avatarDiv = document.createElement('div');
             avatarDiv.className = 'message-avatar';
-            avatarDiv.textContent = role === 'user' ? 'U' : 'AI';
+            if (role === 'user') {
+                avatarDiv.textContent = 'U';
+            } else {
+                const logo = document.createElement('img');
+                logo.src = '/assets/vllm_only.png';
+                logo.alt = 'vLLM';
+                logo.className = 'avatar-logo';
+                logo.onerror = () => { logo.style.display = 'none'; avatarDiv.textContent = 'vLLM'; };
+                avatarDiv.appendChild(logo);
+            }
             messageDiv.appendChild(avatarDiv);
         }
 
@@ -3701,6 +3795,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 </div>
             </div>
         `;
+        if (this.tcReset) this.tcReset();
         this.showNotification('Chat cleared successfully', 'success');
     }
 
@@ -4096,6 +4191,30 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         });
     }
 
+    showAlert(options = {}) {
+        const {
+            title = 'Notice',
+            message = '',
+            icon = 'ℹ️',
+            type = 'primary',
+            buttonText = 'OK'
+        } = options;
+
+        const cancelBtn = document.getElementById('confirm-modal-cancel');
+        if (cancelBtn) cancelBtn.style.display = 'none';
+
+        return this.showConfirm({
+            title,
+            message,
+            icon,
+            type,
+            confirmText: buttonText,
+            cancelText: 'Cancel',
+        }).finally(() => {
+            if (cancelBtn) cancelBtn.style.display = '';
+        });
+    }
+
     updateChatMetrics(metrics) {
         // Update all metric displays
         const promptTokensEl = document.getElementById('metric-prompt-tokens');
@@ -4128,13 +4247,13 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         }
 
         if (timeTakenEl) {
-            timeTakenEl.textContent = `${metrics.timeTaken.toFixed(2)}s`;
+            timeTakenEl.textContent = metrics.timeTaken != null ? `${metrics.timeTaken.toFixed(2)}s` : '-';
             timeTakenEl.classList.add('updated');
             setTimeout(() => timeTakenEl.classList.remove('updated'), 500);
         }
 
         if (tokensPerSecEl) {
-            const tokensPerSec = metrics.completionTokens / metrics.timeTaken;
+            const tokensPerSec = (metrics.completionTokens && metrics.timeTaken) ? metrics.completionTokens / metrics.timeTaken : 0;
             tokensPerSecEl.textContent = tokensPerSec.toFixed(2);
             tokensPerSecEl.classList.add('updated');
             setTimeout(() => tokensPerSecEl.classList.remove('updated'), 500);
@@ -4142,22 +4261,21 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
         // New metrics
         if (promptThroughputEl) {
-            // Calculate prompt throughput: prompt_tokens / time_to_first_token
             if (metrics.timeToFirstToken && metrics.timeToFirstToken > 0) {
                 const promptThroughput = metrics.promptTokens / metrics.timeToFirstToken;
                 promptThroughputEl.textContent = `${promptThroughput.toFixed(2)} tok/s`;
-            } else {
-                // Fallback: use overall time if time_to_first_token not available
+            } else if (metrics.timeTaken && metrics.timeTaken > 0) {
                 const promptThroughput = metrics.promptTokens / metrics.timeTaken;
                 promptThroughputEl.textContent = `${promptThroughput.toFixed(2)} tok/s`;
+            } else {
+                promptThroughputEl.textContent = '-';
             }
             promptThroughputEl.classList.add('updated');
             setTimeout(() => promptThroughputEl.classList.remove('updated'), 500);
         }
 
         if (generationThroughputEl) {
-            // Calculate generation throughput: completion_tokens / (total_time - time_to_first_token)
-            if (metrics.timeToFirstToken) {
+            if (metrics.timeToFirstToken && metrics.timeTaken) {
                 const generationTime = metrics.timeTaken - metrics.timeToFirstToken;
                 if (generationTime > 0) {
                     const generationThroughput = metrics.completionTokens / generationTime;
@@ -4165,10 +4283,11 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 } else {
                     generationThroughputEl.textContent = '-';
                 }
-            } else {
-                // Fallback: use overall throughput
+            } else if (metrics.timeTaken && metrics.timeTaken > 0) {
                 const generationThroughput = metrics.completionTokens / metrics.timeTaken;
                 generationThroughputEl.textContent = `${generationThroughput.toFixed(2)} tok/s`;
+            } else {
+                generationThroughputEl.textContent = '-';
             }
             generationThroughputEl.classList.add('updated');
             setTimeout(() => generationThroughputEl.classList.remove('updated'), 500);
@@ -4182,10 +4301,10 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 const percentage = metrics.kvCacheUsage.toFixed(1);
 
                 // Add staleness indicator if metrics are old
-                if (metrics.metricsAge !== undefined && metrics.metricsAge > 5) {
+                if (metrics.metricsAge != null && metrics.metricsAge > 5) {
                     kvCacheUsageEl.textContent = `${percentage}% ⚠️`;
                     kvCacheUsageEl.title = `Metrics age: ${metrics.metricsAge.toFixed(1)}s - may not reflect this response`;
-                } else if (metrics.metricsAge !== undefined) {
+                } else if (metrics.metricsAge != null) {
                     kvCacheUsageEl.textContent = `${percentage}%`;
                     kvCacheUsageEl.title = `Fresh metrics (${metrics.metricsAge.toFixed(1)}s old) - from this response`;
                 } else {
@@ -4208,10 +4327,10 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 const percentage = metrics.prefixCacheHitRate.toFixed(1);
 
                 // Add staleness indicator if metrics are old
-                if (metrics.metricsAge !== undefined && metrics.metricsAge > 5) {
+                if (metrics.metricsAge != null && metrics.metricsAge > 5) {
                     prefixCacheHitEl.textContent = `${percentage}% ⚠️`;
                     prefixCacheHitEl.title = `Metrics age: ${metrics.metricsAge.toFixed(1)}s - may not reflect this response`;
-                } else if (metrics.metricsAge !== undefined) {
+                } else if (metrics.metricsAge != null) {
                     prefixCacheHitEl.textContent = `${percentage}%`;
                     prefixCacheHitEl.title = `Fresh metrics (${metrics.metricsAge.toFixed(1)}s old) - from this response`;
                 } else {
@@ -4946,6 +5065,68 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
         // Save layout preferences to server
         this.saveLayoutPreferences();
+    }
+
+    initSidebarResize() {
+        const handles = document.querySelectorAll('.sidebar-resize-handle');
+        handles.forEach(handle => {
+            handle.addEventListener('mousedown', (e) => this._startSidebarResize(e, handle));
+        });
+        document.addEventListener('mousemove', (e) => this._doSidebarResize(e));
+        document.addEventListener('mouseup', () => this._stopSidebarResize());
+    }
+
+    _startSidebarResize(e, handle) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const aboveId = handle.dataset.above;
+        const belowId = handle.dataset.below;
+        const aboveEl = document.getElementById(aboveId);
+        const belowEl = document.getElementById(belowId);
+        if (!aboveEl || !belowEl) return;
+
+        this._sidebarResize = {
+            active: true,
+            handle,
+            aboveEl,
+            belowEl,
+            startY: e.clientY,
+            aboveStartH: aboveEl.offsetHeight,
+            belowStartH: belowEl.offsetHeight,
+        };
+        handle.classList.add('active');
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+    }
+
+    _doSidebarResize(e) {
+        const s = this._sidebarResize;
+        if (!s || !s.active) return;
+        e.preventDefault();
+
+        const delta = e.clientY - s.startY;
+        const newAbove = s.aboveStartH + delta;
+        const newBelow = s.belowStartH - delta;
+
+        const minH = 40;
+        if (newAbove < minH || newBelow < minH) return;
+
+        s.aboveEl.style.flex = 'none';
+        s.belowEl.style.flex = 'none';
+        s.aboveEl.style.height = `${newAbove}px`;
+        s.belowEl.style.height = `${newBelow}px`;
+    }
+
+    _stopSidebarResize() {
+        const s = this._sidebarResize;
+        if (!s || !s.active) return;
+
+        s.active = false;
+        s.handle.classList.remove('active');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        this._sidebarResize = null;
     }
 
     saveLayoutPreferences() {

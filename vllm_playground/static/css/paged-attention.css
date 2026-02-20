@@ -2,9 +2,7 @@
 
 .context-observability-panel {
     background: var(--bg-secondary);
-    border-top: 1px solid var(--border-color);
     padding: 0;
-    overflow: hidden;
     transition: max-height 0.3s ease;
 }
 
@@ -13,10 +11,7 @@
 }
 
 .context-obs-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 16px;
+    padding: 10px 12px;
     background: rgba(0, 0, 0, 0.15);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     cursor: pointer;
@@ -34,16 +29,15 @@
     border: none;
     font-size: 0.85rem;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
     display: flex;
     align-items: center;
     gap: 8px;
     color: var(--text-primary);
+    white-space: nowrap;
 }
 
 .context-obs-toggle {
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
     transition: transform 0.3s ease;
 }
@@ -53,10 +47,10 @@
 }
 
 .context-obs-body {
-    padding: 16px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
 }
 
 /* --- KV Cache Heatmap --- */
@@ -82,10 +76,10 @@
 }
 
 .kv-cache-current {
-    font-size: 1.4rem;
+    font-size: 1.1rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    padding: 2px 10px;
+    padding: 2px 8px;
     border-radius: 6px;
     transition: color 0.3s ease, background 0.3s ease;
 }
@@ -163,8 +157,8 @@
 .prefix-cache-section {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
+    gap: 8px;
+    padding: 8px 10px;
     background: var(--bg-tertiary);
     border-radius: 8px;
     border: 1px solid var(--border-color);
@@ -270,9 +264,9 @@
 
 .context-obs-no-data {
     text-align: center;
-    padding: 20px 12px;
+    padding: 16px 8px;
     color: var(--text-secondary);
-    font-size: 0.8rem;
+    font-size: 0.75rem;
 }
 
 .context-obs-no-data-icon {

@@ -139,11 +139,7 @@ const PagedAttentionMethods = {
         this._paEmptyPollCount = 0;
         this._paShowNoData(false);
 
-        // KV cache percentage: vLLM reports as fraction (0-1) or percentage (0-100)
-        let kvPct = null;
-        if (kvUsage !== null) {
-            kvPct = kvUsage <= 1.0 ? kvUsage * 100 : kvUsage;
-        }
+        let kvPct = kvUsage;
 
         this._paUpdateHeatmap(kvPct);
         this._paUpdateUtilizationBar(kvPct);
@@ -259,8 +255,7 @@ const PagedAttentionMethods = {
 
         if (rate) {
             if (hitRate !== null) {
-                const pct = hitRate <= 1.0 ? hitRate * 100 : hitRate;
-                rate.textContent = `${pct.toFixed(1)}%`;
+                rate.textContent = `${hitRate.toFixed(1)}%`;
             } else {
                 rate.textContent = '--';
             }

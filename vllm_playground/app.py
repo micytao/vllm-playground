@@ -187,6 +187,12 @@ class VLLMConfig(BaseModel):
     # Custom virtual environment path for subprocess mode
     # Allows using specific vLLM installations (e.g., vllm-metal)
     venv_path: Optional[str] = None
+    # Speculative decoding via --speculative-config JSON
+    speculative_method: Optional[str] = None
+    speculative_model: Optional[str] = None
+    num_speculative_tokens: Optional[int] = None
+    draft_tensor_parallel_size: Optional[int] = None
+    prompt_lookup_max: Optional[int] = None
 
 
 # =============================================================================
@@ -2418,24 +2424,17 @@ async def start_server(config: VLLMConfig):
         # Handle max_model_len and max_num_batched_tokens
         # ALWAYS set both to prevent vLLM from auto-detecting large values
         if config.max_model_len:
-            # User explicitly specified a value
             max_len = config.max_model_len
-            cmd.extend(["--max-model-len", str(max_len)])
-            cmd.extend(["--max-num-batched-tokens", str(max_len)])
             await broadcast_log(f"[WEBUI] Using user-specified max-model-len: {max_len}")
         elif config.compute_mode in ["cpu", "metal"]:
-            # CPU/Metal mode: Use conservative defaults (2048)
-            # Metal has less memory than desktop GPUs, so use same as CPU
             max_len = 2048
-            cmd.extend(["--max-model-len", str(max_len)])
-            cmd.extend(["--max-num-batched-tokens", str(max_len)])
             await broadcast_log(f"[WEBUI] Using default max-model-len for {config.compute_mode.upper()}: {max_len}")
         else:
-            # GPU mode: Use reasonable default (8192) instead of letting vLLM auto-detect
             max_len = 8192
-            cmd.extend(["--max-model-len", str(max_len)])
-            cmd.extend(["--max-num-batched-tokens", str(max_len)])
             await broadcast_log(f"[WEBUI] Using default max-model-len for GPU: {max_len}")
+        config.max_model_len = max_len
+        cmd.extend(["--max-model-len", str(max_len)])
+        cmd.extend(["--max-num-batched-tokens", str(max_len)])
 
         if config.trust_remote_code:
             cmd.append("--trust-remote-code")
@@ -2491,6 +2490,22 @@ async def start_server(config: VLLMConfig):
         else:
             await broadcast_log(f"[WEBUI] Tool calling disabled")
 
+        # Speculative decoding support (uses --speculative-config JSON)
+        if config.speculative_method:
+            import json as _json
+
+            spec_cfg = {"method": config.speculative_method}
+            if config.speculative_model:
+                spec_cfg["model"] = config.speculative_model
+            if config.num_speculative_tokens:
+                spec_cfg["num_speculative_tokens"] = config.num_speculative_tokens
+            if config.draft_tensor_parallel_size:
+                spec_cfg["draft_tensor_parallel_size"] = config.draft_tensor_parallel_size
+            if config.prompt_lookup_max:
+                spec_cfg["prompt_lookup_max"] = config.prompt_lookup_max
+            cmd.extend(["--speculative-config", _json.dumps(spec_cfg)])
+            await broadcast_log(f"[WEBUI] 🚀 Speculative decoding enabled: {_json.dumps(spec_cfg)}")
+
         # Start server based on mode
         if config.run_mode == "container":
             await broadcast_log(f"[WEBUI] Starting vLLM container...")
@@ -2520,6 +2535,11 @@ async def start_server(config: VLLMConfig):
                 "tool_call_parser": config.tool_call_parser,
                 "accelerator": config.accelerator,  # GPU accelerator type (nvidia/amd)
                 "served_model_name": config.served_model_name,  # Model alias (for Claude Code)
+                "speculative_method": config.speculative_method,
+                "speculative_model": config.speculative_model,
+                "num_speculative_tokens": config.num_speculative_tokens,
+                "draft_tensor_parallel_size": config.draft_tensor_parallel_size,
+                "prompt_lookup_max": config.prompt_lookup_max,
             }
 
             logger.info(
@@ -2832,6 +2852,37 @@ async def broadcast_log(message: str):
             metrics_updated = True
             logger.info(f"✓ Captured generation throughput: {generation_throughput}")
 
+    # Parse Running / Waiting request counts from standard vLLM log
+    # Example: "Running: 1 reqs, Waiting: 0 reqs"
+    if "running:" in message.lower() and "reqs" in message.lower():
+        match = re.search(r"Running:\s+(\d+)\s+reqs", message)
+        if match:
+            latest_vllm_metrics["num_requests_running"] = float(match.group(1))
+            metrics_updated = True
+        match = re.search(r"Waiting:\s+(\d+)\s+reqs", message)
+        if match:
+            latest_vllm_metrics["num_requests_waiting"] = float(match.group(1))
+            metrics_updated = True
+
+    # Parse SpecDecoding metrics from vLLM log
+    # Example: "SpecDecoding metrics: Mean acceptance length: 3.20, ...
+    #   Accepted: 22 tokens, Drafted: 50 tokens, ...
+    #   Avg Draft acceptance rate: 44.0%"
+    if "specdecoding metrics" in message.lower():
+        m = re.search(r"Accepted:\s+(\d+)\s+tokens", message)
+        if m:
+            latest_vllm_metrics["spec_decode_accepted"] = float(m.group(1))
+            metrics_updated = True
+        m = re.search(r"Drafted:\s+(\d+)\s+tokens", message)
+        if m:
+            latest_vllm_metrics["spec_decode_draft"] = float(m.group(1))
+            metrics_updated = True
+        m = re.search(r"Draft acceptance rate:\s+([\d.]+)%", message)
+        if m:
+            latest_vllm_metrics["spec_decode_acceptance_rate"] = float(m.group(1))
+            metrics_updated = True
+        logger.info(f"✓ Captured spec decode metrics from log")
+
     # Update timestamp if we captured any metrics
     if metrics_updated:
         metrics_timestamp = datetime.now()
@@ -3032,6 +3083,10 @@ class ChatRequestWithStopTokens(BaseModel):
     structured_outputs: Optional[StructuredOutputs] = None  # For choice, regex, grammar
     response_format: Optional[ResponseFormat] = None  # For JSON schema (OpenAI-compatible)
 
+    # Logprobs support (OpenAI-compatible)
+    logprobs: Optional[bool] = None
+    top_logprobs: Optional[int] = None
+
 
 @app.post("/api/chat")
 async def chat(request: ChatRequestWithStopTokens):
@@ -3090,6 +3145,12 @@ async def chat(request: ChatRequestWithStopTokens):
             "max_tokens": request.max_tokens,
             "stream": request.stream,
         }
+
+        # Logprobs support
+        if request.logprobs:
+            payload["logprobs"] = True
+            if request.top_logprobs is not None:
+                payload["top_logprobs"] = min(max(request.top_logprobs, 1), 20)
 
         # Tool/Function Calling Support
         # Add tools if provided
@@ -4388,125 +4449,190 @@ async def check_vllm_health():
         return {"success": False, "status_code": 503, "error": str(e)}
 
 
-@app.get("/api/vllm/metrics")
-async def get_vllm_metrics():
-    """Get vLLM server metrics including KV cache and prefix cache stats"""
-    global current_config, latest_vllm_metrics, metrics_timestamp, current_run_mode
+_PROMETHEUS_GAUGE_MAP = {
+    "vllm:gpu_cache_usage_perc": "gpu_cache_usage_perc",
+    "vllm:cpu_cache_usage_perc": "cpu_cache_usage_perc",
+    "vllm:kv_cache_usage_perc": "kv_cache_usage_perc",
+    "vllm:num_requests_running": "num_requests_running",
+    "vllm:num_requests_waiting": "num_requests_waiting",
+    "vllm:avg_prompt_throughput_toks_per_s": "avg_prompt_throughput",
+    "vllm:avg_generation_throughput_toks_per_s": "avg_generation_throughput",
+}
 
-    # Check server status based on mode
-    if not await check_vllm_server_running():
-        return JSONResponse(status_code=400, content={"error": "vLLM server is not running"})
+_PROMETHEUS_COUNTER_MAP = {
+    "vllm:num_preemptions": "num_preemptions",
+    "vllm:prefix_cache_hits": "prefix_cache_hits",
+    "vllm:prefix_cache_queries": "prefix_cache_queries",
+    "vllm:spec_decode_num_accepted_tokens": "spec_decode_accepted",
+    "vllm:spec_decode_num_draft_tokens": "spec_decode_draft",
+    "vllm:spec_decode_num_emitted_tokens": "spec_decode_emitted",
+}
 
-    # Calculate how fresh the metrics are
-    metrics_age_seconds = None
-    if metrics_timestamp:
-        metrics_age_seconds = (datetime.now() - metrics_timestamp).total_seconds()
-        logger.info(f"Returning metrics (age: {metrics_age_seconds:.1f}s): {latest_vllm_metrics}")
+
+def _prom_metric_matches(prom_name: str, line: str) -> bool:
+    """Check if line is for this metric (not a derived _created/_bucket line).
+
+    Matches: prom_name{...} or prom_name_total{...}
+    Rejects: prom_name_created, prom_name_bucket, etc.
+    """
+    if prom_name not in line:
+        return False
+    brace = line.find("{")
+    space = line.find(" ")
+    if brace >= 0 and (space < 0 or brace < space):
+        name_on_line = line[:brace]
+    elif space >= 0:
+        name_on_line = line[:space]
     else:
-        logger.info(f"Returning metrics (no timestamp): {latest_vllm_metrics}")
+        return False
+    return name_on_line == prom_name or name_on_line == prom_name + "_total"
 
-    # Return metrics parsed from logs with freshness indicator
-    if latest_vllm_metrics:
-        result = latest_vllm_metrics.copy()
-        if metrics_age_seconds is not None:
-            result["metrics_age_seconds"] = round(metrics_age_seconds, 1)
-        return result
 
-    # If no metrics captured yet from logs, try the metrics endpoint
+def _prom_parse_value(line: str):
+    """Extract metric value from a Prometheus line.
+
+    Format: metric_name{labels} value [timestamp]
+    The value is always the second whitespace-separated token.
+    """
+    parts = line.split()
+    if len(parts) >= 2:
+        return float(parts[1])
+    return None
+
+
+def _parse_prometheus_text(text: str) -> dict:
+    """Parse Prometheus exposition text into a dict of metric key → value."""
+    metrics: dict = {}
+    for line in text.split("\n"):
+        if line.startswith("#") or not line.strip():
+            continue
+        for prom_name, key in _PROMETHEUS_GAUGE_MAP.items():
+            if _prom_metric_matches(prom_name, line):
+                try:
+                    val = _prom_parse_value(line)
+                    if val is not None:
+                        metrics[key] = val
+                except (ValueError, IndexError):
+                    pass
+                break
+        else:
+            for prom_name, key in _PROMETHEUS_COUNTER_MAP.items():
+                if _prom_metric_matches(prom_name, line):
+                    try:
+                        val = _prom_parse_value(line)
+                        if val is not None:
+                            metrics[key] = val
+                    except (ValueError, IndexError):
+                        pass
+                    break
+
+    for frac_key in ("kv_cache_usage_perc", "gpu_cache_usage_perc", "cpu_cache_usage_perc"):
+        if frac_key in metrics and metrics[frac_key] is not None and metrics[frac_key] <= 1.0:
+            metrics[frac_key] = metrics[frac_key] * 100
+    return metrics
+
+
+async def _fetch_prometheus_metrics() -> dict:
+    """Fetch and parse metrics from the vLLM Prometheus /metrics endpoint."""
     if current_config is None:
         return {}
-
     try:
         import aiohttp
 
-        # Use centralized URL construction
         base_url = get_vllm_base_url()
         metrics_url = f"{base_url}/metrics"
         auth_headers = get_vllm_auth_headers()
 
         async with aiohttp.ClientSession(headers=auth_headers) as session:
-            try:
-                async with session.get(metrics_url, timeout=aiohttp.ClientTimeout(total=2)) as response:
-                    if response.status == 200:
-                        text = await response.text()
-
-                        # Parse Prometheus-style metrics
-                        metrics = {}
-
-                        prometheus_gauge_map = {
-                            "vllm:gpu_cache_usage_perc": "gpu_cache_usage_perc",
-                            "vllm:cpu_cache_usage_perc": "cpu_cache_usage_perc",
-                            "vllm:kv_cache_usage_perc": "kv_cache_usage_perc",
-                            "vllm:num_requests_running": "num_requests_running",
-                            "vllm:num_requests_waiting": "num_requests_waiting",
-                            "vllm:avg_prompt_throughput_toks_per_s": "avg_prompt_throughput",
-                            "vllm:avg_generation_throughput_toks_per_s": "avg_generation_throughput",
-                        }
-                        prometheus_counter_map = {
-                            "vllm:num_preemptions_total": "num_preemptions",
-                            "vllm:prefix_cache_hits_total": "prefix_cache_hits",
-                            "vllm:prefix_cache_queries_total": "prefix_cache_queries",
-                        }
-
-                        for line in text.split("\n"):
-                            if line.startswith("#"):
-                                continue
-                            for prom_name, key in prometheus_gauge_map.items():
-                                if prom_name in line:
-                                    try:
-                                        metrics[key] = float(line.split()[-1])
-                                    except (ValueError, IndexError):
-                                        pass
-                                    break
-                            else:
-                                for prom_name, key in prometheus_counter_map.items():
-                                    if prom_name in line:
-                                        try:
-                                            metrics[key] = float(line.split()[-1])
-                                        except (ValueError, IndexError):
-                                            pass
-                                        break
-
-                        # Store enriched metrics globally so history captures them
-                        if metrics:
-                            latest_vllm_metrics.update(metrics)
-                            now = datetime.now()
-                            metrics_history.append(
-                                {
-                                    "timestamp": now.isoformat(),
-                                    **{
-                                        k: metrics.get(k)
-                                        for k in [
-                                            "kv_cache_usage_perc",
-                                            "gpu_cache_usage_perc",
-                                            "num_preemptions",
-                                            "num_requests_running",
-                                            "num_requests_waiting",
-                                            "prefix_cache_hits",
-                                            "prefix_cache_queries",
-                                        ]
-                                    },
-                                }
-                            )
-
-                        return metrics
-                    else:
-                        return {}
-            except asyncio.TimeoutError:
+            async with session.get(metrics_url, timeout=aiohttp.ClientTimeout(total=2)) as response:
+                if response.status == 200:
+                    text = await response.text()
+                    return _parse_prometheus_text(text)
                 return {}
-            except Exception as e:
-                logger.debug(f"Error fetching metrics endpoint: {e}")
-                return {}
-
-    except Exception as e:
-        logger.debug(f"Error in get_vllm_metrics: {e}")
+    except Exception:
         return {}
+
+
+@app.get("/api/vllm/metrics")
+async def get_vllm_metrics():
+    """Get vLLM server metrics including KV cache and prefix cache stats"""
+    global current_config, latest_vllm_metrics, metrics_timestamp, current_run_mode
+
+    # Always try to enrich with Prometheus data (captures counters
+    # like spec_decode, prefix_cache_hits that log parsing misses).
+    if current_config is not None and await check_vllm_server_running():
+        prom_metrics = await _fetch_prometheus_metrics()
+        if prom_metrics:
+            latest_vllm_metrics.update(prom_metrics)
+            now = datetime.now()
+            metrics_timestamp = now
+            latest_vllm_metrics["timestamp"] = now.isoformat()
+            metrics_history.append(
+                {
+                    "timestamp": now.isoformat(),
+                    **{
+                        k: prom_metrics.get(k)
+                        for k in [
+                            "kv_cache_usage_perc",
+                            "gpu_cache_usage_perc",
+                            "num_preemptions",
+                            "num_requests_running",
+                            "num_requests_waiting",
+                            "prefix_cache_hits",
+                            "prefix_cache_queries",
+                        ]
+                    },
+                }
+            )
+
+    # Return merged metrics (log-parsed + Prometheus)
+    if latest_vllm_metrics and metrics_timestamp:
+        metrics_age_seconds = (datetime.now() - metrics_timestamp).total_seconds()
+        result = latest_vllm_metrics.copy()
+        result["metrics_age_seconds"] = round(metrics_age_seconds, 1)
+        return result
+
+    if not await check_vllm_server_running():
+        return JSONResponse(status_code=400, content={"error": "vLLM server is not running"})
+
+    return {}
 
 
 @app.get("/api/vllm/metrics/history")
 async def get_vllm_metrics_history():
     """Return time-series metrics for the PagedAttention visualizer heatmap."""
     return list(metrics_history)
+
+
+# --- Tokenize proxy for Live Token Counter ---
+
+
+class TokenizeRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/tokenize")
+async def tokenize_text(request: TokenizeRequest):
+    """Proxy to vLLM's /tokenize endpoint for accurate token counting."""
+    if not await check_vllm_server_running():
+        return {"count": None, "error": "Server not running"}
+
+    try:
+        base_url = get_vllm_base_url()
+        auth_headers = get_vllm_auth_headers()
+        async with aiohttp.ClientSession(headers=auth_headers) as session:
+            async with session.post(
+                f"{base_url}/tokenize",
+                json={"model": get_model_name_for_api(), "prompt": request.text},
+                timeout=aiohttp.ClientTimeout(total=2),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return {"count": data.get("count", len(data.get("tokens", [])))}
+                return {"count": None, "error": "Tokenize endpoint unavailable"}
+    except Exception as e:
+        logger.debug(f"Tokenize proxy error: {e}")
+        return {"count": None, "error": str(e)}
 
 
 # --- Simulation endpoints for testing Context Observability without a live vLLM server ---
@@ -4522,6 +4648,9 @@ class SimulateMetricsRequest(BaseModel):
     prefix_cache_queries: Optional[float] = None
     gpu_cache_usage_perc: Optional[float] = None
     cpu_cache_usage_perc: Optional[float] = None
+    spec_decode_accepted: Optional[float] = None
+    spec_decode_draft: Optional[float] = None
+    spec_decode_emitted: Optional[float] = None
 
 
 @app.post("/api/vllm/metrics/simulate")

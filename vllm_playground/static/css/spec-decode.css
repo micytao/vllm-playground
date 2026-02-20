@@ -1,0 +1,152 @@
+/* Speculative Decoding Dashboard */
+
+.spec-decode-panel {
+    background: var(--bg-secondary);
+}
+
+.spec-decode-header {
+    padding: 10px 12px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.spec-decode-header h2 {
+    font-size: 0.85rem;
+    margin: 0;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.spec-decode-toggle-icon {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    transition: transform 0.3s ease;
+}
+
+.spec-decode-panel.collapsed .spec-decode-toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.spec-decode-panel.collapsed .spec-decode-body {
+    display: none;
+}
+
+.spec-decode-body {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.spec-decode-cards {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+.spec-decode-card {
+    background: var(--bg-primary);
+    border-radius: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+}
+
+.spec-decode-card-label {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.spec-decode-card-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.spec-decode-gauge {
+    height: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 6px;
+}
+
+.spec-decode-gauge-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--accent-primary);
+    transition: width 0.5s ease, background 0.3s ease;
+}
+
+.spec-decode-model-info {
+    margin-top: 10px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* No Data State */
+.sd-no-data {
+    text-align: center;
+    padding: 16px 8px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+.sd-no-data-icon {
+    font-size: 1.5rem;
+    margin-bottom: 6px;
+    opacity: 0.5;
+}
+
+.sd-no-data code {
+    background: var(--bg-tertiary);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.75rem;
+}
+
+#sd-run-demo-btn {
+    max-width: none;
+    white-space: nowrap;
+}
+
+/* Demo header buttons */
+.sd-demo-header-btn {
+    font-size: 0.65rem;
+    padding: 2px 8px;
+    line-height: 1.4;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    z-index: 1;
+    max-width: none;
+}
+
+.sd-demo-header-btn.running {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+/* Simulated badge */
+.sd-simulated-badge {
+    display: none;
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--warning-color);
+    border: 1px solid var(--warning-color);
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 8px;
+}
+
+.sd-simulated-badge.visible {
+    display: inline-block;
+}
+
+@media (max-width: 768px) {
+    .spec-decode-cards {
+        grid-template-columns: 1fr;
+    }
+}

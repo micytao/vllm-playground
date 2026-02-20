@@ -770,7 +770,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     align-items: stretch;
     position: relative;
     width: 100%;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-height: 0;
     overflow: hidden;
 }
@@ -819,7 +819,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 .logs-row-title {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
 }
 
 .logs-row-title h2 {
@@ -830,7 +830,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .logs-toggle-icon {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
     transition: transform 0.3s ease;
 }
@@ -903,8 +903,8 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     margin-bottom: 0;
     display: flex;
     flex-direction: column;
-    min-height: 300px;
-    flex: 1 1 auto;
+    min-height: 0;
+    flex: 1 1 0;
     overflow: hidden;
 }
 
@@ -1215,34 +1215,141 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     width: 380px;
     flex-shrink: 0;
     min-width: 260px;
-    height: 100%;
+    align-self: stretch;
     position: relative;
 }
 
 .chat-section {
     flex: 1;
     min-width: 280px;
-    height: 100%;
+    align-self: stretch;
     display: flex;
     flex-direction: column;
-    overflow: visible;
+    overflow: hidden;
     position: relative;
     border-left: 1px solid var(--border-color);
     border-right: 1px solid var(--border-color);
 }
 
-/* Right column - Metrics */
+/* Right column - Metrics + Observability sidebar */
 .metrics-section {
     width: 280px;
     flex-shrink: 0;
     min-width: 220px;
-    height: 100%;
+    align-self: stretch;
     position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border-color);
 }
 
-.metrics-section .panel {
-    height: 100%;
+/* Each section in the right sidebar is a flex child with overflow scroll */
+.metrics-section > .metrics-panel-section,
+.metrics-section > .context-observability-panel,
+.metrics-section > .spec-decode-panel {
+    flex: 1 1 0;
+    min-height: 0;
     overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Collapsed panels should not take flex space */
+.metrics-section > .metrics-panel-section.collapsed,
+.metrics-section > .context-observability-panel.collapsed,
+.metrics-section > .spec-decode-panel.collapsed {
+    flex: 0 0 auto;
+    overflow: hidden;
+}
+
+/* Collapsible section wrapper inside metrics sidebar */
+.metrics-panel-section {
+    border-bottom: none;
+}
+
+.metrics-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.metrics-panel-header h2 {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.metrics-panel-body {
+    padding: 0 16px 16px;
+}
+
+.metrics-toggle-icon {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    transition: transform 0.2s ease;
+    display: inline-block;
+}
+
+.metrics-panel-section.collapsed .metrics-toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.metrics-panel-section.collapsed .metrics-panel-body {
+    display: none;
+}
+
+/* Sidebar resize handles between right-panel sections */
+.sidebar-resize-handle {
+    height: 5px;
+    flex-shrink: 0;
+    cursor: row-resize;
+    background: var(--border-color);
+    position: relative;
+    transition: background 0.15s ease;
+}
+
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle.active {
+    background: var(--primary-color);
+}
+
+.sidebar-resize-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 3px;
+    border-radius: 2px;
+    background: transparent;
+    transition: background 0.15s ease;
+}
+
+.sidebar-resize-handle:hover::after {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Two-line header layout for sidebar panels */
+.sidebar-panel-header-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    width: 100%;
+}
+
+.sidebar-panel-header-btns {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
 }
 
 /* Bottom row - Logs */
@@ -1315,12 +1422,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     }
 
     .panel {
-        min-height: 400px;
+        min-height: 300px;
         max-height: none;
     }
 
     .chat-section .panel {
-        min-height: 500px;
+        min-height: 300px;
     }
 }
 
@@ -2053,12 +2160,12 @@ code.remote-model-id {
 
 /* Chat Section */
 .chat-container {
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    min-height: 0;
     margin-bottom: 15px;
     padding: 20px 16px;
     background: linear-gradient(180deg, #0d1117 0%, #161b22 100%);
     border-radius: 12px;
-    min-height: 200px;
     overflow-y: auto;
     overflow-x: hidden;
 }
@@ -2114,8 +2221,17 @@ code.remote-model-id {
 }
 
 .chat-message.assistant .message-avatar {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+}
+
+.avatar-logo {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
 }
 
 .chat-message.assistant .message-content {
@@ -2890,22 +3006,23 @@ code.remote-model-id {
     }
 }
 
-/* Performance Metrics Section */
-.metrics-section {
-    margin-top: 40px;
-    min-height: 800px;
-    height: auto;
-    max-height: none;
-    overflow: visible;
+/* Metrics sidebar scrollbar */
+.metrics-section::-webkit-scrollbar {
+    width: 8px;
 }
 
-.metrics-section .panel {
-    height: auto;
-    max-height: none;
-    min-height: 800px;
-    margin: 0 10px;
-    overflow-y: auto;
-    padding-bottom: 40px;
+.metrics-section::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+    border-radius: 4px;
+}
+
+.metrics-section::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+.metrics-section::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
 }
 
 .metrics-controls {
@@ -6306,6 +6423,19 @@ code.remote-model-id {
 
 [data-theme="light"] .resize-handle:hover {
     background: var(--primary-color);
+}
+
+[data-theme="light"] .sidebar-resize-handle {
+    background: var(--border-color);
+}
+
+[data-theme="light"] .sidebar-resize-handle:hover,
+[data-theme="light"] .sidebar-resize-handle.active {
+    background: var(--primary-color);
+}
+
+[data-theme="light"] .sidebar-resize-handle:hover::after {
+    background: rgba(0, 0, 0, 0.15);
 }
 
 /* Scrollbars */

@@ -1,0 +1,46 @@
+/* Live Token Counter */
+
+.token-counter-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 10px;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+}
+
+.token-counter-text {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.token-counter-gauge {
+    flex: 1;
+    height: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    overflow: hidden;
+    min-width: 60px;
+}
+
+.token-counter-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s ease, background 0.3s ease;
+    min-width: 0;
+    background: var(--success-color);
+}
+
+.token-counter-bar .tc-warn {
+    color: var(--warning-color);
+    font-weight: 600;
+}
+
+.token-counter-bar .tc-danger {
+    color: var(--danger-color);
+    font-weight: 600;
+}

@@ -452,6 +452,35 @@ const en = {
         switch: 'Switch Language',
         english: 'English',
         chinese: '简体中文'
+    },
+
+    // Token Counter
+    tokenCounter: {
+        label: 'Tokens:',
+        warningNearLimit: 'Approaching context limit — the model may start losing earlier conversation.'
+    },
+
+    // Logprobs Visualizer
+    logprobs: {
+        enableLabel: 'Show Logprobs'
+    },
+
+    // Speculative Decoding Dashboard
+    specDecode: {
+        title: '🚀 Speculative Decoding',
+        methodLabel: 'Speculative Decoding (Optional)',
+        methodHelp: 'Choose a speculation method to reduce inter-token latency.',
+        modelLabel: 'Draft / Speculator Model',
+        modelHelp: 'HuggingFace model ID for the draft model.',
+        acceptanceRate: 'Acceptance Rate',
+        speedup: 'Speedup Factor',
+        draftTokens: 'Draft Tokens',
+        acceptedTokens: 'Accepted Tokens',
+        demo: {
+            runButton: '▶ Run Demo Simulation',
+            running: '⏳ Simulating...',
+            badge: 'SIMULATED'
+        }
     }
 };
 
