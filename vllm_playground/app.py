@@ -4488,20 +4488,39 @@ async def get_vllm_metrics():
                             "vllm:spec_decode_num_emitted_tokens": "spec_decode_emitted",
                         }
 
+                        # Suffixes that should NOT match when searching
+                        # for a base metric name (e.g. _created, _bucket).
+                        _SKIP_SUFFIXES = ("_created", "_bucket", "_count", "_sum", "_info")
+
+                        def _metric_matches(prom_name, line):
+                            """Check if line is for this metric (not a derived line).
+
+                            Matches: prom_name{...} or prom_name_total{...}
+                            Rejects: prom_name_created, prom_name_bucket, etc.
+                            """
+                            if prom_name not in line:
+                                return False
+                            # Extract the metric name (everything before '{' or ' ')
+                            brace = line.find("{")
+                            space = line.find(" ")
+                            if brace >= 0 and (space < 0 or brace < space):
+                                name_on_line = line[:brace]
+                            elif space >= 0:
+                                name_on_line = line[:space]
+                            else:
+                                return False
+                            # Accept exact match or _total suffix only
+                            if name_on_line == prom_name or name_on_line == prom_name + "_total":
+                                return True
+                            return False
+
                         def _parse_prom_value(line):
                             """Extract metric value from a Prometheus line.
 
                             Format: metric_name{labels} value [timestamp]
-                            The value is always the first float after the
-                            closing brace (or after the metric name if no
-                            labels). A trailing timestamp must be ignored.
                             """
                             parts = line.split()
                             if len(parts) >= 2:
-                                # parts[-1] could be a timestamp; the value
-                                # is the token right after the name{labels}.
-                                # Find the index of the name token (index 0)
-                                # and return parts[1].
                                 return float(parts[1])
                             return None
 
@@ -4509,7 +4528,7 @@ async def get_vllm_metrics():
                             if line.startswith("#") or not line.strip():
                                 continue
                             for prom_name, key in prometheus_gauge_map.items():
-                                if prom_name in line:
+                                if _metric_matches(prom_name, line):
                                     try:
                                         val = _parse_prom_value(line)
                                         if val is not None:
@@ -4519,7 +4538,7 @@ async def get_vllm_metrics():
                                     break
                             else:
                                 for prom_name, key in prometheus_counter_map.items():
-                                    if prom_name in line:
+                                    if _metric_matches(prom_name, line):
                                         try:
                                             val = _parse_prom_value(line)
                                             if val is not None:
