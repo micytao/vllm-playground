@@ -52,15 +52,26 @@ const SpecDecodeMethods = {
                 if (tpGroup) tpGroup.style.display = needsTP ? '' : 'none';
                 if (ngramGroup) ngramGroup.style.display = needsNgram ? '' : 'none';
 
+                const modelInput = document.getElementById('speculative-model');
                 if (modelHelp) {
                     const hints = {
+                        eagle: 'Must be an EAGLE-trained drafter for your base model (e.g., yuhuili/EAGLE-LLaMA3-Instruct-8B). Regular models will NOT work.',
+                        eagle3: 'Must be an EAGLE3-trained speculator (e.g., RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3).',
+                        mlp_speculator: 'Must be an MLP speculator checkpoint (e.g., ibm-ai-platform/llama3-70b-accelerator).',
+                        medusa: 'Must be a Medusa head model trained for your base model.',
+                        mtp: 'Must be an MTP-compatible model (e.g., DeepSeek-V3 has built-in MTP heads).',
+                    };
+                    modelHelp.textContent = hints[method] || '';
+                }
+                if (modelInput) {
+                    const placeholders = {
                         eagle: 'e.g., yuhuili/EAGLE-LLaMA3-Instruct-8B',
                         eagle3: 'e.g., RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3',
                         mlp_speculator: 'e.g., ibm-ai-platform/llama3-70b-accelerator',
-                        medusa: 'Medusa head model path',
-                        mtp: 'MTP draft model path',
+                        medusa: 'e.g., FasterDecoding/medusa-vicuna-7b-v1.3',
+                        mtp: 'Model with MTP heads (e.g., deepseek-ai/DeepSeek-V3)',
                     };
-                    modelHelp.textContent = hints[method] || '';
+                    modelInput.placeholder = placeholders[method] || 'HuggingFace model ID';
                 }
             };
             specMethodSelect.addEventListener('change', updateSpecFields);

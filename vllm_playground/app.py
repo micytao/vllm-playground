@@ -2424,24 +2424,17 @@ async def start_server(config: VLLMConfig):
         # Handle max_model_len and max_num_batched_tokens
         # ALWAYS set both to prevent vLLM from auto-detecting large values
         if config.max_model_len:
-            # User explicitly specified a value
             max_len = config.max_model_len
-            cmd.extend(["--max-model-len", str(max_len)])
-            cmd.extend(["--max-num-batched-tokens", str(max_len)])
             await broadcast_log(f"[WEBUI] Using user-specified max-model-len: {max_len}")
         elif config.compute_mode in ["cpu", "metal"]:
-            # CPU/Metal mode: Use conservative defaults (2048)
-            # Metal has less memory than desktop GPUs, so use same as CPU
             max_len = 2048
-            cmd.extend(["--max-model-len", str(max_len)])
-            cmd.extend(["--max-num-batched-tokens", str(max_len)])
             await broadcast_log(f"[WEBUI] Using default max-model-len for {config.compute_mode.upper()}: {max_len}")
         else:
-            # GPU mode: Use reasonable default (8192) instead of letting vLLM auto-detect
             max_len = 8192
-            cmd.extend(["--max-model-len", str(max_len)])
-            cmd.extend(["--max-num-batched-tokens", str(max_len)])
             await broadcast_log(f"[WEBUI] Using default max-model-len for GPU: {max_len}")
+        config.max_model_len = max_len
+        cmd.extend(["--max-model-len", str(max_len)])
+        cmd.extend(["--max-num-batched-tokens", str(max_len)])
 
         if config.trust_remote_code:
             cmd.append("--trust-remote-code")
@@ -4487,12 +4480,12 @@ async def get_vllm_metrics():
                             "vllm:avg_generation_throughput_toks_per_s": "avg_generation_throughput",
                         }
                         prometheus_counter_map = {
-                            "vllm:num_preemptions_total": "num_preemptions",
-                            "vllm:prefix_cache_hits_total": "prefix_cache_hits",
-                            "vllm:prefix_cache_queries_total": "prefix_cache_queries",
-                            "vllm:spec_decode_num_accepted_tokens_total": "spec_decode_accepted",
-                            "vllm:spec_decode_num_draft_tokens_total": "spec_decode_draft",
-                            "vllm:spec_decode_num_emitted_tokens_total": "spec_decode_emitted",
+                            "vllm:num_preemptions": "num_preemptions",
+                            "vllm:prefix_cache_hits": "prefix_cache_hits",
+                            "vllm:prefix_cache_queries": "prefix_cache_queries",
+                            "vllm:spec_decode_num_accepted_tokens": "spec_decode_accepted",
+                            "vllm:spec_decode_num_draft_tokens": "spec_decode_draft",
+                            "vllm:spec_decode_num_emitted_tokens": "spec_decode_emitted",
                         }
 
                         for line in text.split("\n"):

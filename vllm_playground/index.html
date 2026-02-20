@@ -532,7 +532,7 @@
                             </div>
                             <div class="form-group" id="spec-decode-model-group" style="display: none;">
                                 <label for="speculative-model" data-i18n="specDecode.modelLabel">Draft / Speculator Model</label>
-                                <input type="text" id="speculative-model" class="form-control" placeholder="e.g., Qwen/Qwen3-0.6B">
+                                <input type="text" id="speculative-model" class="form-control" placeholder="HuggingFace model ID">
                                 <small class="form-help" id="spec-decode-model-help" data-i18n="specDecode.modelHelp">HuggingFace model ID for the draft model.</small>
                             </div>
                             <div class="form-group" id="spec-decode-tokens-group" style="display: none;">
@@ -630,14 +630,15 @@
                                                 </div>
                                             </div>
                                             <div class="param-row">
-                                                <div class="param-group" style="flex-direction: row; align-items: center; gap: 12px;">
+                                                <div class="param-group">
                                                     <label class="checkbox-label" style="margin: 0; white-space: nowrap;">
                                                         <input type="checkbox" id="logprobs-enabled"> <span data-i18n="logprobs.enableLabel">Show Logprobs</span>
                                                     </label>
-                                                    <label style="margin: 0; white-space: nowrap; font-size: 0.85rem;">
-                                                        Top-k: <input type="number" id="logprobs-topk" class="param-value-input" min="1" max="20" step="1" value="5" style="width: 50px;" disabled>
-                                                    </label>
-                                                    <small class="form-help" style="margin: 0;">Token probability heatmap on responses</small>
+                                                    <small class="form-help">Token probability heatmap on responses</small>
+                                                </div>
+                                                <div class="param-group">
+                                                    <label>Top-k: <input type="number" id="logprobs-topk" class="param-value-input" min="1" max="20" step="1" value="5" style="width: 50px;" disabled></label>
+                                                    <small class="form-help">Alternatives per token</small>
                                                 </div>
                                             </div>
                                         </div>
