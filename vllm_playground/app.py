@@ -4488,13 +4488,32 @@ async def get_vllm_metrics():
                             "vllm:spec_decode_num_emitted_tokens": "spec_decode_emitted",
                         }
 
+                        def _parse_prom_value(line):
+                            """Extract metric value from a Prometheus line.
+
+                            Format: metric_name{labels} value [timestamp]
+                            The value is always the first float after the
+                            closing brace (or after the metric name if no
+                            labels). A trailing timestamp must be ignored.
+                            """
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                # parts[-1] could be a timestamp; the value
+                                # is the token right after the name{labels}.
+                                # Find the index of the name token (index 0)
+                                # and return parts[1].
+                                return float(parts[1])
+                            return None
+
                         for line in text.split("\n"):
-                            if line.startswith("#"):
+                            if line.startswith("#") or not line.strip():
                                 continue
                             for prom_name, key in prometheus_gauge_map.items():
                                 if prom_name in line:
                                     try:
-                                        metrics[key] = float(line.split()[-1])
+                                        val = _parse_prom_value(line)
+                                        if val is not None:
+                                            metrics[key] = val
                                     except (ValueError, IndexError):
                                         pass
                                     break
@@ -4502,10 +4521,19 @@ async def get_vllm_metrics():
                                 for prom_name, key in prometheus_counter_map.items():
                                     if prom_name in line:
                                         try:
-                                            metrics[key] = float(line.split()[-1])
+                                            val = _parse_prom_value(line)
+                                            if val is not None:
+                                                metrics[key] = val
                                         except (ValueError, IndexError):
                                             pass
                                         break
+
+                        # Normalize fraction gauges (0-1) to percentage (0-100)
+                        # to match log-parsed values which are already percentages.
+                        # vLLM Prometheus: "1 means 100 percent usage"
+                        for frac_key in ("kv_cache_usage_perc", "gpu_cache_usage_perc", "cpu_cache_usage_perc"):
+                            if frac_key in metrics and metrics[frac_key] is not None and metrics[frac_key] <= 1.0:
+                                metrics[frac_key] = metrics[frac_key] * 100
 
                         # Store enriched metrics globally so history captures them
                         if metrics:

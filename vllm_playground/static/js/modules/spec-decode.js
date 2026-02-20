@@ -146,9 +146,9 @@ const SpecDecodeMethods = {
     },
 
     _sdUpdate(m) {
-        const accepted = m.spec_decode_accepted || 0;
-        const draft = m.spec_decode_draft || 0;
-        const emitted = m.spec_decode_emitted || 0;
+        const accepted = Math.round(m.spec_decode_accepted || 0);
+        const draft = Math.round(m.spec_decode_draft || 0);
+        const emitted = Math.round(m.spec_decode_emitted || 0);
 
         // Acceptance rate
         const rate = draft > 0 ? (accepted / draft) * 100 : 0;
