@@ -737,6 +737,33 @@ const zhCN = {
         message: '确定吗？',
         cancel: '取消',
         confirm: '确认'
+    },
+
+    // Token Counter
+    tokenCounter: {
+        label: '令牌：',
+        warningNearLimit: '即将达到上下文限制——模型可能会丢失较早的对话内容。'
+    },
+
+    // Logprobs 可视化
+    logprobs: {
+        enableLabel: '显示 Logprobs'
+    },
+
+    // 投机解码仪表板
+    specDecode: {
+        title: '🚀 投机解码',
+        modelLabel: '投机解码模型（可选）',
+        modelHelp: '用于投机解码的草稿模型。使用 [ngram] 进行 n-gram 匹配。',
+        acceptanceRate: '接受率',
+        speedup: '加速倍数',
+        draftTokens: '草稿令牌',
+        acceptedTokens: '已接受令牌',
+        demo: {
+            runButton: '▶ 运行演示模拟',
+            running: '⏳ 模拟中...',
+            badge: '模拟数据'
+        }
     }
 };
 

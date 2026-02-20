@@ -1,0 +1,101 @@
+/* Logprobs Visualizer */
+
+.logprobs-content {
+    display: inline;
+    line-height: 1.6;
+}
+
+.logprobs-token {
+    display: inline;
+    position: relative;
+    cursor: pointer;
+    padding: 1px 0;
+    border-radius: 2px;
+    transition: outline 0.15s;
+}
+
+.logprobs-token:hover {
+    outline: 1px solid var(--border-color);
+}
+
+/* Probability color scale: green (high) -> yellow -> orange -> red (low) */
+.logprobs-token[data-prob-level="high"] {
+    background: rgba(34, 197, 94, 0.18);
+}
+
+.logprobs-token[data-prob-level="medium"] {
+    background: rgba(234, 179, 8, 0.22);
+}
+
+.logprobs-token[data-prob-level="low"] {
+    background: rgba(249, 115, 22, 0.25);
+}
+
+.logprobs-token[data-prob-level="very-low"] {
+    background: rgba(239, 68, 68, 0.25);
+}
+
+/* Tooltip */
+.logprobs-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 0.75rem;
+    font-family: var(--font-mono, monospace);
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+    min-width: 140px;
+}
+
+.logprobs-token:hover .logprobs-tooltip {
+    display: block;
+}
+
+.logprobs-tooltip-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 1px 0;
+}
+
+.logprobs-tooltip-row.chosen {
+    font-weight: 600;
+    color: var(--accent-primary);
+}
+
+.logprobs-tooltip-token {
+    color: var(--text-primary);
+}
+
+.logprobs-tooltip-prob {
+    color: var(--text-secondary);
+}
+
+/* Light theme */
+body[data-theme="light"] .logprobs-token[data-prob-level="high"] {
+    background: rgba(34, 197, 94, 0.15);
+}
+
+body[data-theme="light"] .logprobs-token[data-prob-level="medium"] {
+    background: rgba(234, 179, 8, 0.18);
+}
+
+body[data-theme="light"] .logprobs-token[data-prob-level="low"] {
+    background: rgba(249, 115, 22, 0.20);
+}
+
+body[data-theme="light"] .logprobs-token[data-prob-level="very-low"] {
+    background: rgba(239, 68, 68, 0.20);
+}
+
+body[data-theme="light"] .logprobs-tooltip {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}

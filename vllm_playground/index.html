@@ -11,6 +11,9 @@
     <link rel="stylesheet" href="/static/css/claudecode.css">
     <link rel="stylesheet" href="/static/css/omni.css">
     <link rel="stylesheet" href="/static/css/paged-attention.css">
+    <link rel="stylesheet" href="/static/css/token-counter.css">
+    <link rel="stylesheet" href="/static/css/logprobs.css">
+    <link rel="stylesheet" href="/static/css/spec-decode.css">
     <!-- xterm.js for Claude Code terminal -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -513,6 +516,18 @@
                                 <small class="form-help">Alias for the model in API calls. <strong>Required for Claude Code</strong> (cannot contain '/').</small>
                             </div>
 
+                            <!-- Speculative Decoding -->
+                            <div class="form-group" id="spec-decode-group">
+                                <label for="speculative-model" data-i18n="specDecode.modelLabel">Speculative Decoding Model (Optional)</label>
+                                <input type="text" id="speculative-model" class="form-control" placeholder="e.g., meta-llama/Llama-3.2-1B-Instruct or [ngram]">
+                                <small class="form-help" data-i18n="specDecode.modelHelp">Draft model for speculative decoding. Use [ngram] for n-gram matching.</small>
+                            </div>
+                            <div class="form-group" id="spec-decode-tokens-group" style="display: none;">
+                                <label for="num-speculative-tokens">Speculative Tokens</label>
+                                <input type="number" id="num-speculative-tokens" class="form-control" min="1" max="20" value="5" placeholder="5">
+                                <small class="form-help">Number of tokens the draft model proposes per step.</small>
+                            </div>
+
                             </div><!-- end local-server-settings -->
 
                             <!-- Command Preview Section (hidden in remote mode) -->
@@ -552,6 +567,17 @@
                                 </div>
                             </div>
 
+                            <!-- Live Token Counter -->
+                            <div class="token-counter-bar">
+                                <span class="token-counter-text" data-i18n="tokenCounter.label">Tokens:</span>
+                                <span id="token-count-current" class="token-counter-text">0</span>
+                                <span class="token-counter-text">/</span>
+                                <span id="token-count-max" class="token-counter-text">--</span>
+                                <div class="token-counter-gauge">
+                                    <div id="token-counter-fill" class="token-counter-fill" style="width: 0%"></div>
+                                </div>
+                            </div>
+
                             <div class="chat-input-area">
                                 <!-- Main Input Group -->
                                 <div class="input-group">
@@ -578,6 +604,17 @@
                                                     <label>Max Tokens: <input type="number" id="tokens-value" class="param-value-input" min="1" max="4096" step="1" value="256"></label>
                                                     <input type="range" id="max-tokens" min="1" max="4096" step="1" value="256">
                                                     <small class="form-help">Maximum response length</small>
+                                                </div>
+                                            </div>
+                                            <div class="param-row">
+                                                <div class="param-group" style="flex-direction: row; align-items: center; gap: 12px;">
+                                                    <label class="checkbox-label" style="margin: 0; white-space: nowrap;">
+                                                        <input type="checkbox" id="logprobs-enabled"> <span data-i18n="logprobs.enableLabel">Show Logprobs</span>
+                                                    </label>
+                                                    <label style="margin: 0; white-space: nowrap; font-size: 0.85rem;">
+                                                        Top-k: <input type="number" id="logprobs-topk" class="param-value-input" min="1" max="20" step="1" value="5" style="width: 50px;" disabled>
+                                                    </label>
+                                                    <small class="form-help" style="margin: 0;">Token probability heatmap on responses</small>
                                                 </div>
                                             </div>
                                         </div>
@@ -965,109 +1002,167 @@
                         <div class="resize-handle resize-handle-vertical" data-direction="horizontal"></div>
                     </main>
 
-                    <!-- Right Panel - Metrics -->
+                    <!-- Right Panel - Metrics + Observability -->
                     <aside class="metrics-section resizable" id="metrics-panel">
-                        <div class="panel">
-                            <div class="panel-header">
-                                <h2 data-i18n="metrics.title">📊 Response Metrics</h2>
+
+                        <!-- Section 1: Response Metrics (collapsible) -->
+                        <div class="metrics-panel-section" id="response-metrics-section">
+                            <div class="metrics-panel-header" id="response-metrics-toggle">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span class="metrics-toggle-icon">▼</span>
+                                    <h2 data-i18n="metrics.title">📊 Response Metrics</h2>
+                                </div>
                             </div>
-                            <div id="chat-metrics" class="chat-metrics-grid">
-                                <div class="chat-metric-item">
-                                    <span class="metric-label" data-i18n="metrics.promptTokens">Prompt Tokens:</span>
-                                    <span class="metric-value" id="metric-prompt-tokens">-</span>
-                                </div>
-                                <div class="chat-metric-item">
-                                    <span class="metric-label" data-i18n="metrics.completionTokens">Completion Tokens:</span>
-                                    <span class="metric-value" id="metric-completion-tokens">-</span>
-                                </div>
-                                <div class="chat-metric-item">
-                                    <span class="metric-label" data-i18n="metrics.totalTokens">Total Tokens:</span>
-                                    <span class="metric-value" id="metric-total-tokens">-</span>
-                                </div>
-                                <div class="chat-metric-item">
-                                    <span class="metric-label" data-i18n="metrics.timeTaken">Time Taken:</span>
-                                    <span class="metric-value" id="metric-time-taken">-</span>
-                                </div>
-                                <div class="chat-metric-item">
-                                    <span class="metric-label" data-i18n="metrics.tokensPerSec">Tokens/sec:</span>
-                                    <span class="metric-value" id="metric-tokens-per-sec">-</span>
-                                </div>
-                                <div class="chat-metric-item">
-                                    <span class="metric-label" data-i18n="metrics.avgPromptThroughput">Avg Prompt Throughput:</span>
-                                    <span class="metric-value" id="metric-prompt-throughput">-</span>
-                                </div>
-                                <div class="chat-metric-item">
-                                    <span class="metric-label" data-i18n="metrics.avgGenerationThroughput">Avg Generation Throughput:</span>
-                                    <span class="metric-value" id="metric-generation-throughput">-</span>
-                                </div>
-                                <div class="chat-metric-item">
-                                    <span class="metric-label" data-i18n="metrics.gpuKvCacheUsage">GPU KV Cache Usage:</span>
-                                    <span class="metric-value" id="metric-kv-cache-usage">-</span>
-                                </div>
-                                <div class="chat-metric-item">
-                                    <span class="metric-label" data-i18n="metrics.prefixCacheHitRate">Prefix Cache Hit Rate:</span>
-                                    <span class="metric-value" id="metric-prefix-cache-hit">-</span>
+                            <div class="metrics-panel-body" id="response-metrics-body">
+                                <div id="chat-metrics" class="chat-metrics-grid">
+                                    <div class="chat-metric-item">
+                                        <span class="metric-label" data-i18n="metrics.promptTokens">Prompt Tokens:</span>
+                                        <span class="metric-value" id="metric-prompt-tokens">-</span>
+                                    </div>
+                                    <div class="chat-metric-item">
+                                        <span class="metric-label" data-i18n="metrics.completionTokens">Completion Tokens:</span>
+                                        <span class="metric-value" id="metric-completion-tokens">-</span>
+                                    </div>
+                                    <div class="chat-metric-item">
+                                        <span class="metric-label" data-i18n="metrics.totalTokens">Total Tokens:</span>
+                                        <span class="metric-value" id="metric-total-tokens">-</span>
+                                    </div>
+                                    <div class="chat-metric-item">
+                                        <span class="metric-label" data-i18n="metrics.timeTaken">Time Taken:</span>
+                                        <span class="metric-value" id="metric-time-taken">-</span>
+                                    </div>
+                                    <div class="chat-metric-item">
+                                        <span class="metric-label" data-i18n="metrics.tokensPerSec">Tokens/sec:</span>
+                                        <span class="metric-value" id="metric-tokens-per-sec">-</span>
+                                    </div>
+                                    <div class="chat-metric-item">
+                                        <span class="metric-label" data-i18n="metrics.avgPromptThroughput">Avg Prompt Throughput:</span>
+                                        <span class="metric-value" id="metric-prompt-throughput">-</span>
+                                    </div>
+                                    <div class="chat-metric-item">
+                                        <span class="metric-label" data-i18n="metrics.avgGenerationThroughput">Avg Generation Throughput:</span>
+                                        <span class="metric-value" id="metric-generation-throughput">-</span>
+                                    </div>
+                                    <div class="chat-metric-item">
+                                        <span class="metric-label" data-i18n="metrics.gpuKvCacheUsage">GPU KV Cache Usage:</span>
+                                        <span class="metric-value" id="metric-kv-cache-usage">-</span>
+                                    </div>
+                                    <div class="chat-metric-item">
+                                        <span class="metric-label" data-i18n="metrics.prefixCacheHitRate">Prefix Cache Hit Rate:</span>
+                                        <span class="metric-value" id="metric-prefix-cache-hit">-</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Resize handle between Response Metrics and Context Observability -->
+                        <div class="sidebar-resize-handle" data-above="response-metrics-section" data-below="context-observability-panel"></div>
+
+                        <!-- Section 2: Context Observability (PagedAttention Visualizer) -->
+                        <div class="context-observability-panel" id="context-observability-panel">
+                            <div class="context-obs-header" id="context-obs-toggle">
+                                <div class="sidebar-panel-header-row">
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <span class="context-obs-toggle">▼</span>
+                                        <h2 data-i18n="contextObs.title">🧠 Context Observability</h2>
+                                        <span class="pa-simulated-badge" id="pa-simulated-badge" data-i18n="contextObs.demo.badge">SIMULATED</span>
+                                    </div>
+                                    <div class="sidebar-panel-header-btns">
+                                        <button class="btn btn-sm btn-secondary pa-demo-header-btn" id="pa-demo-clear-btn" title="Clear demo data" data-i18n-title="contextObs.demo.clearTooltip" style="display: none;">Clear</button>
+                                        <button class="btn btn-sm btn-secondary pa-demo-header-btn" id="pa-demo-header-btn" title="Run demo simulation" data-i18n-title="contextObs.demo.tooltip">Demo</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="context-obs-body" id="context-obs-body">
+                                <div class="context-obs-no-data" id="context-obs-no-data">
+                                    <div class="context-obs-no-data-icon">📡</div>
+                                    <div data-i18n-html="contextObs.noData">Waiting for metrics from vLLM server...<br><small>KV cache metrics require a self-hosted vLLM instance with Prometheus enabled.</small></div>
+                                    <button class="btn btn-sm btn-secondary" id="pa-run-demo-btn" style="margin-top: 10px;" data-i18n="contextObs.demo.runButton">▶ Run Demo Simulation</button>
+                                </div>
+                                <div class="eviction-banner" id="eviction-banner">
+                                    <span class="eviction-banner-icon" id="eviction-banner-icon">⚠</span>
+                                    <div class="eviction-banner-content">
+                                        <div class="eviction-banner-title" id="eviction-banner-title" data-i18n="contextObs.eviction.pressureTitle">Memory Pressure</div>
+                                        <div class="eviction-banner-detail" id="eviction-banner-detail" data-i18n="contextObs.eviction.pressureDetail">KV cache utilization is high. Context eviction may begin soon.</div>
+                                    </div>
+                                </div>
+                                <div class="kv-heatmap-section">
+                                    <div class="kv-heatmap-header">
+                                        <span class="kv-heatmap-label" data-i18n="contextObs.kvCache.label">KV Cache Utilization</span>
+                                        <span class="kv-cache-current level-ok" id="kv-cache-current-value">--%</span>
+                                    </div>
+                                    <div class="kv-utilization-bar">
+                                        <div class="kv-utilization-fill" id="kv-utilization-fill" style="width: 0%; background: var(--success-color);"></div>
+                                    </div>
+                                    <div class="kv-heatmap-canvas-wrap">
+                                        <canvas id="kv-heatmap-canvas"></canvas>
+                                    </div>
+                                    <div class="kv-heatmap-legend">
+                                        <span data-i18n="contextObs.kvCache.legendNow">Now</span>
+                                        <span data-i18n="contextObs.kvCache.legendAgo">~2 min ago</span>
+                                    </div>
+                                </div>
+                                <div class="prefix-cache-section">
+                                    <div class="prefix-cache-badge" id="prefix-cache-badge"></div>
+                                    <div class="prefix-cache-info">
+                                        <span class="prefix-cache-status" id="prefix-cache-status" data-i18n="contextObs.prefixCache.inactive">Prefix Cache Inactive</span>
+                                        <span class="prefix-cache-details" id="prefix-cache-details" data-i18n="contextObs.prefixCache.noData">No prefix cache data available</span>
+                                    </div>
+                                    <span class="prefix-cache-rate" id="prefix-cache-rate">--</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Resize handle between Context Observability and Speculative Decoding -->
+                        <div class="sidebar-resize-handle" data-above="context-observability-panel" data-below="spec-decode-panel"></div>
+
+                        <!-- Section 3: Speculative Decoding Dashboard -->
+                        <div class="spec-decode-panel" id="spec-decode-panel">
+                            <div class="spec-decode-header" id="spec-decode-toggle">
+                                <div class="sidebar-panel-header-row">
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <span class="spec-decode-toggle-icon">▼</span>
+                                        <h2 data-i18n="specDecode.title">🚀 Speculative Decoding</h2>
+                                        <span class="sd-simulated-badge" id="sd-simulated-badge" data-i18n="specDecode.demo.badge">SIMULATED</span>
+                                    </div>
+                                    <div class="sidebar-panel-header-btns">
+                                        <button class="btn btn-sm btn-secondary sd-demo-header-btn" id="sd-demo-clear-btn" title="Clear demo data" style="display: none;">Clear</button>
+                                        <button class="btn btn-sm btn-secondary sd-demo-header-btn" id="sd-demo-header-btn" title="Run demo simulation">Demo</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="spec-decode-body" id="spec-decode-body">
+                                <div class="sd-no-data" id="sd-no-data">
+                                    <div class="sd-no-data-icon">🚀</div>
+                                    <div>No speculative decoding metrics available.<br><small>Requires a vLLM server started with <code>--speculative-model</code>, or use the demo simulation.</small></div>
+                                    <button class="btn btn-sm btn-secondary" id="sd-run-demo-btn" style="margin-top: 10px;" data-i18n="specDecode.demo.runButton">▶ Run Demo Simulation</button>
+                                </div>
+                                <div class="spec-decode-cards">
+                                    <div class="spec-decode-card">
+                                        <div class="spec-decode-card-label" data-i18n="specDecode.acceptanceRate">Acceptance Rate</div>
+                                        <div class="spec-decode-card-value" id="spec-acceptance-rate">--%</div>
+                                        <div class="spec-decode-gauge">
+                                            <div class="spec-decode-gauge-fill" id="spec-acceptance-fill" style="width: 0%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="spec-decode-card">
+                                        <div class="spec-decode-card-label" data-i18n="specDecode.speedup">Speedup Factor</div>
+                                        <div class="spec-decode-card-value" id="spec-speedup-value">--x</div>
+                                    </div>
+                                    <div class="spec-decode-card">
+                                        <div class="spec-decode-card-label" data-i18n="specDecode.draftTokens">Draft Tokens</div>
+                                        <div class="spec-decode-card-value" id="spec-draft-tokens">--</div>
+                                    </div>
+                                    <div class="spec-decode-card">
+                                        <div class="spec-decode-card-label" data-i18n="specDecode.acceptedTokens">Accepted Tokens</div>
+                                        <div class="spec-decode-card-value" id="spec-accepted-tokens">--</div>
+                                    </div>
+                                </div>
+                                <div class="spec-decode-model-info" id="spec-decode-model-info"></div>
+                            </div>
+                        </div>
+
                     </aside>
-                    </div>
-
-                    <!-- Context Observability Panel (PagedAttention Visualizer) -->
-                    <div class="context-observability-panel" id="context-observability-panel">
-                        <div class="context-obs-header" id="context-obs-toggle">
-                            <h2 data-i18n="contextObs.title">🧠 Context Observability</h2><span class="pa-simulated-badge" id="pa-simulated-badge" data-i18n="contextObs.demo.badge">SIMULATED</span>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <button class="btn btn-sm btn-secondary pa-demo-header-btn" id="pa-demo-clear-btn" title="Clear demo data" data-i18n-title="contextObs.demo.clearTooltip" style="display: none;">Clear</button>
-                                <button class="btn btn-sm btn-secondary pa-demo-header-btn" id="pa-demo-header-btn" title="Run demo simulation" data-i18n-title="contextObs.demo.tooltip">Demo</button>
-                                <span class="context-obs-toggle">▼</span>
-                            </div>
-                        </div>
-                        <div class="context-obs-body" id="context-obs-body">
-                            <!-- No Data State -->
-                            <div class="context-obs-no-data" id="context-obs-no-data">
-                                <div class="context-obs-no-data-icon">📡</div>
-                                <div data-i18n-html="contextObs.noData">Waiting for metrics from vLLM server...<br><small>KV cache metrics require a self-hosted vLLM instance with Prometheus enabled.</small></div>
-                                <button class="btn btn-sm btn-secondary" id="pa-run-demo-btn" style="margin-top: 10px;" data-i18n="contextObs.demo.runButton">▶ Run Demo Simulation</button>
-                            </div>
-
-                            <!-- Eviction Alert Banner -->
-                            <div class="eviction-banner" id="eviction-banner">
-                                <span class="eviction-banner-icon" id="eviction-banner-icon">⚠</span>
-                                <div class="eviction-banner-content">
-                                    <div class="eviction-banner-title" id="eviction-banner-title" data-i18n="contextObs.eviction.pressureTitle">Memory Pressure</div>
-                                    <div class="eviction-banner-detail" id="eviction-banner-detail" data-i18n="contextObs.eviction.pressureDetail">KV cache utilization is high. Context eviction may begin soon.</div>
-                                </div>
-                            </div>
-
-                            <!-- KV Cache Heatmap -->
-                            <div class="kv-heatmap-section">
-                                <div class="kv-heatmap-header">
-                                    <span class="kv-heatmap-label" data-i18n="contextObs.kvCache.label">KV Cache Utilization</span>
-                                    <span class="kv-cache-current level-ok" id="kv-cache-current-value">--%</span>
-                                </div>
-                                <div class="kv-utilization-bar">
-                                    <div class="kv-utilization-fill" id="kv-utilization-fill" style="width: 0%; background: var(--success-color);"></div>
-                                </div>
-                                <div class="kv-heatmap-canvas-wrap">
-                                    <canvas id="kv-heatmap-canvas"></canvas>
-                                </div>
-                                <div class="kv-heatmap-legend">
-                                    <span data-i18n="contextObs.kvCache.legendNow">Now</span>
-                                    <span data-i18n="contextObs.kvCache.legendAgo">~2 min ago</span>
-                                </div>
-                            </div>
-
-                            <!-- Prefix Cache Indicator -->
-                            <div class="prefix-cache-section">
-                                <div class="prefix-cache-badge" id="prefix-cache-badge"></div>
-                                <div class="prefix-cache-info">
-                                    <span class="prefix-cache-status" id="prefix-cache-status" data-i18n="contextObs.prefixCache.inactive">Prefix Cache Inactive</span>
-                                    <span class="prefix-cache-details" id="prefix-cache-details" data-i18n="contextObs.prefixCache.noData">No prefix cache data available</span>
-                                </div>
-                                <span class="prefix-cache-rate" id="prefix-cache-rate">--</span>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- Row 2: Server Logs (full width, collapsible) -->

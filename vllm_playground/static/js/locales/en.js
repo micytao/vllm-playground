@@ -452,6 +452,33 @@ const en = {
         switch: 'Switch Language',
         english: 'English',
         chinese: '简体中文'
+    },
+
+    // Token Counter
+    tokenCounter: {
+        label: 'Tokens:',
+        warningNearLimit: 'Approaching context limit — the model may start losing earlier conversation.'
+    },
+
+    // Logprobs Visualizer
+    logprobs: {
+        enableLabel: 'Show Logprobs'
+    },
+
+    // Speculative Decoding Dashboard
+    specDecode: {
+        title: '🚀 Speculative Decoding',
+        modelLabel: 'Speculative Decoding Model (Optional)',
+        modelHelp: 'Draft model for speculative decoding. Use [ngram] for n-gram matching.',
+        acceptanceRate: 'Acceptance Rate',
+        speedup: 'Speedup Factor',
+        draftTokens: 'Draft Tokens',
+        acceptedTokens: 'Accepted Tokens',
+        demo: {
+            runButton: '▶ Run Demo Simulation',
+            running: '⏳ Simulating...',
+            badge: 'SIMULATED'
+        }
     }
 };
 
