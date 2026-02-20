@@ -187,10 +187,12 @@ class VLLMConfig(BaseModel):
     # Custom virtual environment path for subprocess mode
     # Allows using specific vLLM installations (e.g., vllm-metal)
     venv_path: Optional[str] = None
-    # Speculative decoding (draft model or MTP/EAGLE)
+    # Speculative decoding via --speculative-config JSON
+    speculative_method: Optional[str] = None
     speculative_model: Optional[str] = None
     num_speculative_tokens: Optional[int] = None
-    speculative_draft_tensor_parallel_size: Optional[int] = None
+    draft_tensor_parallel_size: Optional[int] = None
+    prompt_lookup_max: Optional[int] = None
 
 
 # =============================================================================
@@ -2495,19 +2497,21 @@ async def start_server(config: VLLMConfig):
         else:
             await broadcast_log(f"[WEBUI] Tool calling disabled")
 
-        # Speculative decoding support
-        if config.speculative_model:
-            cmd.extend(["--speculative-model", config.speculative_model])
+        # Speculative decoding support (uses --speculative-config JSON)
+        if config.speculative_method:
+            import json as _json
+
+            spec_cfg = {"method": config.speculative_method}
+            if config.speculative_model:
+                spec_cfg["model"] = config.speculative_model
             if config.num_speculative_tokens:
-                cmd.extend(["--num-speculative-tokens", str(config.num_speculative_tokens)])
-            if config.speculative_draft_tensor_parallel_size:
-                cmd.extend(
-                    [
-                        "--speculative-draft-tensor-parallel-size",
-                        str(config.speculative_draft_tensor_parallel_size),
-                    ]
-                )
-            await broadcast_log(f"[WEBUI] 🚀 Speculative decoding enabled: {config.speculative_model}")
+                spec_cfg["num_speculative_tokens"] = config.num_speculative_tokens
+            if config.draft_tensor_parallel_size:
+                spec_cfg["draft_tensor_parallel_size"] = config.draft_tensor_parallel_size
+            if config.prompt_lookup_max:
+                spec_cfg["prompt_lookup_max"] = config.prompt_lookup_max
+            cmd.extend(["--speculative-config", _json.dumps(spec_cfg)])
+            await broadcast_log(f"[WEBUI] 🚀 Speculative decoding enabled: {_json.dumps(spec_cfg)}")
 
         # Start server based on mode
         if config.run_mode == "container":
@@ -2538,9 +2542,11 @@ async def start_server(config: VLLMConfig):
                 "tool_call_parser": config.tool_call_parser,
                 "accelerator": config.accelerator,  # GPU accelerator type (nvidia/amd)
                 "served_model_name": config.served_model_name,  # Model alias (for Claude Code)
+                "speculative_method": config.speculative_method,
                 "speculative_model": config.speculative_model,
                 "num_speculative_tokens": config.num_speculative_tokens,
-                "speculative_draft_tensor_parallel_size": config.speculative_draft_tensor_parallel_size,
+                "draft_tensor_parallel_size": config.draft_tensor_parallel_size,
+                "prompt_lookup_max": config.prompt_lookup_max,
             }
 
             logger.info(

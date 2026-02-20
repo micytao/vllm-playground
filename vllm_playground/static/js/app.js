@@ -2630,9 +2630,44 @@ number ::= [0-9]+`
             enable_tool_calling: this.elements.enableToolCalling.checked,
             tool_call_parser: this.elements.toolCallParser.value || null,  // null = auto-detect
             served_model_name: this.elements.servedModelName?.value.trim() || null,  // null = use model path
-            speculative_model: document.getElementById('speculative-model')?.value.trim() || null,
-            num_speculative_tokens: parseInt(document.getElementById('num-speculative-tokens')?.value) || null,
+            speculative_method: null,
+            speculative_model: null,
+            num_speculative_tokens: null,
+            draft_tensor_parallel_size: null,
+            prompt_lookup_max: null,
         };
+
+        // Build speculative decoding config from UI fields
+        const specMethod = document.getElementById('spec-decode-method')?.value || '';
+        if (specMethod) {
+            const modelRequiredMethods = ['draft_model', 'eagle', 'eagle3', 'mlp_speculator', 'medusa', 'mtp'];
+            const needsModel = modelRequiredMethods.includes(specMethod);
+            const specModelVal = document.getElementById('speculative-model')?.value.trim() || '';
+
+            if (needsModel && !specModelVal) {
+                this.showAlert({
+                    title: 'Missing Draft Model',
+                    message: `The "${specMethod}" speculative decoding method requires a draft model path. Please enter a HuggingFace model ID in the "Draft / Speculator Model" field.`,
+                    icon: '⚠️',
+                    type: 'danger',
+                });
+                return;
+            }
+
+            config.speculative_method = specMethod;
+            if (needsModel) {
+                config.speculative_model = specModelVal;
+            }
+            config.num_speculative_tokens = parseInt(document.getElementById('num-speculative-tokens')?.value) || null;
+            if (['eagle', 'eagle3', 'mlp_speculator'].includes(specMethod)) {
+                const dtp = parseInt(document.getElementById('draft-tensor-parallel-size')?.value);
+                if (dtp && dtp > 0) config.draft_tensor_parallel_size = dtp;
+            }
+            if (specMethod === 'ngram') {
+                const plm = parseInt(document.getElementById('prompt-lookup-max')?.value);
+                if (plm && plm > 0) config.prompt_lookup_max = plm;
+            }
+        }
 
         // Add remote mode settings
         if (runMode === 'remote') {
@@ -4153,6 +4188,30 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
             // Focus confirm button
             confirmBtn.focus();
+        });
+    }
+
+    showAlert(options = {}) {
+        const {
+            title = 'Notice',
+            message = '',
+            icon = 'ℹ️',
+            type = 'primary',
+            buttonText = 'OK'
+        } = options;
+
+        const cancelBtn = document.getElementById('confirm-modal-cancel');
+        if (cancelBtn) cancelBtn.style.display = 'none';
+
+        return this.showConfirm({
+            title,
+            message,
+            icon,
+            type,
+            confirmText: buttonText,
+            cancelText: 'Cancel',
+        }).finally(() => {
+            if (cancelBtn) cancelBtn.style.display = '';
         });
     }
 

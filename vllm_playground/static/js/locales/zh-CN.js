@@ -753,8 +753,10 @@ const zhCN = {
     // 投机解码仪表板
     specDecode: {
         title: '🚀 投机解码',
-        modelLabel: '投机解码模型（可选）',
-        modelHelp: '用于投机解码的草稿模型。使用 [ngram] 进行 n-gram 匹配。',
+        methodLabel: '投机解码（可选）',
+        methodHelp: '选择投机方法以减少 token 间延迟。',
+        modelLabel: '草稿/推测模型',
+        modelHelp: 'HuggingFace 草稿模型 ID。',
         acceptanceRate: '接受率',
         speedup: '加速倍数',
         draftTokens: '草稿令牌',

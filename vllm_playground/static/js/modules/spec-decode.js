@@ -31,13 +31,41 @@ const SpecDecodeMethods = {
             });
         }
 
-        // Show/hide spec-decode-tokens when spec model is entered
-        const specModelInput = document.getElementById('speculative-model');
-        const tokensGroup = document.getElementById('spec-decode-tokens-group');
-        if (specModelInput && tokensGroup) {
-            specModelInput.addEventListener('input', () => {
-                tokensGroup.style.display = specModelInput.value.trim() ? '' : 'none';
-            });
+        // Show/hide spec-decode sub-fields based on method dropdown
+        const specMethodSelect = document.getElementById('spec-decode-method');
+        if (specMethodSelect) {
+            const updateSpecFields = () => {
+                const method = specMethodSelect.value;
+                const needsModel = ['draft_model', 'eagle', 'eagle3', 'mlp_speculator', 'medusa', 'mtp'].includes(method);
+                const needsTP = ['eagle', 'eagle3', 'mlp_speculator'].includes(method);
+                const needsNgram = method === 'ngram';
+                const active = !!method;
+
+                const modelGroup = document.getElementById('spec-decode-model-group');
+                const tokensGroup = document.getElementById('spec-decode-tokens-group');
+                const tpGroup = document.getElementById('spec-decode-tp-group');
+                const ngramGroup = document.getElementById('spec-decode-ngram-group');
+                const modelHelp = document.getElementById('spec-decode-model-help');
+
+                if (modelGroup) modelGroup.style.display = needsModel ? '' : 'none';
+                if (tokensGroup) tokensGroup.style.display = active ? '' : 'none';
+                if (tpGroup) tpGroup.style.display = needsTP ? '' : 'none';
+                if (ngramGroup) ngramGroup.style.display = needsNgram ? '' : 'none';
+
+                if (modelHelp) {
+                    const hints = {
+                        draft_model: 'e.g., Qwen/Qwen3-0.6B',
+                        eagle: 'e.g., yuhuili/EAGLE-LLaMA3-Instruct-8B',
+                        eagle3: 'e.g., RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3',
+                        mlp_speculator: 'e.g., ibm-ai-platform/llama3-70b-accelerator',
+                        medusa: 'Medusa head model path',
+                        mtp: 'MTP draft model path',
+                    };
+                    modelHelp.textContent = hints[method] || '';
+                }
+            };
+            specMethodSelect.addEventListener('change', updateSpecFields);
+            updateSpecFields();
         }
 
         // Demo button in no-data area

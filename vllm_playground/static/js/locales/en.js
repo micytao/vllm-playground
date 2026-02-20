@@ -468,8 +468,10 @@ const en = {
     // Speculative Decoding Dashboard
     specDecode: {
         title: '🚀 Speculative Decoding',
-        modelLabel: 'Speculative Decoding Model (Optional)',
-        modelHelp: 'Draft model for speculative decoding. Use [ngram] for n-gram matching.',
+        methodLabel: 'Speculative Decoding (Optional)',
+        methodHelp: 'Choose a speculation method to reduce inter-token latency.',
+        modelLabel: 'Draft / Speculator Model',
+        modelHelp: 'HuggingFace model ID for the draft model.',
         acceptanceRate: 'Acceptance Rate',
         speedup: 'Speedup Factor',
         draftTokens: 'Draft Tokens',

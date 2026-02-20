@@ -518,14 +518,38 @@
 
                             <!-- Speculative Decoding -->
                             <div class="form-group" id="spec-decode-group">
-                                <label for="speculative-model" data-i18n="specDecode.modelLabel">Speculative Decoding Model (Optional)</label>
-                                <input type="text" id="speculative-model" class="form-control" placeholder="e.g., meta-llama/Llama-3.2-1B-Instruct or [ngram]">
-                                <small class="form-help" data-i18n="specDecode.modelHelp">Draft model for speculative decoding. Use [ngram] for n-gram matching.</small>
+                                <label for="spec-decode-method" data-i18n="specDecode.methodLabel">Speculative Decoding (Optional)</label>
+                                <select id="spec-decode-method" class="form-control">
+                                    <option value="">Disabled</option>
+                                    <option value="draft_model">Draft Model</option>
+                                    <option value="eagle">EAGLE</option>
+                                    <option value="eagle3">EAGLE3</option>
+                                    <option value="mlp_speculator">MLP Speculator</option>
+                                    <option value="ngram">N-Gram (Prompt Lookup)</option>
+                                    <option value="medusa">Medusa</option>
+                                    <option value="mtp">MTP (Multi-Token Prediction)</option>
+                                </select>
+                                <small class="form-help" data-i18n="specDecode.methodHelp">Choose a speculation method to reduce inter-token latency.</small>
+                            </div>
+                            <div class="form-group" id="spec-decode-model-group" style="display: none;">
+                                <label for="speculative-model" data-i18n="specDecode.modelLabel">Draft / Speculator Model</label>
+                                <input type="text" id="speculative-model" class="form-control" placeholder="e.g., Qwen/Qwen3-0.6B">
+                                <small class="form-help" id="spec-decode-model-help" data-i18n="specDecode.modelHelp">HuggingFace model ID for the draft model.</small>
                             </div>
                             <div class="form-group" id="spec-decode-tokens-group" style="display: none;">
                                 <label for="num-speculative-tokens">Speculative Tokens</label>
-                                <input type="number" id="num-speculative-tokens" class="form-control" min="1" max="20" value="5" placeholder="5">
-                                <small class="form-help">Number of tokens the draft model proposes per step.</small>
+                                <input type="number" id="num-speculative-tokens" class="form-control" min="1" max="64" value="5" placeholder="5">
+                                <small class="form-help">Number of tokens to speculate per step.</small>
+                            </div>
+                            <div class="form-group" id="spec-decode-tp-group" style="display: none;">
+                                <label for="draft-tensor-parallel-size">Draft Tensor Parallel Size</label>
+                                <input type="number" id="draft-tensor-parallel-size" class="form-control" min="1" max="8" value="1" placeholder="1">
+                                <small class="form-help">Tensor parallel size for the draft model (EAGLE/MLP).</small>
+                            </div>
+                            <div class="form-group" id="spec-decode-ngram-group" style="display: none;">
+                                <label for="prompt-lookup-max">Prompt Lookup Max N-Gram</label>
+                                <input type="number" id="prompt-lookup-max" class="form-control" min="1" max="10" value="4" placeholder="4">
+                                <small class="form-help">Maximum n-gram size for prompt lookup matching.</small>
                             </div>
 
                             </div><!-- end local-server-settings -->
@@ -1134,7 +1158,7 @@
                             <div class="spec-decode-body" id="spec-decode-body">
                                 <div class="sd-no-data" id="sd-no-data">
                                     <div class="sd-no-data-icon">🚀</div>
-                                    <div>No speculative decoding metrics available.<br><small>Requires a vLLM server started with <code>--speculative-model</code>, or use the demo simulation.</small></div>
+                                    <div>No speculative decoding metrics available.<br><small>Requires a vLLM server started with <code>--speculative-config</code>, or use the demo simulation.</small></div>
                                     <button class="btn btn-sm btn-secondary" id="sd-run-demo-btn" style="margin-top: 10px;" data-i18n="specDecode.demo.runButton">▶ Run Demo Simulation</button>
                                 </div>
                                 <div class="spec-decode-cards">
