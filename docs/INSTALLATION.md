@@ -109,20 +109,39 @@ python run.py
 ## ☸️ Option 3: OpenShift/Kubernetes Deployment
 
 Deploy the entire stack to OpenShift or Kubernetes:
-
+### GPU Clusters (Default) ⭐
 ```bash
-# 1. Build and push Web UI container
-cd openshift/
-podman build -f Containerfile -t your-registry/vllm-playground:latest .
+# 1. Clone repo
+git clone https://github.com/micytao/vllm-playground.git
+
+# 2. Build and push Web UI image
+cd vllm-playground
+podman build -f openshift/Containerfile -t your-registry/vllm-playground:latest .
 podman push your-registry/vllm-playground:latest
 
-# 2. Deploy to cluster (GPU or CPU mode)
-./deploy.sh --gpu   # For GPU clusters
-./deploy.sh --cpu   # For CPU-only clusters
+# 3. Update image in manifest
+vim openshift/manifests/04-webui-deployment.yaml  # Update image reference
 
-# 3. Get the URL
-oc get route vllm-playground -n vllm-playground
+# 4. Deploy to OpenShift (GPU mode)
+cd openshift/
+./deploy.sh --gpu  # Uses vllm/vllm-openai:v0.12.0
+
+# 5. Get Web UI URL
+echo "https://$(oc get route vllm-playground -n vllm-playground -o jsonpath='{.spec.host}')"
 ```
+
+### CPU Clusters
+```bash
+# Same steps 1-3 as above, then:
+
+# 4. Deploy to OpenShift (CPU mode)
+cd openshift/
+./deploy.sh --cpu  # Uses quay.io/rh_ee_micyang/vllm-cpu:v0.11.0 (self-built, publicly accessible)
+
+# 5. Get Web UI URL
+echo "https://$(oc get route vllm-playground -n vllm-playground -o jsonpath='{.spec.host}')"
+```
+
 
 ### Features
 - ✅ Enterprise-grade deployment
