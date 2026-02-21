@@ -115,6 +115,7 @@ class MetricStore:
         self.history: deque = deque(maxlen=history_maxlen)
         self.scrape_interval = scrape_interval
         self.last_scrape: Optional[datetime] = None
+        self.last_simulated: Optional[datetime] = None
         self._task: Optional[asyncio.Task] = None
         self._types: Dict[str, str] = {}  # metric name -> gauge/counter/histogram/...
         self._scrape_warned: bool = False
@@ -397,7 +398,6 @@ class MetricStore:
         if not self.latest:
             return
         now = datetime.now()
-        self.last_scrape = now
         snapshot = {"timestamp": now.isoformat()}
         for k, v in self.latest.items():
             if isinstance(v, dict):
@@ -4861,12 +4861,19 @@ async def get_vllm_metrics_all():
             "run_mode": current_run_mode or "unknown",
         }
 
+    now = datetime.now()
     scrape_age = None
-    ts = metric_store.last_scrape or (metrics_timestamp if latest_vllm_metrics else None)
-    if ts:
-        scrape_age = round((datetime.now() - ts).total_seconds(), 1)
-
-    source = "prometheus" if metric_store.last_scrape else ("fallback" if metrics else "none")
+    if metric_store.last_scrape:
+        source = "prometheus"
+        scrape_age = round((now - metric_store.last_scrape).total_seconds(), 1)
+    elif metric_store.last_simulated:
+        source = "simulated"
+        scrape_age = round((now - metric_store.last_simulated).total_seconds(), 1)
+    elif metrics_timestamp and latest_vllm_metrics:
+        source = "fallback"
+        scrape_age = round((now - metrics_timestamp).total_seconds(), 1)
+    else:
+        source = "none"
 
     return {
         "metrics": metrics,
@@ -5035,7 +5042,7 @@ async def simulate_vllm_metrics(req: SimulateMetricsRequest):
 
     # Also push into MetricStore so /api/vllm/metrics/all reflects simulated data
     metric_store.ingest_simulated(payload)
-    metric_store.last_scrape = now
+    metric_store.last_simulated = now
     snapshot = {"timestamp": now.isoformat()}
     for k, v in metric_store.latest.items():
         if isinstance(v, dict):
@@ -5081,6 +5088,7 @@ async def simulate_reset_metrics():
     metric_store.latest.clear()
     metric_store.history.clear()
     metric_store.last_scrape = None
+    metric_store.last_simulated = None
 
     return {"status": "ok", "message": "Metrics reset"}
 

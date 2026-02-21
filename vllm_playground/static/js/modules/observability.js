@@ -30,6 +30,8 @@ const ObservabilityModule = {
     _alertedMetrics: new Set(),
     _alertHistory: [],
     _customThresholds: null,
+    _lastScrapeLocalRef: null,
+    _prevScrapeAge: null,
 
     // -- Template loading (same pattern as OmniModule) ---------------------
 
@@ -175,6 +177,9 @@ const ObservabilityModule = {
     },
 
     _onMetrics({ all }) {
+        const source = (all && all.source) || 'none';
+        this._updateDemoButtons(source);
+
         if (!all || !all.metrics) {
             this._showNoData(true, all);
             return;
@@ -189,7 +194,13 @@ const ObservabilityModule = {
 
         const ageEl = document.getElementById('obs-scrape-age');
         if (ageEl && all.scrape_age_seconds != null) {
-            ageEl.textContent = `Last scrape: ${all.scrape_age_seconds}s ago`;
+            const serverAge = all.scrape_age_seconds;
+            if (this._prevScrapeAge === null || serverAge < this._prevScrapeAge - 1) {
+                this._lastScrapeLocalRef = Date.now() - serverAge * 1000;
+            }
+            this._prevScrapeAge = serverAge;
+            const localAge = ((Date.now() - this._lastScrapeLocalRef) / 1000).toFixed(1);
+            ageEl.textContent = `Last scrape: ${localAge}s ago`;
         }
 
         this._renderOverview(metrics);
@@ -803,6 +814,13 @@ const ObservabilityModule = {
 
     // -- Demo / Clear -------------------------------------------------------
 
+    _updateDemoButtons(source) {
+        const demoBtn = document.getElementById('obs-demo-btn');
+        const clearBtn = document.getElementById('obs-clear-btn');
+        if (demoBtn) demoBtn.disabled = source !== 'none';
+        if (clearBtn) clearBtn.disabled = source !== 'simulated';
+    },
+
     async _runDemo() {
         try {
             await fetch('/api/vllm/metrics/simulate', {
@@ -837,6 +855,8 @@ const ObservabilityModule = {
             this._latestMetrics = null;
             this._alertHistory = [];
             this._alertedMetrics.clear();
+            this._lastScrapeLocalRef = null;
+            this._prevScrapeAge = null;
             this._showNoData(true, null);
             const alerts = document.getElementById('obs-alerts');
             if (alerts) alerts.innerHTML = '';
