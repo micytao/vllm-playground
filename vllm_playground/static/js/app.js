@@ -7,6 +7,7 @@ import { initPagedAttentionModule } from './modules/paged-attention.js';
 import { initTokenCounterModule } from './modules/token-counter.js';
 import { initLogprobsModule } from './modules/logprobs.js';
 import { initSpecDecodeModule } from './modules/spec-decode.js';
+import { initObservabilityModule } from './modules/observability.js';
 
 class VLLMWebUI {
     constructor() {
@@ -507,8 +508,21 @@ class VLLMWebUI {
                         this.onOmniViewActivated();
                     }
                     break;
+                case 'observability':
+                    viewTitle.innerHTML = '<span class="view-title-icon icon-observability-header"></span> Observability';
+                    if (this.onObservabilityViewActivated) {
+                        this.onObservabilityViewActivated();
+                    }
+                    break;
                 default:
                     viewTitle.textContent = viewId;
+            }
+        }
+
+        // Handle view deactivation for Observability
+        if (this.currentView === 'observability' && viewId !== 'observability') {
+            if (this.onObservabilityViewDeactivated) {
+                this.onObservabilityViewDeactivated();
             }
         }
 
@@ -1705,6 +1719,9 @@ number ::= [0-9]+`
             // Initialize Speculative Decoding Dashboard
             initSpecDecodeModule(this);
 
+            // Initialize Observability Dashboard
+            initObservabilityModule(this);
+
             // Response Metrics collapsible toggle
             const rmToggle = document.getElementById('response-metrics-toggle');
             const rmSection = document.getElementById('response-metrics-section');
@@ -1719,6 +1736,9 @@ number ::= [0-9]+`
 
             // Preload vLLM-Omni template immediately (like MCP/Claude Code which are inline)
             this.loadOmniTemplate();
+
+            // Preload Observability template
+            this.loadObservabilityTemplate();
 
             // Handle ModelScope availability
             this.modelscopeInstalled = features.modelscope_installed || false;

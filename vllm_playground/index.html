@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="/static/css/token-counter.css">
     <link rel="stylesheet" href="/static/css/logprobs.css">
     <link rel="stylesheet" href="/static/css/spec-decode.css">
+    <link rel="stylesheet" href="/static/css/observability.css">
     <!-- xterm.js for Claude Code terminal -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -44,6 +45,15 @@
                 <button class="nav-item" data-view="vllm-omni" title="vLLM-Omni" id="nav-omni">
                     <img src="/assets/vllm-omni-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label">vLLM-Omni</span>
+                </button>
+
+                <!-- Monitoring Section -->
+                <div class="nav-divider">
+                    <span class="nav-divider-label">Monitoring</span>
+                </div>
+                <button class="nav-item" data-view="observability" title="Observability" id="nav-observability">
+                    <span class="nav-item-icon icon-observability-nav"></span>
+                    <span class="nav-label" data-i18n="nav.observability">Observability</span>
                 </button>
 
                 <!-- Divider -->
@@ -1089,19 +1099,13 @@
                                     <div style="display: flex; align-items: center; gap: 6px;">
                                         <span class="context-obs-toggle">▼</span>
                                         <h2 data-i18n="contextObs.title">🧠 Context Observability</h2>
-                                        <span class="pa-simulated-badge" id="pa-simulated-badge" data-i18n="contextObs.demo.badge">SIMULATED</span>
-                                    </div>
-                                    <div class="sidebar-panel-header-btns">
-                                        <button class="btn btn-sm btn-secondary pa-demo-header-btn" id="pa-demo-clear-btn" title="Clear demo data" data-i18n-title="contextObs.demo.clearTooltip" style="display: none;">Clear</button>
-                                        <button class="btn btn-sm btn-secondary pa-demo-header-btn" id="pa-demo-header-btn" title="Run demo simulation" data-i18n-title="contextObs.demo.tooltip">Demo</button>
                                     </div>
                                 </div>
                             </div>
                             <div class="context-obs-body" id="context-obs-body">
                                 <div class="context-obs-no-data" id="context-obs-no-data">
                                     <div class="context-obs-no-data-icon">📡</div>
-                                    <div data-i18n-html="contextObs.noData">Waiting for metrics from vLLM server...<br><small>KV cache metrics require a self-hosted vLLM instance with Prometheus enabled.</small></div>
-                                    <button class="btn btn-sm btn-secondary" id="pa-run-demo-btn" style="margin-top: 10px;" data-i18n="contextObs.demo.runButton">▶ Run Demo Simulation</button>
+                                    <div data-i18n-html="contextObs.noData">Waiting for metrics from vLLM server...<br><small>KV cache metrics require a self-hosted vLLM instance with Prometheus enabled, or use the Observability page demo.</small></div>
                                 </div>
                                 <div class="eviction-banner" id="eviction-banner">
                                     <span class="eviction-banner-icon" id="eviction-banner-icon">⚠</span>
@@ -1122,8 +1126,8 @@
                                         <canvas id="kv-heatmap-canvas"></canvas>
                                     </div>
                                     <div class="kv-heatmap-legend">
-                                        <span data-i18n="contextObs.kvCache.legendNow">Now</span>
                                         <span data-i18n="contextObs.kvCache.legendAgo">~2 min ago</span>
+                                        <span data-i18n="contextObs.kvCache.legendNow">Now</span>
                                     </div>
                                 </div>
                                 <div class="prefix-cache-section">
@@ -1147,19 +1151,13 @@
                                     <div style="display: flex; align-items: center; gap: 6px;">
                                         <span class="spec-decode-toggle-icon">▼</span>
                                         <h2 data-i18n="specDecode.title">🚀 Speculative Decoding</h2>
-                                        <span class="sd-simulated-badge" id="sd-simulated-badge" data-i18n="specDecode.demo.badge">SIMULATED</span>
-                                    </div>
-                                    <div class="sidebar-panel-header-btns">
-                                        <button class="btn btn-sm btn-secondary sd-demo-header-btn" id="sd-demo-clear-btn" title="Clear demo data" style="display: none;">Clear</button>
-                                        <button class="btn btn-sm btn-secondary sd-demo-header-btn" id="sd-demo-header-btn" title="Run demo simulation">Demo</button>
                                     </div>
                                 </div>
                             </div>
                             <div class="spec-decode-body" id="spec-decode-body">
                                 <div class="sd-no-data" id="sd-no-data">
                                     <div class="sd-no-data-icon">🚀</div>
-                                    <div>No speculative decoding metrics available.<br><small>Requires a vLLM server started with <code>--speculative-config</code>, or use the demo simulation.</small></div>
-                                    <button class="btn btn-sm btn-secondary" id="sd-run-demo-btn" style="margin-top: 10px;" data-i18n="specDecode.demo.runButton">▶ Run Demo Simulation</button>
+                                    <div>No speculative decoding metrics available.<br><small>Requires a vLLM server started with <code>--speculative-config</code>, or use the Observability page demo.</small></div>
                                 </div>
                                 <div class="spec-decode-cards">
                                     <div class="spec-decode-card">
@@ -1437,6 +1435,14 @@
                 <div class="view-loading" id="omni-view-loading">
                     <span class="loading-spinner"></span>
                     <span>Loading vLLM-Omni...</span>
+                </div>
+            </div>
+
+            <!-- Observability View (template loaded dynamically from static/templates/observability.html) -->
+            <div class="view-content" id="observability-view" style="display: none;">
+                <div class="view-loading" id="observability-view-loading">
+                    <span class="loading-spinner"></span>
+                    <span>Loading Observability...</span>
                 </div>
             </div>
 

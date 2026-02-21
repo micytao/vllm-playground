@@ -1,0 +1,76 @@
+<div class="obs-layout">
+    <!-- Header -->
+    <div class="obs-header">
+        <div class="obs-header-title">
+            <span class="icon-observability-large"></span>
+            <div>
+                <h2>Observability Dashboard</h2>
+                <p class="obs-header-subtitle">Real-time vLLM server metrics with auto-discovery</p>
+            </div>
+        </div>
+        <div class="obs-header-actions">
+            <span class="obs-scrape-age" id="obs-scrape-age"></span>
+            <span class="obs-simulated-badge" id="obs-simulated-badge">SIMULATED</span>
+            <button class="obs-btn" id="obs-demo-btn" title="Run demo simulation">Demo</button>
+            <button class="obs-btn" id="obs-clear-btn" title="Clear simulated data">Clear</button>
+            <button class="obs-btn" id="obs-export-btn" title="Export all metrics">Export</button>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="obs-tabs" id="obs-tabs">
+        <button class="obs-tab active" data-obs-tab="overview">Overview</button>
+        <button class="obs-tab" data-obs-tab="all-metrics">All Metrics</button>
+        <button class="obs-tab" data-obs-tab="time-series">Time Series</button>
+        <button class="obs-tab" data-obs-tab="latency">Latency</button>
+    </div>
+
+    <!-- Overview Tab -->
+    <div class="obs-tab-content active" id="obs-tab-overview">
+        <div class="obs-alerts" id="obs-alerts"></div>
+        <div id="obs-overview-cards">
+            <div class="obs-no-data" id="obs-overview-no-data">
+                <h3>No metrics available</h3>
+                <p>Start a vLLM server to see live metrics, or click <strong>Demo</strong> to preview with simulated data.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- All Metrics Tab -->
+    <div class="obs-tab-content" id="obs-tab-all-metrics">
+        <div class="obs-table-controls">
+            <input type="text" class="obs-search" id="obs-search" placeholder="Search metrics..." />
+            <span class="obs-metric-count" id="obs-metric-count"></span>
+            <button class="obs-btn" id="obs-export-table-btn">Export CSV</button>
+        </div>
+        <div class="obs-table-wrap">
+            <table class="obs-table" id="obs-metrics-table">
+                <thead>
+                    <tr>
+                        <th data-sort="name">Name <span class="sort-arrow">▲</span></th>
+                        <th data-sort="type">Type <span class="sort-arrow"></span></th>
+                        <th data-sort="value">Value <span class="sort-arrow"></span></th>
+                        <th data-sort="category">Category <span class="sort-arrow"></span></th>
+                        <th>Labels</th>
+                    </tr>
+                </thead>
+                <tbody id="obs-metrics-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Time Series Tab (Phase 4) -->
+    <div class="obs-tab-content" id="obs-tab-time-series">
+        <div class="obs-chart-placeholder" id="obs-timeseries-placeholder">
+            Time Series charts will be available in a future update (requires uPlot).
+        </div>
+    </div>
+
+    <!-- Latency Tab (Phase 4) -->
+    <div class="obs-tab-content" id="obs-tab-latency">
+        <div class="obs-latency-cards" id="obs-latency-cards"></div>
+        <div class="obs-chart-placeholder" id="obs-latency-placeholder">
+            Latency histogram charts will be available in a future update.
+        </div>
+    </div>
+</div>

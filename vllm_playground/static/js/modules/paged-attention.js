@@ -26,27 +26,14 @@ const PagedAttentionMethods = {
         this._paEvictionState = 'none'; // 'none' | 'warning' | 'critical'
         this._paEmptyPollCount = 0;
         this._paHasData = false;
-        this._paDemoRunning = false;
-        this._paDemoTimer = null;
-        this._paIsSimulated = false;
 
         const toggle = document.getElementById('context-obs-toggle');
         if (toggle) {
-            toggle.addEventListener('click', (e) => {
-                if (e.target.closest('.pa-demo-header-btn')) return;
+            toggle.addEventListener('click', () => {
                 const panel = document.getElementById('context-observability-panel');
                 if (panel) panel.classList.toggle('collapsed');
             });
         }
-
-        const demoBtn = document.getElementById('pa-run-demo-btn');
-        if (demoBtn) demoBtn.addEventListener('click', (e) => { e.stopPropagation(); this._paRunDemo(); });
-
-        const headerDemoBtn = document.getElementById('pa-demo-header-btn');
-        if (headerDemoBtn) headerDemoBtn.addEventListener('click', (e) => { e.stopPropagation(); this._paRunDemo(); });
-
-        const clearBtn = document.getElementById('pa-demo-clear-btn');
-        if (clearBtn) clearBtn.addEventListener('click', (e) => { e.stopPropagation(); this._paClearDemo(); });
 
         this._paInitCanvas();
         this._paStartPolling();
@@ -87,20 +74,42 @@ const PagedAttentionMethods = {
             const resp = await fetch('/api/vllm/metrics');
             if (!resp.ok) {
                 this._paEmptyPollCount++;
-                this._paShowNoData(true);
+                this._paHandleNoData();
                 return;
             }
             const data = await resp.json();
             if (data.error || Object.keys(data).length === 0) {
                 this._paEmptyPollCount++;
-                this._paShowNoData(true);
+                this._paHandleNoData();
                 return;
             }
             this._paUpdateFromMetrics(data);
         } catch {
             this._paEmptyPollCount++;
-            this._paShowNoData(true);
+            this._paHandleNoData();
         }
+    },
+
+    _paHandleNoData() {
+        if (this._paHasData && this._paEmptyPollCount >= 2) {
+            this._paHasData = false;
+            this._paResetDisplay();
+        }
+        this._paShowNoData(true);
+    },
+
+    _paResetDisplay() {
+        this._paHeatmapData = [];
+        this._paPrevPreemptions = null;
+        this._paEvictionState = 'none';
+        this._paDrawHeatmap();
+        this._paUpdateCurrentValue(null);
+        this._paUpdateUtilizationBar(null);
+        this._paUpdatePrefixCache(null, null, null);
+        const banner = document.getElementById('eviction-banner');
+        if (banner) banner.classList.remove('visible', 'warning', 'critical');
+        const fill = document.getElementById('kv-utilization-fill');
+        if (fill) { fill.style.width = '0%'; fill.style.background = 'var(--success-color)'; }
     },
 
     _paShowNoData(show) {
@@ -108,7 +117,7 @@ const PagedAttentionMethods = {
         const body = document.getElementById('context-obs-body');
         if (!noData) return;
 
-        if (show && !this._paHasData) {
+        if (show) {
             noData.style.display = '';
             body?.querySelectorAll('.kv-heatmap-section, .prefix-cache-section, .eviction-banner')
                 .forEach(el => el.style.display = 'none');
@@ -119,21 +128,12 @@ const PagedAttentionMethods = {
         }
     },
 
-    _paUpdateFromMetrics(m, fromDemo = false) {
+    _paUpdateFromMetrics(m) {
         const kvUsage = m.kv_cache_usage_perc ?? m.gpu_cache_usage_perc ?? null;
         const prefixHitRate = m.prefix_cache_hit_rate ?? null;
         const prefixHits = m.prefix_cache_hits ?? null;
         const prefixQueries = m.prefix_cache_queries ?? null;
         const numPreemptions = m.num_preemptions ?? null;
-
-        // Real metrics arrived — stop any running demo and switch over
-        if (!fromDemo && this._paDemoRunning) {
-            this._paStopDemo();
-        }
-        if (!fromDemo) {
-            this._paIsSimulated = false;
-            this._paSetSimulatedBadge(false);
-        }
 
         this._paHasData = true;
         this._paEmptyPollCount = 0;
@@ -334,132 +334,7 @@ const PagedAttentionMethods = {
         this._paEvictionState = newState;
     },
 
-    // --- Demo Simulation ---
-
-    async _paRunDemo() {
-        if (this._paDemoRunning) return;
-        this._paDemoRunning = true;
-        this._paIsSimulated = true;
-        this._paSetDemoBtnState(true);
-        this._paSetSimulatedBadge(true);
-
-        // Reset state for clean demo
-        this._paHeatmapData = [];
-        this._paPrevPreemptions = null;
-        this._paEvictionState = 'none';
-        this._paHasData = true;
-        this._paShowNoData(false);
-
-        const steps = [
-            // Phase 1: Healthy baseline
-            { kv: 8,  prefix: 0,    preempt: 0, label: 'Healthy' },
-            { kv: 12, prefix: 0,    preempt: 0 },
-            { kv: 15, prefix: 0,    preempt: 0 },
-            // Phase 2: Prefix cache active
-            { kv: 18, prefix: 45,   preempt: 0, label: 'Prefix caching' },
-            { kv: 22, prefix: 62,   preempt: 0 },
-            { kv: 25, prefix: 68,   preempt: 0 },
-            // Phase 3: Rising pressure
-            { kv: 35, prefix: 55,   preempt: 0, label: 'Pressure building' },
-            { kv: 50, prefix: 48,   preempt: 0 },
-            { kv: 65, prefix: 40,   preempt: 0 },
-            { kv: 78, prefix: 35,   preempt: 0 },
-            { kv: 85, prefix: 30,   preempt: 0 },
-            // Phase 4: Warning threshold
-            { kv: 91, prefix: 22,   preempt: 0, label: 'Warning zone' },
-            { kv: 93, prefix: 18,   preempt: 0 },
-            // Phase 5: Eviction
-            { kv: 96, prefix: 10,   preempt: 2, label: 'Eviction active' },
-            { kv: 98, prefix: 5,    preempt: 5 },
-            { kv: 99, prefix: 2,    preempt: 9 },
-            // Phase 6: Recovery
-            { kv: 75, prefix: 0,    preempt: 9, label: 'Recovery' },
-            { kv: 50, prefix: 0,    preempt: 9 },
-            { kv: 30, prefix: 0,    preempt: 9 },
-            { kv: 15, prefix: 0,    preempt: 9 },
-            { kv: 10, prefix: 0,    preempt: 9 },
-        ];
-
-        for (let i = 0; i < steps.length; i++) {
-            if (!this._paDemoRunning) break;
-
-            const s = steps[i];
-            if (s.label && this.showNotification) {
-                this.showNotification(`Demo: ${s.label}`, 'info', 2500);
-            }
-
-            this._paUpdateFromMetrics({
-                kv_cache_usage_perc: s.kv,
-                prefix_cache_hit_rate: s.prefix,
-                num_preemptions: s.preempt,
-                prefix_cache_hits: s.prefix > 0 ? Math.round(s.prefix * 20) : null,
-                prefix_cache_queries: s.prefix > 0 ? Math.round(s.prefix * 20 / (s.prefix / 100)) : null,
-            }, true);
-
-            await new Promise(r => { this._paDemoTimer = setTimeout(r, 1500); });
-        }
-
-        this._paDemoRunning = false;
-        this._paSetDemoBtnState(false);
-    },
-
-    _paStopDemo() {
-        this._paDemoRunning = false;
-        if (this._paDemoTimer) {
-            clearTimeout(this._paDemoTimer);
-            this._paDemoTimer = null;
-        }
-        this._paSetDemoBtnState(false);
-    },
-
-    _paClearDemo() {
-        this._paStopDemo();
-        this._paIsSimulated = false;
-        this._paHasData = false;
-        this._paHeatmapData = [];
-        this._paPrevPreemptions = null;
-        this._paEvictionState = 'none';
-
-        // Reset all UI elements
-        this._paDrawHeatmap();
-        this._paUpdateCurrentValue(null);
-        this._paUpdateUtilizationBar(null);
-        this._paUpdatePrefixCache(null, null, null);
-        const banner = document.getElementById('eviction-banner');
-        if (banner) banner.classList.remove('visible', 'warning', 'critical');
-        const fill = document.getElementById('kv-utilization-fill');
-        if (fill) { fill.style.width = '0%'; fill.style.background = 'var(--success-color)'; }
-
-        this._paSetSimulatedBadge(false);
-        this._paShowNoData(true);
-    },
-
-    _paSetDemoBtnState(running) {
-        const btn = document.getElementById('pa-run-demo-btn');
-        const hdrBtn = document.getElementById('pa-demo-header-btn');
-        if (btn) {
-            btn.textContent = running
-                ? (window.i18n?.t('contextObs.demo.running') || '⏳ Simulating...')
-                : (window.i18n?.t('contextObs.demo.runButton') || '▶ Run Demo Simulation');
-            btn.disabled = running;
-        }
-        if (hdrBtn) {
-            hdrBtn.textContent = running
-                ? (window.i18n?.t('contextObs.demo.running') || '⏳ Running...')
-                : 'Demo';
-            hdrBtn.classList.toggle('running', running);
-        }
-    },
-
-    _paSetSimulatedBadge(show) {
-        const badge = document.getElementById('pa-simulated-badge');
-        if (badge) badge.classList.toggle('visible', show);
-        const clearBtn = document.getElementById('pa-demo-clear-btn');
-        if (clearBtn) clearBtn.style.display = show ? '' : 'none';
-    },
-
     destroyPagedAttention() {
-        this._paStopDemo();
         if (this._paPollTimer) {
             clearInterval(this._paPollTimer);
             this._paPollTimer = null;

@@ -292,45 +292,6 @@
     border-color: rgba(239, 68, 68, 0.25);
 }
 
-/* --- Demo Button & Simulated Badge --- */
-
-#pa-run-demo-btn {
-    max-width: none;
-    white-space: nowrap;
-}
-
-.pa-demo-header-btn {
-    font-size: 0.65rem;
-    padding: 2px 8px;
-    line-height: 1.4;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    z-index: 1;
-    max-width: none;
-}
-
-.pa-demo-header-btn.running {
-    pointer-events: none;
-    opacity: 0.6;
-}
-
-.pa-simulated-badge {
-    display: none;
-    font-size: 0.6rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--warning-color);
-    background: rgba(245, 158, 11, 0.1);
-    padding: 2px 8px;
-    border-radius: 4px;
-    margin-left: 8px;
-}
-
-.pa-simulated-badge.visible {
-    display: inline-block;
-}
-
 /* --- Responsive --- */
 
 @media (max-width: 768px) {
