@@ -200,7 +200,7 @@
                                             <span class="info-label">Max Context</span>
                                             <span class="info-value" id="remote-info-maxctx-value">--</span>
                                         </div>
-                                        <div class="remote-info-row">
+                                        <div class="remote-info-row" id="remote-info-root-row">
                                             <span class="info-label">Root Model</span>
                                             <span class="info-value" id="remote-info-root-value">--</span>
                                         </div>
@@ -1040,61 +1040,74 @@
                     <!-- Right Panel - Sidebar Health Dashboard -->
                     <aside class="metrics-section" id="metrics-panel">
                         <div class="sidebar-dashboard" id="sidebar-dashboard">
-                            <!-- Section: Server Health -->
-                            <div class="sidebar-section">
-                                <div class="sidebar-section-title">Server Health</div>
-                                <div class="sidebar-gauge" id="sidebar-kv-gauge">
-                                    <div class="sidebar-gauge-header">
-                                        <span class="sidebar-gauge-label">KV Cache</span>
-                                        <span class="sidebar-gauge-value" id="health-kv-value">--%</span>
+                            <!-- Metrics unavailable message (hidden by default) -->
+                            <div class="sidebar-unavailable" id="sidebar-metrics-unavailable" style="display:none;">
+                                <div class="sidebar-unavailable-icon">&#x26A0;</div>
+                                <p class="sidebar-unavailable-title">Metrics Unavailable</p>
+                                <p class="sidebar-unavailable-text">
+                                    The remote server's <code>/metrics</code> endpoint is not reachable.
+                                    Infrastructure metrics require Prometheus access on the vLLM server.
+                                </p>
+                            </div>
+
+                            <!-- Metric sections wrapper (hidden when unavailable) -->
+                            <div id="sidebar-metrics-sections">
+                                <!-- Section: Server Health -->
+                                <div class="sidebar-section">
+                                    <div class="sidebar-section-title">Server Health</div>
+                                    <div class="sidebar-gauge" id="sidebar-kv-gauge">
+                                        <div class="sidebar-gauge-header">
+                                            <span class="sidebar-gauge-label">KV Cache</span>
+                                            <span class="sidebar-gauge-value" id="health-kv-value">--%</span>
+                                        </div>
+                                        <div class="sidebar-gauge-bar"><div class="sidebar-gauge-fill" id="health-kv-fill"></div></div>
                                     </div>
-                                    <div class="sidebar-gauge-bar"><div class="sidebar-gauge-fill" id="health-kv-fill"></div></div>
+                                    <div class="health-badge-row">
+                                        <span class="health-item" id="health-reqs" title="Running / Waiting">Reqs: --/--</span>
+                                        <span class="health-item" id="health-preemptions" title="Preemptions">Evict: --</span>
+                                    </div>
                                 </div>
-                                <div class="health-badge-row">
-                                    <span class="health-item" id="health-reqs" title="Running / Waiting">Reqs: --/--</span>
-                                    <span class="health-item" id="health-preemptions" title="Preemptions">Evict: --</span>
-                                </div>
-                            </div>
 
-                            <!-- Section: Throughput -->
-                            <div class="sidebar-section">
-                                <div class="sidebar-section-title">Throughput</div>
-                                <div class="sidebar-metric-row">
-                                    <span class="sidebar-metric-label">Prompt</span>
-                                    <span class="sidebar-metric-value" id="health-prompt-tps">-- tok/s</span>
+                                <!-- Section: Throughput -->
+                                <div class="sidebar-section">
+                                    <div class="sidebar-section-title">Throughput</div>
+                                    <div class="sidebar-metric-row">
+                                        <span class="sidebar-metric-label">Prompt</span>
+                                        <span class="sidebar-metric-value" id="health-prompt-tps">-- tok/s</span>
+                                    </div>
+                                    <div class="sidebar-metric-row">
+                                        <span class="sidebar-metric-label">Generation</span>
+                                        <span class="sidebar-metric-value" id="health-gen-tps">-- tok/s</span>
+                                    </div>
                                 </div>
-                                <div class="sidebar-metric-row">
-                                    <span class="sidebar-metric-label">Generation</span>
-                                    <span class="sidebar-metric-value" id="health-gen-tps">-- tok/s</span>
-                                </div>
-                            </div>
 
-                            <!-- Section: Prefix Cache -->
-                            <div class="sidebar-section">
-                                <div class="sidebar-section-title">Prefix Cache</div>
-                                <div class="sidebar-metric-row">
-                                    <span class="sidebar-metric-label">Hit Rate</span>
-                                    <span class="sidebar-metric-value" id="health-cache-rate">--%</span>
+                                <!-- Section: Prefix Cache -->
+                                <div class="sidebar-section">
+                                    <div class="sidebar-section-title">Prefix Cache</div>
+                                    <div class="sidebar-metric-row">
+                                        <span class="sidebar-metric-label">Hit Rate</span>
+                                        <span class="sidebar-metric-value" id="health-cache-rate">--%</span>
+                                    </div>
                                 </div>
-                            </div>
 
-                            <!-- Section: Speculative Decoding -->
-                            <div class="sidebar-section" id="sidebar-spec-section" style="display:none;">
-                                <div class="sidebar-section-title">Speculative Decoding</div>
-                                <div class="sidebar-metric-row">
-                                    <span class="sidebar-metric-label">Acceptance</span>
-                                    <span class="sidebar-metric-value" id="health-spec-rate">--%</span>
+                                <!-- Section: Speculative Decoding -->
+                                <div class="sidebar-section" id="sidebar-spec-section" style="display:none;">
+                                    <div class="sidebar-section-title">Speculative Decoding</div>
+                                    <div class="sidebar-metric-row">
+                                        <span class="sidebar-metric-label">Acceptance</span>
+                                        <span class="sidebar-metric-value" id="health-spec-rate">--%</span>
+                                    </div>
+                                    <div class="sidebar-metric-row">
+                                        <span class="sidebar-metric-label">Drafted</span>
+                                        <span class="sidebar-metric-value" id="health-spec-draft">--</span>
+                                    </div>
                                 </div>
-                                <div class="sidebar-metric-row">
-                                    <span class="sidebar-metric-label">Drafted</span>
-                                    <span class="sidebar-metric-value" id="health-spec-draft">--</span>
-                                </div>
-                            </div>
 
-                            <!-- Section: Alerts -->
-                            <div class="sidebar-section" id="sidebar-alerts-section" style="display:none;">
-                                <div class="sidebar-section-title sidebar-alerts-title">Alerts</div>
-                                <div id="sidebar-alerts-list"></div>
+                                <!-- Section: Alerts -->
+                                <div class="sidebar-section" id="sidebar-alerts-section" style="display:none;">
+                                    <div class="sidebar-section-title sidebar-alerts-title">Alerts</div>
+                                    <div id="sidebar-alerts-list"></div>
+                                </div>
                             </div>
 
                             <!-- Footer link -->

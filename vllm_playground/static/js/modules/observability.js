@@ -176,15 +176,15 @@ const ObservabilityModule = {
 
     _onMetrics({ all }) {
         if (!all || !all.metrics) {
-            this._showNoData(true);
+            this._showNoData(true, all);
             return;
         }
         const metrics = all.metrics;
         if (Object.keys(metrics).length === 0) {
-            this._showNoData(true);
+            this._showNoData(true, all);
             return;
         }
-        this._showNoData(false);
+        this._showNoData(false, all);
         this._latestMetrics = metrics;
 
         const ageEl = document.getElementById('obs-scrape-age');
@@ -204,9 +204,21 @@ const ObservabilityModule = {
         }
     },
 
-    _showNoData(show) {
+    _showNoData(show, allData) {
         const nd = document.getElementById('obs-overview-no-data');
-        if (nd) nd.style.display = show ? 'block' : 'none';
+        const remoteNd = document.getElementById('obs-remote-no-data');
+        const isRemoteNoMetrics = allData?.run_mode === 'remote' && allData?.source === 'none';
+
+        if (show && isRemoteNoMetrics) {
+            if (nd) nd.style.display = 'none';
+            if (remoteNd) remoteNd.style.display = 'block';
+        } else if (show) {
+            if (nd) nd.style.display = 'block';
+            if (remoteNd) remoteNd.style.display = 'none';
+        } else {
+            if (nd) nd.style.display = 'none';
+            if (remoteNd) remoteNd.style.display = 'none';
+        }
     },
 
     // -- Overview tab -------------------------------------------------------
@@ -747,9 +759,12 @@ const ObservabilityModule = {
             const badge = document.getElementById('obs-simulated-badge');
             if (badge) badge.classList.remove('visible');
             this._latestMetrics = null;
-            this._showNoData(true);
+            this._alertHistory = [];
+            this._alertedMetrics.clear();
+            this._showNoData(true, null);
             const alerts = document.getElementById('obs-alerts');
             if (alerts) alerts.innerHTML = '';
+            this._renderAlertHistory();
             const tbody = document.getElementById('obs-metrics-tbody');
             if (tbody) tbody.innerHTML = '';
             const cards = document.getElementById('obs-overview-cards');

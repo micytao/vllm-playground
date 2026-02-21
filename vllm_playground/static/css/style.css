@@ -2217,8 +2217,11 @@ code.remote-model-id {
 
 .message-content {
     word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
     line-height: 1.6;
     font-size: 0.9rem;
+    min-width: 0;
 }
 
 /* Hide bold sender labels (non-markdown context) */

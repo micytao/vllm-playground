@@ -28,6 +28,14 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function decodeToken(token) {
+    return token
+        .replace(/\u0120/g, ' ')   // Ġ → space (GPT-2 / BPE)
+        .replace(/\u010a/g, '\n')  // Ċ → newline
+        .replace(/\u0109/g, '\t')  // ĉ → tab
+        .replace(/\u2581/g, ' ');  // ▁ → space (SentencePiece)
+}
+
 const LogprobsMethods = {
 
     initLogprobs() {
@@ -67,7 +75,7 @@ const LogprobsMethods = {
     renderLogprobs(textSpan, fullText, logprobsContent) {
         if (!logprobsContent || logprobsContent.length === 0) return;
 
-        const container = document.createElement('span');
+        const container = document.createElement('div');
         container.className = 'logprobs-content';
 
         for (const item of logprobsContent) {
@@ -75,10 +83,11 @@ const LogprobsMethods = {
             const logprob = item.logprob;
             const topLogprobs = item.top_logprobs || [];
 
+            const decoded = decodeToken(token);
             const span = document.createElement('span');
             span.className = 'logprobs-token';
             span.setAttribute('data-prob-level', probLevel(logprob));
-            span.textContent = token;
+            span.textContent = decoded;
 
             // Build tooltip
             if (topLogprobs.length > 0) {
@@ -92,7 +101,7 @@ const LogprobsMethods = {
 
                     const tokenEl = document.createElement('span');
                     tokenEl.className = 'logprobs-tooltip-token';
-                    tokenEl.textContent = JSON.stringify(alt.token);
+                    tokenEl.textContent = JSON.stringify(decodeToken(alt.token));
 
                     const probEl = document.createElement('span');
                     probEl.className = 'logprobs-tooltip-prob';

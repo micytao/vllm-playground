@@ -2971,7 +2971,9 @@ number ::= [0-9]+`
             maxCtxEl.textContent = 'N/A';
         }
 
-        // Root Model (base model path)
+        // Root Model (base model path) -- hidden in remote mode
+        const rootRow = document.getElementById('remote-info-root-row');
+        if (rootRow) rootRow.style.display = data.mode === 'remote' ? 'none' : '';
         const rootEl = document.getElementById('remote-info-root-value');
         if (rootEl && data.models && data.models.length > 0) {
             const root = data.models[0].root;
@@ -3595,6 +3597,16 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             });
             if (this.tcUpdateFromUsage) this.tcUpdateFromUsage(estimatedPromptTokens, completionTokens);
 
+            fetch('/api/vllm/metrics/ingest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    prompt_tokens: estimatedPromptTokens || null,
+                    completion_tokens: completionTokens || null,
+                    total_tokens: totalTokens || null,
+                }),
+            }).catch(() => {});
+
         } catch (error) {
             console.error('Chat error details:', error);
             this.addLog(`❌ Chat error: ${error.message}`, 'error');
@@ -4189,18 +4201,18 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         const completion = metrics.completionTokens;
         const total = metrics.totalTokens || (prompt + completion);
 
-        if (total) parts.push(`<span><span class="metric-highlight">${total}</span> tokens (${prompt} in / ${completion} out)</span>`);
+        if (total) parts.push(`<span class="metric-tokens"><span class="metric-val">${total}</span> tokens (${prompt} in / ${completion} out)</span>`);
         if (metrics.timeTaken != null) {
-            parts.push(`<span><span class="metric-highlight">${metrics.timeTaken.toFixed(2)}s</span></span>`);
+            parts.push(`<span class="metric-time"><span class="metric-val">${metrics.timeTaken.toFixed(2)}s</span></span>`);
             if (completion && metrics.timeTaken > 0) {
-                parts.push(`<span><span class="metric-highlight">${(completion / metrics.timeTaken).toFixed(1)}</span> tok/s</span>`);
+                parts.push(`<span class="metric-throughput"><span class="metric-val">${(completion / metrics.timeTaken).toFixed(1)}</span> tok/s</span>`);
             }
         }
         if (metrics.kvCacheUsage != null) {
-            parts.push(`<span>KV: <span class="metric-highlight">${metrics.kvCacheUsage.toFixed(1)}%</span></span>`);
+            parts.push(`<span class="metric-kv">KV: <span class="metric-val">${metrics.kvCacheUsage.toFixed(1)}%</span></span>`);
         }
         if (metrics.prefixCacheHitRate != null) {
-            parts.push(`<span>Cache: <span class="metric-highlight">${metrics.prefixCacheHitRate.toFixed(1)}%</span></span>`);
+            parts.push(`<span class="metric-cache">Cache: <span class="metric-val">${metrics.prefixCacheHitRate.toFixed(1)}%</span></span>`);
         }
 
         if (parts.length === 0) return;
@@ -4948,13 +4960,15 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             openObs.addEventListener('click', () => this.switchView('observability'));
         }
 
-        this._healthBadgeUnsub = metricsPoller.subscribe(({ legacy }) => {
-            this._updateHealthBadge(legacy);
+        this._healthBadgeUnsub = metricsPoller.subscribe(({ all, legacy }) => {
+            this._updateHealthBadge(legacy, all);
         });
         if (!metricsPoller._timer) metricsPoller.start();
     }
 
-    _updateHealthBadge(m) {
+    _updateHealthBadge(m, allData) {
+        const unavailEl  = document.getElementById('sidebar-metrics-unavailable');
+        const sectionsEl = document.getElementById('sidebar-metrics-sections');
         const kvValEl  = document.getElementById('health-kv-value');
         const kvFillEl = document.getElementById('health-kv-fill');
         const reqsEl   = document.getElementById('health-reqs');
@@ -4967,6 +4981,19 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         const specDraft= document.getElementById('health-spec-draft');
         const alertsSec= document.getElementById('sidebar-alerts-section');
         const alertsList= document.getElementById('sidebar-alerts-list');
+
+        const runMode = allData?.run_mode;
+        const source  = allData?.source;
+        const isRemoteNoMetrics = runMode === 'remote' && source === 'none';
+
+        if (isRemoteNoMetrics) {
+            if (unavailEl) unavailEl.style.display = '';
+            if (sectionsEl) sectionsEl.style.display = 'none';
+            return;
+        }
+
+        if (unavailEl) unavailEl.style.display = 'none';
+        if (sectionsEl) sectionsEl.style.display = '';
 
         if (!m || Object.keys(m).length === 0) {
             if (kvValEl) { kvValEl.textContent = '--%'; kvValEl.className = 'sidebar-gauge-value'; }

@@ -786,7 +786,7 @@
 .message-metrics-inline {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 10px;
     padding: 6px 0 2px;
     margin-top: 6px;
     border-top: 1px solid var(--border-color);
@@ -794,11 +794,61 @@
     color: var(--text-secondary);
 }
 
-.message-metrics-inline span {
+.message-metrics-inline > span {
     white-space: nowrap;
 }
 
-.message-metrics-inline .metric-highlight {
+.message-metrics-inline .metric-val {
     font-weight: 600;
-    color: var(--text-primary);
+}
+
+.message-metrics-inline .metric-tokens  .metric-val { color: #60a5fa; }
+.message-metrics-inline .metric-time    .metric-val { color: #a78bfa; }
+.message-metrics-inline .metric-throughput .metric-val { color: #34d399; }
+.message-metrics-inline .metric-kv      .metric-val { color: #fbbf24; }
+.message-metrics-inline .metric-cache   .metric-val { color: #f472b6; }
+
+[data-theme="light"] .message-metrics-inline .metric-tokens  .metric-val { color: #2563eb; }
+[data-theme="light"] .message-metrics-inline .metric-time    .metric-val { color: #7c3aed; }
+[data-theme="light"] .message-metrics-inline .metric-throughput .metric-val { color: #059669; }
+[data-theme="light"] .message-metrics-inline .metric-kv      .metric-val { color: #d97706; }
+[data-theme="light"] .message-metrics-inline .metric-cache   .metric-val { color: #db2777; }
+
+/* --- Sidebar: Metrics Unavailable message --- */
+.sidebar-unavailable {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 32px 20px;
+    flex: 1;
+}
+
+.sidebar-unavailable-icon {
+    font-size: 2rem;
+    margin-bottom: 8px;
+    opacity: 0.5;
+}
+
+.sidebar-unavailable-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 8px;
+}
+
+.sidebar-unavailable-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    margin: 0;
+    line-height: 1.5;
+}
+
+.sidebar-unavailable-text code {
+    background: rgba(255, 255, 255, 0.06);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.7rem;
 }

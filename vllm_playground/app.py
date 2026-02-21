@@ -117,6 +117,7 @@ class MetricStore:
         self.last_scrape: Optional[datetime] = None
         self._task: Optional[asyncio.Task] = None
         self._types: Dict[str, str] = {}  # metric name -> gauge/counter/histogram/...
+        self._scrape_warned: bool = False
 
     # -- Generic Prometheus parser -------------------------------------------
 
@@ -373,6 +374,25 @@ class MetricStore:
         for key, value in payload.items():
             self.ingest_log_parsed(key, value)
 
+    def append_snapshot_from_latest(self):
+        """Append a history snapshot from whatever is currently in ``self.latest``.
+
+        Called by non-Prometheus paths (log parsing, ingest endpoint) so that
+        time-series charts on the Observability page still accumulate data
+        even when Prometheus is unreachable (e.g. remote mode).
+        """
+        if not self.latest:
+            return
+        now = datetime.now()
+        self.last_scrape = now
+        snapshot = {"timestamp": now.isoformat()}
+        for k, v in self.latest.items():
+            if isinstance(v, dict):
+                snapshot[k] = v.get("value", v.get("p50"))
+            else:
+                snapshot[k] = v
+        self.history.append(snapshot)
+
     # -- Background scrape ---------------------------------------------------
 
     async def start_scrape_loop(self):
@@ -394,14 +414,26 @@ class MetricStore:
             logger.info("MetricStore: background scrape stopped")
 
     async def _scrape_loop(self):
-        """Background loop: fetch Prometheus metrics every ``scrape_interval`` seconds."""
+        """Background loop: fetch Prometheus metrics every ``scrape_interval`` seconds.
+
+        If the Prometheus scrape fails but we have data from legacy sources
+        (log parsing, frontend ingest), we still append a history snapshot
+        so that time-series charts accumulate data in remote mode.
+        """
         while True:
+            scrape_ok = False
             try:
+                prev_scrape = self.last_scrape
                 await self._do_scrape()
+                scrape_ok = self.last_scrape != prev_scrape
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.debug("MetricStore: scrape error", exc_info=True)
+
+            if not scrape_ok and self.latest:
+                self.append_snapshot_from_latest()
+
             await asyncio.sleep(self.scrape_interval)
 
     async def _do_scrape(self):
@@ -415,23 +447,47 @@ class MetricStore:
             base_url = get_vllm_base_url()
             metrics_url = f"{base_url}/metrics"
             auth_headers = get_vllm_auth_headers()
+            timeout = aiohttp.ClientTimeout(total=5 if current_run_mode == "remote" else 3)
 
             async with aiohttp.ClientSession(headers=auth_headers) as session:
-                async with session.get(metrics_url, timeout=aiohttp.ClientTimeout(total=3)) as response:
+                async with session.get(metrics_url, timeout=timeout) as response:
                     if response.status != 200:
+                        if not self._scrape_warned:
+                            logger.warning(
+                                "MetricStore: Prometheus scrape returned %d from %s (will retry silently)",
+                                response.status,
+                                metrics_url,
+                            )
+                            self._scrape_warned = True
                         return
                     text = await response.text()
-        except Exception:
+                    self._scrape_warned = False
+        except Exception as exc:
+            if not self._scrape_warned:
+                logger.warning(
+                    "MetricStore: cannot reach %s/metrics (%s: %s). Sidebar will use log-parsed fallback.",
+                    get_vllm_base_url(),
+                    type(exc).__name__,
+                    exc,
+                )
+                self._scrape_warned = True
             return
 
         parsed, types = self.parse_prometheus_text(text)
         if not parsed:
             return
 
+        first_success = not self.latest
         self._types.update(types)
         self.latest.update(parsed)
         now = datetime.now()
         self.last_scrape = now
+        self._scrape_warned = False
+
+        if first_success:
+            logger.info(
+                "MetricStore: first successful scrape — %d metrics from %s/metrics", len(parsed), get_vllm_base_url()
+            )
 
         snapshot = {"timestamp": now.isoformat()}
         for k, v in parsed.items():
@@ -3213,6 +3269,8 @@ async def broadcast_log(message: str):
             if val is not None:
                 metric_store.ingest_log_parsed(key, val)
 
+        metric_store.append_snapshot_from_latest()
+
     disconnected = []
     for ws in websocket_connections:
         try:
@@ -4770,20 +4828,80 @@ async def get_vllm_metrics_all():
     """Return ALL vLLM metrics as a structured dict with types.
 
     Primary endpoint for the Observability page and MetricsPoller.
-    Data comes from the MetricStore background scrape + log-parsed fallback.
+    Data comes from the MetricStore background scrape.  When the scraper
+    has no data (e.g. remote mode where /metrics is unreachable), we
+    fall back to ``latest_vllm_metrics`` (log-parsed / simulated) by
+    converting legacy keys to canonical ``vllm:`` entries so the
+    frontend receives a consistent shape.
     """
-    if not metric_store.latest and not latest_vllm_metrics:
-        return {"metrics": {}, "scrape_age_seconds": None, "metric_count": 0}
+    metrics = dict(metric_store.latest)
+
+    if latest_vllm_metrics:
+        _inject_legacy_fallback(metrics, latest_vllm_metrics)
+
+    if not metrics:
+        return {
+            "metrics": {},
+            "scrape_age_seconds": None,
+            "metric_count": 0,
+            "source": "none",
+            "run_mode": current_run_mode or "unknown",
+        }
 
     scrape_age = None
-    if metric_store.last_scrape:
-        scrape_age = round((datetime.now() - metric_store.last_scrape).total_seconds(), 1)
+    ts = metric_store.last_scrape or (metrics_timestamp if latest_vllm_metrics else None)
+    if ts:
+        scrape_age = round((datetime.now() - ts).total_seconds(), 1)
+
+    source = "prometheus" if metric_store.last_scrape else ("fallback" if metrics else "none")
 
     return {
-        "metrics": metric_store.latest,
+        "metrics": metrics,
         "scrape_age_seconds": scrape_age,
-        "metric_count": len(metric_store.latest),
+        "metric_count": len(metrics),
+        "source": source,
+        "run_mode": current_run_mode or "unknown",
     }
+
+
+def _inject_legacy_fallback(target: dict, legacy: dict):
+    """Convert ``latest_vllm_metrics`` flat keys into canonical vllm: entries.
+
+    Only injects keys that are not already present in *target* so that
+    Prometheus-scraped data always takes precedence.
+    """
+    _LEGACY_TO_CANONICAL = {
+        "kv_cache_usage_perc": "vllm:kv_cache_usage_perc",
+        "gpu_cache_usage_perc": "vllm:gpu_cache_usage_perc",
+        "cpu_cache_usage_perc": "vllm:cpu_cache_usage_perc",
+        "prefix_cache_hit_rate": "vllm:prefix_cache_hit_rate",
+        "num_preemptions": "vllm:num_preemptions",
+        "num_requests_running": "vllm:num_requests_running",
+        "num_requests_waiting": "vllm:num_requests_waiting",
+        "avg_prompt_throughput": "vllm:avg_prompt_throughput_toks_per_s",
+        "avg_generation_throughput": "vllm:avg_generation_throughput_toks_per_s",
+        "spec_decode_accepted": "vllm:spec_decode_num_accepted_tokens",
+        "spec_decode_draft": "vllm:spec_decode_num_draft_tokens",
+        "spec_decode_acceptance_rate": "vllm:spec_decode_acceptance_rate",
+        "prefix_cache_hits": "vllm:prefix_cache_hits",
+        "prefix_cache_queries": "vllm:prefix_cache_queries",
+    }
+    _PERCENT_KEYS = frozenset(
+        {
+            "kv_cache_usage_perc",
+            "gpu_cache_usage_perc",
+            "cpu_cache_usage_perc",
+            "prefix_cache_hit_rate",
+        }
+    )
+    for legacy_key, canonical in _LEGACY_TO_CANONICAL.items():
+        if canonical in target:
+            continue
+        val = legacy.get(legacy_key)
+        if val is None:
+            continue
+        stored = val / 100.0 if legacy_key in _PERCENT_KEYS else val
+        target[canonical] = {"value": stored, "type": "gauge", "labels": ""}
 
 
 @app.get("/api/vllm/metrics")
@@ -4913,6 +5031,28 @@ async def simulate_vllm_metrics(req: SimulateMetricsRequest):
     metric_store.history.append(snapshot)
 
     return {"status": "ok", "metrics": latest_vllm_metrics}
+
+
+class IngestChatMetricsRequest(BaseModel):
+    """Metrics the frontend extracts from OpenAI API responses (usage field)."""
+
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+
+
+@app.post("/api/vllm/metrics/ingest")
+async def ingest_chat_metrics(req: IngestChatMetricsRequest):
+    """Accept metrics from frontend after a chat completion.
+
+    Triggers a one-shot Prometheus scrape attempt so that, if the remote
+    ``/metrics`` endpoint IS accessible, the MetricStore fills with full
+    metrics on the next poll cycle.
+    """
+    if not metric_store.latest:
+        asyncio.ensure_future(metric_store._do_scrape())
+
+    return {"status": "ok"}
 
 
 @app.post("/api/vllm/metrics/simulate/reset")

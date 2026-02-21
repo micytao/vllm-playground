@@ -38,6 +38,11 @@
                 <h3>No metrics available</h3>
                 <p>Start a vLLM server to see live metrics, or click <strong>Demo</strong> to preview with simulated data.</p>
             </div>
+            <div class="obs-no-data" id="obs-remote-no-data" style="display:none;">
+                <h3>Metrics unavailable in remote mode</h3>
+                <p>The Prometheus <code>/metrics</code> endpoint on the remote vLLM server is not reachable from this machine.</p>
+                <p>Ensure the endpoint is accessible, or use subprocess/container mode for full observability.</p>
+            </div>
         </div>
     </div>
 
