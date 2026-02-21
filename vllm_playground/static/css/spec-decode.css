@@ -106,45 +106,6 @@
     font-size: 0.75rem;
 }
 
-#sd-run-demo-btn {
-    max-width: none;
-    white-space: nowrap;
-}
-
-/* Demo header buttons */
-.sd-demo-header-btn {
-    font-size: 0.65rem;
-    padding: 2px 8px;
-    line-height: 1.4;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    z-index: 1;
-    max-width: none;
-}
-
-.sd-demo-header-btn.running {
-    pointer-events: none;
-    opacity: 0.6;
-}
-
-/* Simulated badge */
-.sd-simulated-badge {
-    display: none;
-    font-size: 0.6rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--warning-color);
-    border: 1px solid var(--warning-color);
-    padding: 2px 8px;
-    border-radius: 4px;
-    margin-left: 8px;
-}
-
-.sd-simulated-badge.visible {
-    display: inline-block;
-}
-
 @media (max-width: 768px) {
     .spec-decode-cards {
         grid-template-columns: 1fr;

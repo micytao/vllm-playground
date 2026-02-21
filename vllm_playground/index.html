@@ -10,10 +10,12 @@
     <link rel="stylesheet" href="/static/css/guidellm.css">
     <link rel="stylesheet" href="/static/css/claudecode.css">
     <link rel="stylesheet" href="/static/css/omni.css">
-    <link rel="stylesheet" href="/static/css/paged-attention.css">
     <link rel="stylesheet" href="/static/css/token-counter.css">
     <link rel="stylesheet" href="/static/css/logprobs.css">
-    <link rel="stylesheet" href="/static/css/spec-decode.css">
+    <link rel="stylesheet" href="/static/css/observability.css">
+    <!-- uPlot for Observability time-series charts -->
+    <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css">
     <!-- xterm.js for Claude Code terminal -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -44,6 +46,15 @@
                 <button class="nav-item" data-view="vllm-omni" title="vLLM-Omni" id="nav-omni">
                     <img src="/assets/vllm-omni-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label">vLLM-Omni</span>
+                </button>
+
+                <!-- Monitoring Section -->
+                <div class="nav-divider">
+                    <span class="nav-divider-label">Monitoring</span>
+                </div>
+                <button class="nav-item" data-view="observability" title="Observability" id="nav-observability">
+                    <span class="nav-item-icon icon-observability-nav"></span>
+                    <span class="nav-label" data-i18n="nav.observability">Observability</span>
                 </button>
 
                 <!-- Divider -->
@@ -189,7 +200,7 @@
                                             <span class="info-label">Max Context</span>
                                             <span class="info-value" id="remote-info-maxctx-value">--</span>
                                         </div>
-                                        <div class="remote-info-row">
+                                        <div class="remote-info-row" id="remote-info-root-row">
                                             <span class="info-label">Root Model</span>
                                             <span class="info-value" id="remote-info-root-value">--</span>
                                         </div>
@@ -1026,166 +1037,84 @@
                         <div class="resize-handle resize-handle-vertical" data-direction="horizontal"></div>
                     </main>
 
-                    <!-- Right Panel - Metrics + Observability -->
-                    <aside class="metrics-section resizable" id="metrics-panel">
-
-                        <!-- Section 1: Response Metrics (collapsible) -->
-                        <div class="metrics-panel-section" id="response-metrics-section">
-                            <div class="metrics-panel-header" id="response-metrics-toggle">
-                                <div style="display: flex; align-items: center; gap: 6px;">
-                                    <span class="metrics-toggle-icon">▼</span>
-                                    <h2 data-i18n="metrics.title">📊 Response Metrics</h2>
-                                </div>
+                    <!-- Right Panel - Sidebar Health Dashboard -->
+                    <aside class="metrics-section" id="metrics-panel">
+                        <div class="sidebar-dashboard" id="sidebar-dashboard">
+                            <!-- Metrics unavailable message (hidden by default) -->
+                            <div class="sidebar-unavailable" id="sidebar-metrics-unavailable" style="display:none;">
+                                <div class="sidebar-unavailable-icon">&#x26A0;</div>
+                                <p class="sidebar-unavailable-title">Metrics Unavailable</p>
+                                <p class="sidebar-unavailable-text">
+                                    The remote server's <code>/metrics</code> endpoint is not reachable.
+                                    Infrastructure metrics require Prometheus access on the vLLM server.
+                                </p>
                             </div>
-                            <div class="metrics-panel-body" id="response-metrics-body">
-                                <div id="chat-metrics" class="chat-metrics-grid">
-                                    <div class="chat-metric-item">
-                                        <span class="metric-label" data-i18n="metrics.promptTokens">Prompt Tokens:</span>
-                                        <span class="metric-value" id="metric-prompt-tokens">-</span>
-                                    </div>
-                                    <div class="chat-metric-item">
-                                        <span class="metric-label" data-i18n="metrics.completionTokens">Completion Tokens:</span>
-                                        <span class="metric-value" id="metric-completion-tokens">-</span>
-                                    </div>
-                                    <div class="chat-metric-item">
-                                        <span class="metric-label" data-i18n="metrics.totalTokens">Total Tokens:</span>
-                                        <span class="metric-value" id="metric-total-tokens">-</span>
-                                    </div>
-                                    <div class="chat-metric-item">
-                                        <span class="metric-label" data-i18n="metrics.timeTaken">Time Taken:</span>
-                                        <span class="metric-value" id="metric-time-taken">-</span>
-                                    </div>
-                                    <div class="chat-metric-item">
-                                        <span class="metric-label" data-i18n="metrics.tokensPerSec">Tokens/sec:</span>
-                                        <span class="metric-value" id="metric-tokens-per-sec">-</span>
-                                    </div>
-                                    <div class="chat-metric-item">
-                                        <span class="metric-label" data-i18n="metrics.avgPromptThroughput">Avg Prompt Throughput:</span>
-                                        <span class="metric-value" id="metric-prompt-throughput">-</span>
-                                    </div>
-                                    <div class="chat-metric-item">
-                                        <span class="metric-label" data-i18n="metrics.avgGenerationThroughput">Avg Generation Throughput:</span>
-                                        <span class="metric-value" id="metric-generation-throughput">-</span>
-                                    </div>
-                                    <div class="chat-metric-item">
-                                        <span class="metric-label" data-i18n="metrics.gpuKvCacheUsage">GPU KV Cache Usage:</span>
-                                        <span class="metric-value" id="metric-kv-cache-usage">-</span>
-                                    </div>
-                                    <div class="chat-metric-item">
-                                        <span class="metric-label" data-i18n="metrics.prefixCacheHitRate">Prefix Cache Hit Rate:</span>
-                                        <span class="metric-value" id="metric-prefix-cache-hit">-</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
 
-                        <!-- Resize handle between Response Metrics and Context Observability -->
-                        <div class="sidebar-resize-handle" data-above="response-metrics-section" data-below="context-observability-panel"></div>
-
-                        <!-- Section 2: Context Observability (PagedAttention Visualizer) -->
-                        <div class="context-observability-panel" id="context-observability-panel">
-                            <div class="context-obs-header" id="context-obs-toggle">
-                                <div class="sidebar-panel-header-row">
-                                    <div style="display: flex; align-items: center; gap: 6px;">
-                                        <span class="context-obs-toggle">▼</span>
-                                        <h2 data-i18n="contextObs.title">🧠 Context Observability</h2>
-                                        <span class="pa-simulated-badge" id="pa-simulated-badge" data-i18n="contextObs.demo.badge">SIMULATED</span>
-                                    </div>
-                                    <div class="sidebar-panel-header-btns">
-                                        <button class="btn btn-sm btn-secondary pa-demo-header-btn" id="pa-demo-clear-btn" title="Clear demo data" data-i18n-title="contextObs.demo.clearTooltip" style="display: none;">Clear</button>
-                                        <button class="btn btn-sm btn-secondary pa-demo-header-btn" id="pa-demo-header-btn" title="Run demo simulation" data-i18n-title="contextObs.demo.tooltip">Demo</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="context-obs-body" id="context-obs-body">
-                                <div class="context-obs-no-data" id="context-obs-no-data">
-                                    <div class="context-obs-no-data-icon">📡</div>
-                                    <div data-i18n-html="contextObs.noData">Waiting for metrics from vLLM server...<br><small>KV cache metrics require a self-hosted vLLM instance with Prometheus enabled.</small></div>
-                                    <button class="btn btn-sm btn-secondary" id="pa-run-demo-btn" style="margin-top: 10px;" data-i18n="contextObs.demo.runButton">▶ Run Demo Simulation</button>
-                                </div>
-                                <div class="eviction-banner" id="eviction-banner">
-                                    <span class="eviction-banner-icon" id="eviction-banner-icon">⚠</span>
-                                    <div class="eviction-banner-content">
-                                        <div class="eviction-banner-title" id="eviction-banner-title" data-i18n="contextObs.eviction.pressureTitle">Memory Pressure</div>
-                                        <div class="eviction-banner-detail" id="eviction-banner-detail" data-i18n="contextObs.eviction.pressureDetail">KV cache utilization is high. Context eviction may begin soon.</div>
-                                    </div>
-                                </div>
-                                <div class="kv-heatmap-section">
-                                    <div class="kv-heatmap-header">
-                                        <span class="kv-heatmap-label" data-i18n="contextObs.kvCache.label">KV Cache Utilization</span>
-                                        <span class="kv-cache-current level-ok" id="kv-cache-current-value">--%</span>
-                                    </div>
-                                    <div class="kv-utilization-bar">
-                                        <div class="kv-utilization-fill" id="kv-utilization-fill" style="width: 0%; background: var(--success-color);"></div>
-                                    </div>
-                                    <div class="kv-heatmap-canvas-wrap">
-                                        <canvas id="kv-heatmap-canvas"></canvas>
-                                    </div>
-                                    <div class="kv-heatmap-legend">
-                                        <span data-i18n="contextObs.kvCache.legendNow">Now</span>
-                                        <span data-i18n="contextObs.kvCache.legendAgo">~2 min ago</span>
-                                    </div>
-                                </div>
-                                <div class="prefix-cache-section">
-                                    <div class="prefix-cache-badge" id="prefix-cache-badge"></div>
-                                    <div class="prefix-cache-info">
-                                        <span class="prefix-cache-status" id="prefix-cache-status" data-i18n="contextObs.prefixCache.inactive">Prefix Cache Inactive</span>
-                                        <span class="prefix-cache-details" id="prefix-cache-details" data-i18n="contextObs.prefixCache.noData">No prefix cache data available</span>
-                                    </div>
-                                    <span class="prefix-cache-rate" id="prefix-cache-rate">--</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Resize handle between Context Observability and Speculative Decoding -->
-                        <div class="sidebar-resize-handle" data-above="context-observability-panel" data-below="spec-decode-panel"></div>
-
-                        <!-- Section 3: Speculative Decoding Dashboard -->
-                        <div class="spec-decode-panel" id="spec-decode-panel">
-                            <div class="spec-decode-header" id="spec-decode-toggle">
-                                <div class="sidebar-panel-header-row">
-                                    <div style="display: flex; align-items: center; gap: 6px;">
-                                        <span class="spec-decode-toggle-icon">▼</span>
-                                        <h2 data-i18n="specDecode.title">🚀 Speculative Decoding</h2>
-                                        <span class="sd-simulated-badge" id="sd-simulated-badge" data-i18n="specDecode.demo.badge">SIMULATED</span>
-                                    </div>
-                                    <div class="sidebar-panel-header-btns">
-                                        <button class="btn btn-sm btn-secondary sd-demo-header-btn" id="sd-demo-clear-btn" title="Clear demo data" style="display: none;">Clear</button>
-                                        <button class="btn btn-sm btn-secondary sd-demo-header-btn" id="sd-demo-header-btn" title="Run demo simulation">Demo</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="spec-decode-body" id="spec-decode-body">
-                                <div class="sd-no-data" id="sd-no-data">
-                                    <div class="sd-no-data-icon">🚀</div>
-                                    <div>No speculative decoding metrics available.<br><small>Requires a vLLM server started with <code>--speculative-config</code>, or use the demo simulation.</small></div>
-                                    <button class="btn btn-sm btn-secondary" id="sd-run-demo-btn" style="margin-top: 10px;" data-i18n="specDecode.demo.runButton">▶ Run Demo Simulation</button>
-                                </div>
-                                <div class="spec-decode-cards">
-                                    <div class="spec-decode-card">
-                                        <div class="spec-decode-card-label" data-i18n="specDecode.acceptanceRate">Acceptance Rate</div>
-                                        <div class="spec-decode-card-value" id="spec-acceptance-rate">--%</div>
-                                        <div class="spec-decode-gauge">
-                                            <div class="spec-decode-gauge-fill" id="spec-acceptance-fill" style="width: 0%"></div>
+                            <!-- Metric sections wrapper (hidden when unavailable) -->
+                            <div id="sidebar-metrics-sections">
+                                <!-- Section: Server Health -->
+                                <div class="sidebar-section">
+                                    <div class="sidebar-section-title">Server Health</div>
+                                    <div class="sidebar-gauge" id="sidebar-kv-gauge">
+                                        <div class="sidebar-gauge-header">
+                                            <span class="sidebar-gauge-label">KV Cache</span>
+                                            <span class="sidebar-gauge-value" id="health-kv-value">--%</span>
                                         </div>
+                                        <div class="sidebar-gauge-bar"><div class="sidebar-gauge-fill" id="health-kv-fill"></div></div>
                                     </div>
-                                    <div class="spec-decode-card">
-                                        <div class="spec-decode-card-label" data-i18n="specDecode.speedup">Speedup Factor</div>
-                                        <div class="spec-decode-card-value" id="spec-speedup-value">--x</div>
-                                    </div>
-                                    <div class="spec-decode-card">
-                                        <div class="spec-decode-card-label" data-i18n="specDecode.draftTokens">Draft Tokens</div>
-                                        <div class="spec-decode-card-value" id="spec-draft-tokens">--</div>
-                                    </div>
-                                    <div class="spec-decode-card">
-                                        <div class="spec-decode-card-label" data-i18n="specDecode.acceptedTokens">Accepted Tokens</div>
-                                        <div class="spec-decode-card-value" id="spec-accepted-tokens">--</div>
+                                    <div class="health-badge-row">
+                                        <span class="health-item" id="health-reqs" title="Running / Waiting">Reqs: --/--</span>
+                                        <span class="health-item" id="health-preemptions" title="Preemptions">Evict: --</span>
                                     </div>
                                 </div>
-                                <div class="spec-decode-model-info" id="spec-decode-model-info"></div>
+
+                                <!-- Section: Throughput -->
+                                <div class="sidebar-section">
+                                    <div class="sidebar-section-title">Throughput</div>
+                                    <div class="sidebar-metric-row">
+                                        <span class="sidebar-metric-label">Prompt</span>
+                                        <span class="sidebar-metric-value" id="health-prompt-tps">-- tok/s</span>
+                                    </div>
+                                    <div class="sidebar-metric-row">
+                                        <span class="sidebar-metric-label">Generation</span>
+                                        <span class="sidebar-metric-value" id="health-gen-tps">-- tok/s</span>
+                                    </div>
+                                </div>
+
+                                <!-- Section: Prefix Cache -->
+                                <div class="sidebar-section">
+                                    <div class="sidebar-section-title">Prefix Cache</div>
+                                    <div class="sidebar-metric-row">
+                                        <span class="sidebar-metric-label">Hit Rate</span>
+                                        <span class="sidebar-metric-value" id="health-cache-rate">--%</span>
+                                    </div>
+                                </div>
+
+                                <!-- Section: Speculative Decoding -->
+                                <div class="sidebar-section" id="sidebar-spec-section" style="display:none;">
+                                    <div class="sidebar-section-title">Speculative Decoding</div>
+                                    <div class="sidebar-metric-row">
+                                        <span class="sidebar-metric-label">Acceptance</span>
+                                        <span class="sidebar-metric-value" id="health-spec-rate">--%</span>
+                                    </div>
+                                    <div class="sidebar-metric-row">
+                                        <span class="sidebar-metric-label">Drafted</span>
+                                        <span class="sidebar-metric-value" id="health-spec-draft">--</span>
+                                    </div>
+                                </div>
+
+                                <!-- Section: Alerts -->
+                                <div class="sidebar-section" id="sidebar-alerts-section" style="display:none;">
+                                    <div class="sidebar-section-title sidebar-alerts-title">Alerts</div>
+                                    <div id="sidebar-alerts-list"></div>
+                                </div>
+                            </div>
+
+                            <!-- Footer link -->
+                            <div class="sidebar-footer" id="sidebar-open-obs">
+                                <span class="sidebar-footer-link">Open Observability Dashboard &rarr;</span>
                             </div>
                         </div>
-
                     </aside>
                     </div>
 
@@ -1437,6 +1366,14 @@
                 <div class="view-loading" id="omni-view-loading">
                     <span class="loading-spinner"></span>
                     <span>Loading vLLM-Omni...</span>
+                </div>
+            </div>
+
+            <!-- Observability View (template loaded dynamically from static/templates/observability.html) -->
+            <div class="view-content" id="observability-view" style="display: none;">
+                <div class="view-loading" id="observability-view-loading">
+                    <span class="loading-spinner"></span>
+                    <span>Loading Observability...</span>
                 </div>
             </div>
 

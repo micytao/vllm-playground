@@ -9,6 +9,7 @@ const en = {
         vllmServer: 'vLLM Server',
         guidellm: 'GuideLLM',
         mcpServers: 'MCP Servers',
+        observability: 'Observability',
         offline: 'Offline',
         online: 'Online',
         collapseSidebar: 'Collapse sidebar',

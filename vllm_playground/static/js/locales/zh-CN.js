@@ -9,6 +9,7 @@ const zhCN = {
         vllmServer: 'vLLM 服务器',
         guidellm: 'GuideLLM 基准测试',
         mcpServers: 'MCP 服务器',
+        observability: '可观测性',
         offline: '离线',
         online: '在线',
         collapseSidebar: '收起侧边栏',

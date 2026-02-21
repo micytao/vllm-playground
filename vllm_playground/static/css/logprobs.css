@@ -1,8 +1,10 @@
 /* Logprobs Visualizer */
 
 .logprobs-content {
-    display: inline;
+    display: block;
     line-height: 1.6;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .logprobs-token {
@@ -12,6 +14,7 @@
     padding: 1px 0;
     border-radius: 2px;
     transition: outline 0.15s;
+    word-break: break-word;
 }
 
 .logprobs-token:hover {

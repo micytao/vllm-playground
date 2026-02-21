@@ -25,6 +25,7 @@ NC='\033[0m'
 
 PLAYGROUND_URL="${1:-http://localhost:7860}"
 API="${PLAYGROUND_URL}/api/vllm/metrics"
+API_ALL="${API}/all"
 SIMULATE="${API}/simulate"
 RESET="${API}/simulate/reset"
 POLL_WAIT=3  # Match the frontend polling interval
@@ -49,12 +50,12 @@ separator() {
 # ── Preamble ──
 
 separator
-echo -e "${CYAN}${BOLD}Context Observability — Visual Test Workflow${NC}"
+echo -e "${CYAN}${BOLD}Observability — Visual Test Workflow${NC}"
 separator
 echo ""
 echo "  Playground: ${PLAYGROUND_URL}"
-echo "  Open the UI in your browser and expand the"
-echo "  \"Context Observability\" panel below Response Metrics."
+echo "  Open the UI in your browser, then navigate to the"
+echo "  Observability page (or check the sidebar health badge)."
 echo ""
 
 # ── Pre-flight: check playground is up ──
@@ -67,6 +68,15 @@ else
     log_error "Cannot reach playground at ${PLAYGROUND_URL} (HTTP ${HTTP_CODE})"
     echo "  Start it with:  python3 run.py  or  vllm-playground"
     exit 1
+fi
+
+# Test /api/vllm/metrics/all endpoint
+log_info "Testing /api/vllm/metrics/all endpoint..."
+ALL_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${API_ALL}")
+if [ "$ALL_CODE" = "200" ]; then
+    log_success "/api/vllm/metrics/all returns 200 OK"
+else
+    log_warn "/api/vllm/metrics/all returned HTTP ${ALL_CODE}"
 fi
 
 # ── Reset ──
@@ -219,15 +229,13 @@ separator
 echo ""
 echo "Checklist — verify each item was observed:"
 echo ""
-echo "  [ ] Heatmap rendered green bars for low cache usage"
-echo "  [ ] Heatmap color transitioned green -> yellow -> orange -> red"
-echo "  [ ] Current percentage value updated with correct color coding"
-echo "  [ ] Utilization bar width and color matched the percentage"
-echo "  [ ] Prefix Cache badge turned green when hit rate > 0"
-echo "  [ ] Prefix Cache showed hit/query token counts"
-echo "  [ ] Warning banner appeared at ~90% cache usage"
-echo "  [ ] Critical/eviction banner appeared when preemptions increased"
-echo "  [ ] Toast notification fired on first eviction detection"
-echo "  [ ] All alerts auto-dismissed during recovery"
-echo "  [ ] Panel collapse/expand toggle works"
+echo "  [ ] /api/vllm/metrics/all returned 200 OK"
+echo "  [ ] Sidebar health badge updated KV% and Reqs"
+echo "  [ ] Observability Overview cards reflected simulated metrics"
+echo "  [ ] All Metrics table populated with auto-discovered metrics"
+echo "  [ ] Alert banners appeared when thresholds were crossed"
+echo "  [ ] Toast notification fired on first threshold breach"
+echo "  [ ] Time Series chart rendered history (when available)"
+echo "  [ ] Inline per-message metrics appeared after chat completion"
+echo "  [ ] Clicking health badge navigated to Observability page"
 echo ""

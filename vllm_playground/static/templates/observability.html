@@ -1,0 +1,102 @@
+<div class="obs-layout">
+    <!-- Header -->
+    <div class="obs-header">
+        <div class="obs-header-title">
+            <span class="icon-observability-large"></span>
+            <div>
+                <h2>Observability Dashboard</h2>
+                <p class="obs-header-subtitle">Real-time vLLM server metrics with auto-discovery</p>
+            </div>
+        </div>
+        <div class="obs-header-actions">
+            <span class="obs-scrape-age" id="obs-scrape-age" style="display:none"></span>
+            <span class="obs-simulated-badge" id="obs-simulated-badge">SIMULATED</span>
+            <button class="obs-btn" id="obs-demo-btn" title="Run demo simulation">Demo</button>
+            <button class="obs-btn" id="obs-clear-btn" title="Clear simulated data">Clear</button>
+            <button class="obs-btn" id="obs-alerts-settings-btn" title="Alert settings">Alerts</button>
+            <button class="obs-btn" id="obs-export-btn" title="Export all metrics">Export</button>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="obs-tabs" id="obs-tabs">
+        <button class="obs-tab active" data-obs-tab="overview">Overview</button>
+        <button class="obs-tab" data-obs-tab="all-metrics">All Metrics</button>
+        <button class="obs-tab" data-obs-tab="time-series">Time Series</button>
+        <button class="obs-tab" data-obs-tab="latency">Latency</button>
+    </div>
+
+    <!-- Overview Tab -->
+    <div class="obs-tab-content active" id="obs-tab-overview">
+        <div class="obs-alerts" id="obs-alerts"></div>
+        <div class="obs-alert-history" id="obs-alert-history" style="display:none;">
+            <h4 class="obs-category-title">Alert History</h4>
+            <div id="obs-alert-history-list"></div>
+        </div>
+        <div id="obs-overview-cards">
+            <div class="obs-no-data" id="obs-overview-no-data">
+                <h3>No metrics available</h3>
+                <p>Start a vLLM server to see live metrics, or click <strong>Demo</strong> to preview with simulated data.</p>
+            </div>
+            <div class="obs-no-data" id="obs-remote-no-data" style="display:none;">
+                <h3>Metrics unavailable in remote mode</h3>
+                <p>The Prometheus <code>/metrics</code> endpoint on the remote vLLM server is not reachable from this machine.</p>
+                <p>Ensure the endpoint is accessible, or use subprocess/container mode for full observability.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- All Metrics Tab -->
+    <div class="obs-tab-content" id="obs-tab-all-metrics">
+        <div class="obs-table-controls">
+            <input type="text" class="obs-search" id="obs-search" placeholder="Search metrics..." />
+            <span class="obs-metric-count" id="obs-metric-count"></span>
+            <button class="obs-btn" id="obs-export-table-btn">Export CSV</button>
+        </div>
+        <div class="obs-table-wrap">
+            <table class="obs-table" id="obs-metrics-table">
+                <thead>
+                    <tr>
+                        <th data-sort="name" style="width:28%">Name <span class="sort-arrow">▲</span></th>
+                        <th data-sort="type" style="width:8%">Type <span class="sort-arrow"></span></th>
+                        <th data-sort="value" style="width:12%">Value <span class="sort-arrow"></span></th>
+                        <th data-sort="category" style="width:12%">Category <span class="sort-arrow"></span></th>
+                        <th style="width:40%">Labels</th>
+                    </tr>
+                </thead>
+                <tbody id="obs-metrics-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Time Series Tab -->
+    <div class="obs-tab-content" id="obs-tab-time-series">
+        <div class="obs-ts-controls">
+            <div class="obs-ts-range-btns">
+                <button class="obs-btn obs-ts-range active" data-minutes="5">5m</button>
+                <button class="obs-btn obs-ts-range" data-minutes="15">15m</button>
+                <button class="obs-btn obs-ts-range" data-minutes="30">30m</button>
+            </div>
+            <div class="obs-ts-picker" id="obs-ts-picker"></div>
+            <button class="obs-btn" id="obs-export-ts-btn">Export</button>
+        </div>
+        <div class="obs-ts-chart-wrap" id="obs-ts-chart-wrap"></div>
+        <div class="obs-no-data" id="obs-ts-no-data" style="display:none;">
+            <h3>No time-series data</h3>
+            <p>History will appear after the vLLM server has been running for a few seconds.</p>
+        </div>
+    </div>
+
+    <!-- Latency Tab -->
+    <div class="obs-tab-content" id="obs-tab-latency">
+        <div class="obs-latency-summary" id="obs-latency-summary"></div>
+        <div class="obs-latency-histograms" id="obs-latency-histograms"></div>
+        <div class="obs-no-data" id="obs-latency-no-data" style="display:none;">
+            <h3>No latency data</h3>
+            <p>Latency histograms require request traffic on the vLLM server.</p>
+        </div>
+        <div style="text-align:right; margin-top:8px;">
+            <button class="obs-btn" id="obs-export-latency-btn">Export Latency</button>
+        </div>
+    </div>
+</div>

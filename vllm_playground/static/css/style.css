@@ -1245,22 +1245,10 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     border-left: 1px solid var(--border-color);
 }
 
-/* Each section in the right sidebar is a flex child with overflow scroll */
-.metrics-section > .metrics-panel-section,
-.metrics-section > .context-observability-panel,
-.metrics-section > .spec-decode-panel {
-    flex: 1 1 0;
+/* Sidebar dashboard fills available space */
+.metrics-section > .sidebar-dashboard {
+    flex: 1;
     min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-}
-
-/* Collapsed panels should not take flex space */
-.metrics-section > .metrics-panel-section.collapsed,
-.metrics-section > .context-observability-panel.collapsed,
-.metrics-section > .spec-decode-panel.collapsed {
-    flex: 0 0 auto;
-    overflow: hidden;
 }
 
 /* Collapsible section wrapper inside metrics sidebar */
@@ -1304,39 +1292,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     display: none;
 }
 
-/* Sidebar resize handles between right-panel sections */
-.sidebar-resize-handle {
-    height: 5px;
-    flex-shrink: 0;
-    cursor: row-resize;
-    background: var(--border-color);
-    position: relative;
-    transition: background 0.15s ease;
-}
-
-.sidebar-resize-handle:hover,
-.sidebar-resize-handle.active {
-    background: var(--primary-color);
-}
-
-.sidebar-resize-handle::after {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    width: 30px;
-    height: 3px;
-    border-radius: 2px;
-    background: transparent;
-    transition: background 0.15s ease;
-}
-
-.sidebar-resize-handle:hover::after {
-    background: rgba(255, 255, 255, 0.3);
-}
-
-/* Two-line header layout for sidebar panels */
+/* Two-line header layout for sidebar panels (legacy; kept for reference) */
 .sidebar-panel-header-row {
     display: flex;
     flex-wrap: wrap;
@@ -1344,10 +1300,6 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     gap: 4px 8px;
     width: 100%;
 }
-
-.sidebar-panel-header-btns {
-    display: flex;
-    align-items: center;
     gap: 6px;
     margin-left: auto;
 }
@@ -2265,8 +2217,12 @@ code.remote-model-id {
 
 .message-content {
     word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
     line-height: 1.6;
     font-size: 0.9rem;
+    min-width: 0;
+    overflow: hidden;
 }
 
 /* Hide bold sender labels (non-markdown context) */
@@ -6423,19 +6379,6 @@ code.remote-model-id {
 
 [data-theme="light"] .resize-handle:hover {
     background: var(--primary-color);
-}
-
-[data-theme="light"] .sidebar-resize-handle {
-    background: var(--border-color);
-}
-
-[data-theme="light"] .sidebar-resize-handle:hover,
-[data-theme="light"] .sidebar-resize-handle.active {
-    background: var(--primary-color);
-}
-
-[data-theme="light"] .sidebar-resize-handle:hover::after {
-    background: rgba(0, 0, 0, 0.15);
 }
 
 /* Scrollbars */

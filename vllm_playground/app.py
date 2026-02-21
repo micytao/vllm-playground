@@ -47,9 +47,17 @@ except ImportError:
 app = FastAPI(title="vLLM Playground", version="1.0.0")
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks on app startup."""
+    await metric_store.start_scrape_loop()
+    logger.info("MetricStore background scrape loop started")
+
+
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Clean up MCP connections on shutdown"""
+    """Clean up MCP connections and background tasks on shutdown"""
+    await metric_store.stop_scrape_loop()
     logger.info("Shutting down - cleaning up MCP connections...")
     try:
         # Check if MCP is available (these are defined later in the file)
@@ -82,7 +90,443 @@ log_queue: asyncio.Queue = asyncio.Queue()
 websocket_connections: List[WebSocket] = []
 latest_vllm_metrics: Dict[str, Any] = {}  # Store latest metrics from logs
 metrics_timestamp: Optional[datetime] = None  # Track when metrics were last updated
-metrics_history: deque = deque(maxlen=120)  # ~6 min of history at 3s intervals
+metrics_history: deque = deque(maxlen=120)  # ~6 min of history at 3s intervals (legacy)
+
+
+# ---------------------------------------------------------------------------
+# MetricStore: generic Prometheus scraper with typed values + ring buffer
+# ---------------------------------------------------------------------------
+
+
+class MetricStore:
+    """Central store for ALL vLLM metrics with type detection and history.
+
+    Replaces the hardcoded whitelist approach.  The generic Prometheus parser
+    extracts every ``vllm:*`` metric, detects its type from ``# TYPE``
+    comments, and stores structured entries.
+
+    A background asyncio task scrapes the Prometheus endpoint every
+    ``scrape_interval`` seconds and appends timestamped snapshots to a ring
+    buffer for time-series charting.
+    """
+
+    def __init__(self, history_maxlen: int = 360, scrape_interval: float = 5.0):
+        self.latest: Dict[str, Any] = {}
+        self.history: deque = deque(maxlen=history_maxlen)
+        self.scrape_interval = scrape_interval
+        self.last_scrape: Optional[datetime] = None
+        self.last_simulated: Optional[datetime] = None
+        self._task: Optional[asyncio.Task] = None
+        self._types: Dict[str, str] = {}  # metric name -> gauge/counter/histogram/...
+        self._scrape_warned: bool = False
+
+    # -- Generic Prometheus parser -------------------------------------------
+
+    @staticmethod
+    def parse_prometheus_text(text: str) -> tuple:
+        """Parse Prometheus exposition text into structured metrics.
+
+        Returns (metrics_dict, types_dict) where:
+          metrics_dict: {metric_name: {"value": float, "type": str, "labels": str}}
+          types_dict:   {metric_name: type_str}
+
+        For histogram metrics, bucket/sum/count lines are collected and
+        percentiles (p50, p95, p99) are computed.
+        """
+        types: Dict[str, str] = {}
+        metrics: Dict[str, Any] = {}
+        histogram_buckets: Dict[str, list] = {}
+
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+
+            if line.startswith("# TYPE "):
+                parts = line.split()
+                if len(parts) >= 4:
+                    name = parts[2]
+                    mtype = parts[3]
+                    types[name] = mtype
+                continue
+
+            if line.startswith("#"):
+                continue
+
+            name, labels, value = MetricStore._parse_prom_line(line)
+            if name is None or value is None:
+                continue
+
+            if not name.startswith("vllm:"):
+                continue
+
+            base_name = MetricStore._base_metric_name(name)
+            mtype = types.get(base_name, "unknown")
+
+            if name.endswith("_created"):
+                continue
+
+            if name.endswith("_bucket"):
+                le_val = MetricStore._extract_le(labels)
+                if le_val is not None:
+                    histogram_buckets.setdefault(base_name, []).append((le_val, value))
+                continue
+
+            if name.endswith("_count") or name.endswith("_sum"):
+                suffix = "_count" if name.endswith("_count") else "_sum"
+                entry_key = base_name + suffix
+                metrics[entry_key] = {
+                    "value": value,
+                    "type": "counter",
+                    "labels": labels,
+                }
+                continue
+
+            if name.endswith("_total"):
+                entry_key = base_name
+            else:
+                entry_key = name
+
+            metrics[entry_key] = {
+                "value": value,
+                "type": mtype if mtype != "unknown" else ("gauge" if "{" not in name else "gauge"),
+                "labels": labels,
+            }
+
+        for base_name, buckets in histogram_buckets.items():
+            percentiles = MetricStore._compute_percentiles(buckets)
+            if percentiles:
+                metrics[base_name] = {
+                    "type": "histogram",
+                    "labels": "",
+                    **percentiles,
+                }
+                sorted_buckets = sorted(buckets, key=lambda x: x[0])
+                for le_val, count in sorted_buckets:
+                    le_str = "+Inf" if le_val == float("inf") else str(le_val)
+                    bucket_key = f"{base_name}_bucket_le_{le_str}"
+                    metrics[bucket_key] = {
+                        "value": count,
+                        "type": "histogram_bucket",
+                        "labels": f'le="{le_str}"',
+                    }
+
+        return metrics, types
+
+    @staticmethod
+    def _parse_prom_line(line: str):
+        """Parse a single Prometheus metric line into (name, labels, value)."""
+        brace = line.find("{")
+        if brace >= 0:
+            close = line.find("}", brace)
+            if close < 0:
+                return None, None, None
+            name = line[:brace]
+            labels = line[brace + 1 : close]
+            rest = line[close + 1 :].strip()
+        else:
+            parts = line.split(None, 1)
+            if len(parts) < 2:
+                return None, None, None
+            name = parts[0]
+            labels = ""
+            rest = parts[1]
+
+        val_parts = rest.split()
+        if not val_parts:
+            return None, None, None
+        try:
+            value = float(val_parts[0])
+        except ValueError:
+            return None, None, None
+
+        return name, labels, value
+
+    @staticmethod
+    def _base_metric_name(name: str) -> str:
+        """Strip _total, _created, _bucket, _count, _sum suffixes."""
+        for suffix in ("_total", "_created", "_bucket", "_count", "_sum"):
+            if name.endswith(suffix):
+                return name[: -len(suffix)]
+        return name
+
+    @staticmethod
+    def _extract_le(labels: str) -> Optional[float]:
+        """Extract the 'le' label value from a histogram bucket line."""
+        for part in labels.split(","):
+            part = part.strip()
+            if part.startswith("le="):
+                val = part.split("=", 1)[1].strip('"')
+                if val == "+Inf":
+                    return float("inf")
+                try:
+                    return float(val)
+                except ValueError:
+                    return None
+        return None
+
+    @staticmethod
+    def _compute_percentiles(buckets: list) -> Dict[str, float]:
+        """Compute p50, p95, p99 from cumulative histogram buckets."""
+        sorted_b = sorted(buckets, key=lambda x: x[0])
+        if not sorted_b:
+            return {}
+
+        total = sorted_b[-1][1] if sorted_b[-1][0] == float("inf") else sorted_b[-1][1]
+        if total <= 0:
+            return {}
+
+        result = {}
+        for pname, target in [("p50", 0.50), ("p95", 0.95), ("p99", 0.99)]:
+            threshold = total * target
+            prev_le, prev_count = 0.0, 0.0
+            for le, count in sorted_b:
+                if le == float("inf"):
+                    break
+                if count >= threshold:
+                    if count == prev_count:
+                        result[pname] = le
+                    else:
+                        frac = (threshold - prev_count) / (count - prev_count)
+                        result[pname] = prev_le + frac * (le - prev_le)
+                    break
+                prev_le, prev_count = le, count
+            else:
+                result[pname] = prev_le
+
+        return result
+
+    # -- Flat dict conversion for legacy compat ------------------------------
+
+    def to_legacy_dict(self) -> Dict[str, Any]:
+        """Convert the structured latest metrics to the flat dict format
+        expected by the legacy ``/api/vllm/metrics`` endpoint and existing
+        frontend modules (``paged-attention.js``, ``spec-decode.js``, ``app.js``).
+        """
+        flat: Dict[str, Any] = {}
+
+        key_map = {
+            "vllm:gpu_cache_usage_perc": "gpu_cache_usage_perc",
+            "vllm:cpu_cache_usage_perc": "cpu_cache_usage_perc",
+            "vllm:kv_cache_usage_perc": "kv_cache_usage_perc",
+            "vllm:num_requests_running": "num_requests_running",
+            "vllm:num_requests_waiting": "num_requests_waiting",
+            "vllm:avg_prompt_throughput_toks_per_s": "avg_prompt_throughput",
+            "vllm:avg_generation_throughput_toks_per_s": "avg_generation_throughput",
+            "vllm:num_preemptions": "num_preemptions",
+            "vllm:prefix_cache_hits": "prefix_cache_hits",
+            "vllm:prefix_cache_queries": "prefix_cache_queries",
+            "vllm:prefix_cache_hit_rate": "prefix_cache_hit_rate",
+            "vllm:spec_decode_num_accepted_tokens": "spec_decode_accepted",
+            "vllm:spec_decode_num_draft_tokens": "spec_decode_draft",
+            "vllm:spec_decode_num_emitted_tokens": "spec_decode_emitted",
+        }
+
+        for prom_key, legacy_key in key_map.items():
+            entry = self.latest.get(prom_key)
+            if entry is not None:
+                val = entry.get("value") if isinstance(entry, dict) else entry
+                if val is not None:
+                    flat[legacy_key] = val
+
+        for frac_key in ("kv_cache_usage_perc", "gpu_cache_usage_perc", "cpu_cache_usage_perc"):
+            if frac_key in flat and flat[frac_key] is not None and flat[frac_key] <= 1.0:
+                flat[frac_key] = flat[frac_key] * 100
+
+        return flat
+
+    # -- Ingest helpers (log-parsed, simulated) ------------------------------
+
+    _PERCENT_LEGACY_KEYS = frozenset(
+        {
+            "kv_cache_usage_perc",
+            "gpu_cache_usage_perc",
+            "cpu_cache_usage_perc",
+            "prefix_cache_hit_rate",
+            "spec_decode_acceptance_rate",
+        }
+    )
+
+    def ingest_log_parsed(self, key: str, value: float):
+        """Ingest a metric from vLLM stdout log parsing (fallback path).
+
+        Only writes a key if the Prometheus scraper has NOT already populated
+        it.  When Prometheus is active (subprocess / container mode) it
+        provides higher-fidelity data for the same keys, so the log parser
+        should not overwrite it.  When Prometheus is unreachable (remote
+        mode), ``last_scrape`` stays ``None`` and the log parser fills gaps.
+
+        Log-parsed values arrive as 0-100 percentages for percent keys;
+        we normalise to 0-1 fractions before storing (Prometheus convention).
+        """
+        reverse_map = {
+            "kv_cache_usage_perc": "vllm:kv_cache_usage_perc",
+            "gpu_cache_usage_perc": "vllm:gpu_cache_usage_perc",
+            "cpu_cache_usage_perc": "vllm:cpu_cache_usage_perc",
+            "prefix_cache_hit_rate": "vllm:prefix_cache_hit_rate",
+            "avg_prompt_throughput": "vllm:avg_prompt_throughput_toks_per_s",
+            "avg_generation_throughput": "vllm:avg_generation_throughput_toks_per_s",
+            "num_requests_running": "vllm:num_requests_running",
+            "num_requests_waiting": "vllm:num_requests_waiting",
+            "spec_decode_accepted": "vllm:spec_decode_num_accepted_tokens",
+            "spec_decode_draft": "vllm:spec_decode_num_draft_tokens",
+            "spec_decode_acceptance_rate": "vllm:spec_decode_acceptance_rate",
+        }
+
+        prom_key = reverse_map.get(key)
+        if prom_key:
+            if prom_key in self.latest and self.last_scrape is not None:
+                return
+            stored = value / 100.0 if key in self._PERCENT_LEGACY_KEYS else value
+            self.latest[prom_key] = {"value": stored, "type": "gauge", "labels": ""}
+
+    def ingest_simulated(self, payload: Dict[str, Any]):
+        """Inject simulated metrics (from the simulate endpoint).
+
+        Accepts the legacy flat-key dict from ``SimulateMetricsRequest``.
+        """
+        for key, value in payload.items():
+            self.ingest_log_parsed(key, value)
+
+    def append_snapshot_from_latest(self):
+        """Append a history snapshot from whatever is currently in ``self.latest``.
+
+        Called by non-Prometheus paths (log parsing, ingest endpoint) so that
+        time-series charts on the Observability page still accumulate data
+        even when Prometheus is unreachable (e.g. remote mode).
+        """
+        if not self.latest:
+            return
+        now = datetime.now()
+        snapshot = {"timestamp": now.isoformat()}
+        for k, v in self.latest.items():
+            if isinstance(v, dict):
+                snapshot[k] = v.get("value", v.get("p50"))
+            else:
+                snapshot[k] = v
+        self.history.append(snapshot)
+
+    # -- Background scrape ---------------------------------------------------
+
+    async def start_scrape_loop(self):
+        """Start the background Prometheus scrape task."""
+        if self._task is not None and not self._task.done():
+            return
+        self._task = asyncio.create_task(self._scrape_loop())
+        logger.info(f"MetricStore: background scrape started (interval={self.scrape_interval}s)")
+
+    async def stop_scrape_loop(self):
+        """Stop the background scrape task."""
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+            logger.info("MetricStore: background scrape stopped")
+
+    async def _scrape_loop(self):
+        """Background loop: fetch Prometheus metrics every ``scrape_interval`` seconds.
+
+        If the Prometheus scrape fails but we have data from legacy sources
+        (log parsing, frontend ingest), we still append a history snapshot
+        so that time-series charts accumulate data in remote mode.
+        """
+        while True:
+            scrape_ok = False
+            try:
+                prev_scrape = self.last_scrape
+                await self._do_scrape()
+                scrape_ok = self.last_scrape != prev_scrape
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.debug("MetricStore: scrape error", exc_info=True)
+
+            if not scrape_ok and self.latest:
+                self.append_snapshot_from_latest()
+
+            await asyncio.sleep(self.scrape_interval)
+
+    async def _do_scrape(self):
+        """Single scrape: fetch, parse, merge, snapshot."""
+        if current_config is None:
+            return
+        if not await check_vllm_server_running():
+            return
+
+        try:
+            base_url = get_vllm_base_url()
+            metrics_url = f"{base_url}/metrics"
+            auth_headers = get_vllm_auth_headers()
+            timeout = aiohttp.ClientTimeout(total=5 if current_run_mode == "remote" else 3)
+
+            async with aiohttp.ClientSession(headers=auth_headers) as session:
+                async with session.get(metrics_url, timeout=timeout) as response:
+                    if response.status != 200:
+                        if not self._scrape_warned:
+                            logger.warning(
+                                "MetricStore: Prometheus scrape returned %d from %s (will retry silently)",
+                                response.status,
+                                metrics_url,
+                            )
+                            self._scrape_warned = True
+                        return
+                    text = await response.text()
+                    self._scrape_warned = False
+        except Exception as exc:
+            if not self._scrape_warned:
+                logger.warning(
+                    "MetricStore: cannot reach %s/metrics (%s: %s). Sidebar will use log-parsed fallback.",
+                    get_vllm_base_url(),
+                    type(exc).__name__,
+                    exc,
+                )
+                self._scrape_warned = True
+            return
+
+        parsed, types = self.parse_prometheus_text(text)
+        if not parsed:
+            return
+
+        first_success = not self.latest
+        self._types.update(types)
+        self.latest.update(parsed)
+        now = datetime.now()
+        self.last_scrape = now
+        self._scrape_warned = False
+
+        if first_success:
+            logger.info(
+                "MetricStore: first successful scrape — %d metrics from %s/metrics", len(parsed), get_vllm_base_url()
+            )
+
+        snapshot = {"timestamp": now.isoformat()}
+        for k, v in parsed.items():
+            if isinstance(v, dict):
+                snapshot[k] = v.get("value", v.get("p50"))
+            else:
+                snapshot[k] = v
+        self.history.append(snapshot)
+
+    def get_history(self, minutes: Optional[int] = None) -> list:
+        """Return history snapshots, optionally filtered to last N minutes."""
+        if minutes is None:
+            return list(self.history)
+        cutoff = datetime.now().timestamp() - (minutes * 60)
+        result = []
+        for snap in self.history:
+            try:
+                ts = datetime.fromisoformat(snap["timestamp"]).timestamp()
+                if ts >= cutoff:
+                    result.append(snap)
+            except (KeyError, ValueError):
+                result.append(snap)
+        return result
+
+
+metric_store = MetricStore(history_maxlen=360, scrape_interval=5.0)
 current_model_identifier: Optional[str] = None  # Track the actual model identifier passed to vLLM
 current_served_model_name: Optional[str] = None  # Track the served model name alias (for API calls)
 
@@ -2803,105 +3247,42 @@ async def broadcast_log(message: str):
     if not message:
         return
 
-    # Parse metrics from log messages with more flexible patterns
+    # Minimal fallback: parse a few key metrics from vLLM log lines.
+    # The MetricStore background scraper handles comprehensive metrics via
+    # Prometheus; these patterns are only needed for remote/managed endpoints
+    # where Prometheus may be inaccessible.
     import re
 
-    metrics_updated = False  # Track if we updated any metrics in this log line
+    metrics_updated = False
 
-    # Try various patterns for KV cache usage
-    # Examples: "GPU KV cache usage: 0.3%", "KV cache usage: 0.3%", "cache usage: 0.3%"
     if "cache usage" in message.lower() and "%" in message:
-        # More flexible pattern - match any number before %
         match = re.search(r"cache usage[:\s]+([\d.]+)\s*%", message, re.IGNORECASE)
         if match:
-            cache_usage = float(match.group(1))
-            latest_vllm_metrics["kv_cache_usage_perc"] = cache_usage
+            latest_vllm_metrics["kv_cache_usage_perc"] = float(match.group(1))
             metrics_updated = True
-            logger.info(f"✓ Captured KV cache usage: {cache_usage}% from: {message[:100]}")
-        else:
-            logger.debug(f"Failed to parse cache usage from: {message[:100]}")
 
-    # Try various patterns for prefix cache hit rate
-    # Examples: "Prefix cache hit rate: 36.1%", "hit rate: 36.1%", "cache hit rate: 36.1%"
     if "hit rate" in message.lower() and "%" in message:
-        # More flexible pattern
         match = re.search(r"hit rate[:\s]+([\d.]+)\s*%", message, re.IGNORECASE)
         if match:
-            hit_rate = float(match.group(1))
-            latest_vllm_metrics["prefix_cache_hit_rate"] = hit_rate
-            metrics_updated = True
-            logger.info(f"✓ Captured prefix cache hit rate: {hit_rate}% from: {message[:100]}")
-        else:
-            logger.debug(f"Failed to parse hit rate from: {message[:100]}")
-
-    # Try to parse avg prompt throughput
-    if "prompt throughput" in message.lower():
-        match = re.search(r"prompt throughput[:\s]+([\d.]+)", message, re.IGNORECASE)
-        if match:
-            prompt_throughput = float(match.group(1))
-            latest_vllm_metrics["avg_prompt_throughput"] = prompt_throughput
-            metrics_updated = True
-            logger.info(f"✓ Captured prompt throughput: {prompt_throughput}")
-
-    # Try to parse avg generation throughput
-    if "generation throughput" in message.lower():
-        match = re.search(r"generation throughput[:\s]+([\d.]+)", message, re.IGNORECASE)
-        if match:
-            generation_throughput = float(match.group(1))
-            latest_vllm_metrics["avg_generation_throughput"] = generation_throughput
-            metrics_updated = True
-            logger.info(f"✓ Captured generation throughput: {generation_throughput}")
-
-    # Parse Running / Waiting request counts from standard vLLM log
-    # Example: "Running: 1 reqs, Waiting: 0 reqs"
-    if "running:" in message.lower() and "reqs" in message.lower():
-        match = re.search(r"Running:\s+(\d+)\s+reqs", message)
-        if match:
-            latest_vllm_metrics["num_requests_running"] = float(match.group(1))
-            metrics_updated = True
-        match = re.search(r"Waiting:\s+(\d+)\s+reqs", message)
-        if match:
-            latest_vllm_metrics["num_requests_waiting"] = float(match.group(1))
+            latest_vllm_metrics["prefix_cache_hit_rate"] = float(match.group(1))
             metrics_updated = True
 
-    # Parse SpecDecoding metrics from vLLM log
-    # Example: "SpecDecoding metrics: Mean acceptance length: 3.20, ...
-    #   Accepted: 22 tokens, Drafted: 50 tokens, ...
-    #   Avg Draft acceptance rate: 44.0%"
     if "specdecoding metrics" in message.lower():
-        m = re.search(r"Accepted:\s+(\d+)\s+tokens", message)
-        if m:
-            latest_vllm_metrics["spec_decode_accepted"] = float(m.group(1))
-            metrics_updated = True
-        m = re.search(r"Drafted:\s+(\d+)\s+tokens", message)
-        if m:
-            latest_vllm_metrics["spec_decode_draft"] = float(m.group(1))
-            metrics_updated = True
         m = re.search(r"Draft acceptance rate:\s+([\d.]+)%", message)
         if m:
             latest_vllm_metrics["spec_decode_acceptance_rate"] = float(m.group(1))
             metrics_updated = True
-        logger.info(f"✓ Captured spec decode metrics from log")
 
-    # Update timestamp if we captured any metrics
     if metrics_updated:
         metrics_timestamp = datetime.now()
         latest_vllm_metrics["timestamp"] = metrics_timestamp.isoformat()
-        logger.info(f"📊 Metrics updated at: {metrics_timestamp.strftime('%H:%M:%S')}")
 
-        # Append snapshot to metrics history for time-series visualization
-        metrics_history.append(
-            {
-                "timestamp": metrics_timestamp.isoformat(),
-                "kv_cache_usage_perc": latest_vllm_metrics.get("kv_cache_usage_perc"),
-                "prefix_cache_hit_rate": latest_vllm_metrics.get("prefix_cache_hit_rate"),
-                "num_preemptions": latest_vllm_metrics.get("num_preemptions"),
-                "num_requests_running": latest_vllm_metrics.get("num_requests_running"),
-                "num_requests_waiting": latest_vllm_metrics.get("num_requests_waiting"),
-                "prefix_cache_hits": latest_vllm_metrics.get("prefix_cache_hits"),
-                "prefix_cache_queries": latest_vllm_metrics.get("prefix_cache_queries"),
-            }
-        )
+        for key in ("kv_cache_usage_perc", "prefix_cache_hit_rate", "spec_decode_acceptance_rate"):
+            val = latest_vllm_metrics.get(key)
+            if val is not None:
+                metric_store.ingest_log_parsed(key, val)
+
+        metric_store.append_snapshot_from_latest()
 
     disconnected = []
     for ws in websocket_connections:
@@ -4449,158 +4830,140 @@ async def check_vllm_health():
         return {"success": False, "status_code": 503, "error": str(e)}
 
 
-_PROMETHEUS_GAUGE_MAP = {
-    "vllm:gpu_cache_usage_perc": "gpu_cache_usage_perc",
-    "vllm:cpu_cache_usage_perc": "cpu_cache_usage_perc",
-    "vllm:kv_cache_usage_perc": "kv_cache_usage_perc",
-    "vllm:num_requests_running": "num_requests_running",
-    "vllm:num_requests_waiting": "num_requests_waiting",
-    "vllm:avg_prompt_throughput_toks_per_s": "avg_prompt_throughput",
-    "vllm:avg_generation_throughput_toks_per_s": "avg_generation_throughput",
-}
-
-_PROMETHEUS_COUNTER_MAP = {
-    "vllm:num_preemptions": "num_preemptions",
-    "vllm:prefix_cache_hits": "prefix_cache_hits",
-    "vllm:prefix_cache_queries": "prefix_cache_queries",
-    "vllm:spec_decode_num_accepted_tokens": "spec_decode_accepted",
-    "vllm:spec_decode_num_draft_tokens": "spec_decode_draft",
-    "vllm:spec_decode_num_emitted_tokens": "spec_decode_emitted",
-}
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Metrics endpoints (new + legacy)
+# ---------------------------------------------------------------------------
 
 
-def _prom_metric_matches(prom_name: str, line: str) -> bool:
-    """Check if line is for this metric (not a derived _created/_bucket line).
+@app.get("/api/vllm/metrics/all")
+async def get_vllm_metrics_all():
+    """Return ALL vLLM metrics as a structured dict with types.
 
-    Matches: prom_name{...} or prom_name_total{...}
-    Rejects: prom_name_created, prom_name_bucket, etc.
+    Primary endpoint for the Observability page and MetricsPoller.
+    Data comes from the MetricStore background scrape.  When the scraper
+    has no data (e.g. remote mode where /metrics is unreachable), we
+    fall back to ``latest_vllm_metrics`` (log-parsed / simulated) by
+    converting legacy keys to canonical ``vllm:`` entries so the
+    frontend receives a consistent shape.
     """
-    if prom_name not in line:
-        return False
-    brace = line.find("{")
-    space = line.find(" ")
-    if brace >= 0 and (space < 0 or brace < space):
-        name_on_line = line[:brace]
-    elif space >= 0:
-        name_on_line = line[:space]
+    metrics = dict(metric_store.latest)
+
+    if latest_vllm_metrics:
+        _inject_legacy_fallback(metrics, latest_vllm_metrics)
+
+    if not metrics:
+        return {
+            "metrics": {},
+            "scrape_age_seconds": None,
+            "metric_count": 0,
+            "source": "none",
+            "run_mode": current_run_mode or "unknown",
+        }
+
+    now = datetime.now()
+    scrape_age = None
+    if metric_store.last_scrape:
+        source = "prometheus"
+        scrape_age = round((now - metric_store.last_scrape).total_seconds(), 1)
+    elif metric_store.last_simulated:
+        source = "simulated"
+        scrape_age = round((now - metric_store.last_simulated).total_seconds(), 1)
+    elif metrics_timestamp and latest_vllm_metrics:
+        source = "fallback"
+        scrape_age = round((now - metrics_timestamp).total_seconds(), 1)
     else:
-        return False
-    return name_on_line == prom_name or name_on_line == prom_name + "_total"
+        source = "none"
+
+    return {
+        "metrics": metrics,
+        "scrape_age_seconds": scrape_age,
+        "metric_count": len(metrics),
+        "source": source,
+        "run_mode": current_run_mode or "unknown",
+    }
 
 
-def _prom_parse_value(line: str):
-    """Extract metric value from a Prometheus line.
+def _inject_legacy_fallback(target: dict, legacy: dict):
+    """Convert ``latest_vllm_metrics`` flat keys into canonical vllm: entries.
 
-    Format: metric_name{labels} value [timestamp]
-    The value is always the second whitespace-separated token.
+    Only injects keys that are not already present in *target* so that
+    Prometheus-scraped data always takes precedence.
     """
-    parts = line.split()
-    if len(parts) >= 2:
-        return float(parts[1])
-    return None
-
-
-def _parse_prometheus_text(text: str) -> dict:
-    """Parse Prometheus exposition text into a dict of metric key → value."""
-    metrics: dict = {}
-    for line in text.split("\n"):
-        if line.startswith("#") or not line.strip():
+    _LEGACY_TO_CANONICAL = {
+        "kv_cache_usage_perc": "vllm:kv_cache_usage_perc",
+        "gpu_cache_usage_perc": "vllm:gpu_cache_usage_perc",
+        "cpu_cache_usage_perc": "vllm:cpu_cache_usage_perc",
+        "prefix_cache_hit_rate": "vllm:prefix_cache_hit_rate",
+        "num_preemptions": "vllm:num_preemptions",
+        "num_requests_running": "vllm:num_requests_running",
+        "num_requests_waiting": "vllm:num_requests_waiting",
+        "avg_prompt_throughput": "vllm:avg_prompt_throughput_toks_per_s",
+        "avg_generation_throughput": "vllm:avg_generation_throughput_toks_per_s",
+        "spec_decode_accepted": "vllm:spec_decode_num_accepted_tokens",
+        "spec_decode_draft": "vllm:spec_decode_num_draft_tokens",
+        "spec_decode_acceptance_rate": "vllm:spec_decode_acceptance_rate",
+        "prefix_cache_hits": "vllm:prefix_cache_hits",
+        "prefix_cache_queries": "vllm:prefix_cache_queries",
+    }
+    _PERCENT_KEYS = frozenset(
+        {
+            "kv_cache_usage_perc",
+            "gpu_cache_usage_perc",
+            "cpu_cache_usage_perc",
+            "prefix_cache_hit_rate",
+            "spec_decode_acceptance_rate",
+        }
+    )
+    for legacy_key, canonical in _LEGACY_TO_CANONICAL.items():
+        if canonical in target:
             continue
-        for prom_name, key in _PROMETHEUS_GAUGE_MAP.items():
-            if _prom_metric_matches(prom_name, line):
-                try:
-                    val = _prom_parse_value(line)
-                    if val is not None:
-                        metrics[key] = val
-                except (ValueError, IndexError):
-                    pass
-                break
-        else:
-            for prom_name, key in _PROMETHEUS_COUNTER_MAP.items():
-                if _prom_metric_matches(prom_name, line):
-                    try:
-                        val = _prom_parse_value(line)
-                        if val is not None:
-                            metrics[key] = val
-                    except (ValueError, IndexError):
-                        pass
-                    break
-
-    for frac_key in ("kv_cache_usage_perc", "gpu_cache_usage_perc", "cpu_cache_usage_perc"):
-        if frac_key in metrics and metrics[frac_key] is not None and metrics[frac_key] <= 1.0:
-            metrics[frac_key] = metrics[frac_key] * 100
-    return metrics
-
-
-async def _fetch_prometheus_metrics() -> dict:
-    """Fetch and parse metrics from the vLLM Prometheus /metrics endpoint."""
-    if current_config is None:
-        return {}
-    try:
-        import aiohttp
-
-        base_url = get_vllm_base_url()
-        metrics_url = f"{base_url}/metrics"
-        auth_headers = get_vllm_auth_headers()
-
-        async with aiohttp.ClientSession(headers=auth_headers) as session:
-            async with session.get(metrics_url, timeout=aiohttp.ClientTimeout(total=2)) as response:
-                if response.status == 200:
-                    text = await response.text()
-                    return _parse_prometheus_text(text)
-                return {}
-    except Exception:
-        return {}
+        val = legacy.get(legacy_key)
+        if val is None:
+            continue
+        stored = val / 100.0 if legacy_key in _PERCENT_KEYS else val
+        target[canonical] = {"value": stored, "type": "gauge", "labels": ""}
 
 
 @app.get("/api/vllm/metrics")
 async def get_vllm_metrics():
-    """Get vLLM server metrics including KV cache and prefix cache stats"""
-    global current_config, latest_vllm_metrics, metrics_timestamp, current_run_mode
+    """Legacy flat-dict endpoint for backward compat with existing frontend modules.
 
-    # Always try to enrich with Prometheus data (captures counters
-    # like spec_decode, prefix_cache_hits that log parsing misses).
-    if current_config is not None and await check_vllm_server_running():
-        prom_metrics = await _fetch_prometheus_metrics()
-        if prom_metrics:
-            latest_vllm_metrics.update(prom_metrics)
-            now = datetime.now()
-            metrics_timestamp = now
-            latest_vllm_metrics["timestamp"] = now.isoformat()
-            metrics_history.append(
-                {
-                    "timestamp": now.isoformat(),
-                    **{
-                        k: prom_metrics.get(k)
-                        for k in [
-                            "kv_cache_usage_perc",
-                            "gpu_cache_usage_perc",
-                            "num_preemptions",
-                            "num_requests_running",
-                            "num_requests_waiting",
-                            "prefix_cache_hits",
-                            "prefix_cache_queries",
-                        ]
-                    },
-                }
-            )
+    Returns the same key structure as before. Data is now sourced from
+    MetricStore (which is populated by the background 5s scrape) merged
+    with log-parsed metrics in ``latest_vllm_metrics``.
+    """
+    global latest_vllm_metrics, metrics_timestamp
 
-    # Return merged metrics (log-parsed + Prometheus)
-    if latest_vllm_metrics and metrics_timestamp:
-        metrics_age_seconds = (datetime.now() - metrics_timestamp).total_seconds()
-        result = latest_vllm_metrics.copy()
-        result["metrics_age_seconds"] = round(metrics_age_seconds, 1)
-        return result
+    store_flat = metric_store.to_legacy_dict()
 
-    if not await check_vllm_server_running():
-        return JSONResponse(status_code=400, content={"error": "vLLM server is not running"})
+    merged = {}
+    if latest_vllm_metrics:
+        merged.update(latest_vllm_metrics)
+    if store_flat:
+        merged.update(store_flat)
+
+    if merged and (metrics_timestamp or metric_store.last_scrape):
+        ts = metrics_timestamp or metric_store.last_scrape
+        metrics_age_seconds = (datetime.now() - ts).total_seconds()
+        merged["metrics_age_seconds"] = round(metrics_age_seconds, 1)
+        if "timestamp" not in merged:
+            merged["timestamp"] = ts.isoformat()
+        return merged
 
     return {}
 
 
 @app.get("/api/vllm/metrics/history")
-async def get_vllm_metrics_history():
-    """Return time-series metrics for the PagedAttention visualizer heatmap."""
+async def get_vllm_metrics_history(minutes: Optional[int] = None):
+    """Return time-series metrics snapshots for charting.
+
+    If ``minutes`` is provided, only return snapshots from the last N minutes.
+    Falls back to the legacy ``metrics_history`` deque if MetricStore has
+    no data (e.g. remote mode with only log-parsed metrics).
+    """
+    if metric_store.history:
+        return metric_store.get_history(minutes)
     return list(metrics_history)
 
 
@@ -4677,7 +5040,40 @@ async def simulate_vllm_metrics(req: SimulateMetricsRequest):
         }
     )
 
+    # Also push into MetricStore so /api/vllm/metrics/all reflects simulated data
+    metric_store.ingest_simulated(payload)
+    metric_store.last_simulated = now
+    snapshot = {"timestamp": now.isoformat()}
+    for k, v in metric_store.latest.items():
+        if isinstance(v, dict):
+            snapshot[k] = v.get("value", v.get("p50"))
+        else:
+            snapshot[k] = v
+    metric_store.history.append(snapshot)
+
     return {"status": "ok", "metrics": latest_vllm_metrics}
+
+
+class IngestChatMetricsRequest(BaseModel):
+    """Metrics the frontend extracts from OpenAI API responses (usage field)."""
+
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+
+
+@app.post("/api/vllm/metrics/ingest")
+async def ingest_chat_metrics(req: IngestChatMetricsRequest):
+    """Accept metrics from frontend after a chat completion.
+
+    Triggers a one-shot Prometheus scrape attempt so that, if the remote
+    ``/metrics`` endpoint IS accessible, the MetricStore fills with full
+    metrics on the next poll cycle.
+    """
+    if not metric_store.latest:
+        asyncio.ensure_future(metric_store._do_scrape())
+
+    return {"status": "ok"}
 
 
 @app.post("/api/vllm/metrics/simulate/reset")
@@ -4687,6 +5083,13 @@ async def simulate_reset_metrics():
     latest_vllm_metrics.clear()
     metrics_timestamp = None
     metrics_history.clear()
+
+    # Also clear MetricStore
+    metric_store.latest.clear()
+    metric_store.history.clear()
+    metric_store.last_scrape = None
+    metric_store.last_simulated = None
+
     return {"status": "ok", "message": "Metrics reset"}
 
 
