@@ -11,7 +11,7 @@ export const METRIC_REGISTRY = {
         category: 'kv-cache',
         label: 'KV Cache Usage',
         format: 'percent',
-        thresholds: { warning: 70, danger: 90 },
+        thresholds: { warning: 0.70, danger: 0.90 },
         sidebar: true,
         obsTab: 'overview',
     },
@@ -19,14 +19,14 @@ export const METRIC_REGISTRY = {
         category: 'kv-cache',
         label: 'GPU Cache Usage',
         format: 'percent',
-        thresholds: { warning: 70, danger: 90 },
+        thresholds: { warning: 0.70, danger: 0.90 },
         obsTab: 'overview',
     },
     'vllm:cpu_cache_usage_perc': {
         category: 'kv-cache',
         label: 'CPU Cache Usage',
         format: 'percent',
-        thresholds: { warning: 80, danger: 95 },
+        thresholds: { warning: 0.80, danger: 0.95 },
         obsTab: 'overview',
     },
     'vllm:prefix_cache_hit_rate': {
@@ -168,7 +168,7 @@ export function formatMetricValue(value, format, unit) {
     if (value == null || isNaN(value)) return '--';
     switch (format) {
         case 'percent':
-            return `${value.toFixed(1)}%`;
+            return `${(value * 100).toFixed(1)}%`;
         case 'integer':
             return Math.round(value).toLocaleString();
         case 'number':
@@ -191,6 +191,50 @@ export function getThresholdStatus(value, thresholds) {
     if (value >= thresholds.danger) return 'danger';
     if (value >= thresholds.warning) return 'warning';
     return 'ok';
+}
+
+/**
+ * Derive a legacy flat dict (compatible with /api/vllm/metrics) from the
+ * structured metrics returned by /api/vllm/metrics/all.
+ */
+const _LEGACY_KEY_MAP = {
+    'vllm:kv_cache_usage_perc': 'kv_cache_usage_perc',
+    'vllm:gpu_cache_usage_perc': 'gpu_cache_usage_perc',
+    'vllm:cpu_cache_usage_perc': 'cpu_cache_usage_perc',
+    'vllm:prefix_cache_hit_rate': 'prefix_cache_hit_rate',
+    'vllm:prefix_cache_hits': 'prefix_cache_hits',
+    'vllm:prefix_cache_queries': 'prefix_cache_queries',
+    'vllm:num_preemptions': 'num_preemptions',
+    'vllm:num_requests_running': 'num_requests_running',
+    'vllm:num_requests_waiting': 'num_requests_waiting',
+    'vllm:avg_prompt_throughput_toks_per_s': 'avg_prompt_throughput',
+    'vllm:avg_generation_throughput_toks_per_s': 'avg_generation_throughput',
+    'vllm:spec_decode_num_accepted_tokens': 'spec_decode_accepted',
+    'vllm:spec_decode_num_draft_tokens': 'spec_decode_draft',
+    'vllm:spec_decode_num_emitted_tokens': 'spec_decode_emitted',
+    'vllm:spec_decode_acceptance_rate': 'spec_decode_acceptance_rate',
+};
+
+const _PERCENT_KEYS = new Set([
+    'vllm:kv_cache_usage_perc',
+    'vllm:gpu_cache_usage_perc',
+    'vllm:cpu_cache_usage_perc',
+    'vllm:prefix_cache_hit_rate',
+]);
+
+export function toLegacyDict(metrics) {
+    if (!metrics || typeof metrics !== 'object') return {};
+    const out = {};
+    for (const [canonical, legacy] of Object.entries(_LEGACY_KEY_MAP)) {
+        const entry = metrics[canonical];
+        if (!entry) continue;
+        let val = entry.value ?? null;
+        if (val != null && _PERCENT_KEYS.has(canonical)) {
+            val = val * 100;
+        }
+        if (val != null) out[legacy] = val;
+    }
+    return out;
 }
 
 /**

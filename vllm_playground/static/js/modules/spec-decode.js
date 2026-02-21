@@ -6,7 +6,7 @@
  * Demo simulation is handled by the Observability page.
  */
 
-const POLL_INTERVAL = 3000;
+import { metricsPoller } from './metrics-poller.js';
 
 export function initSpecDecodeModule(ui) {
     Object.assign(ui, SpecDecodeMethods);
@@ -17,8 +17,9 @@ const SpecDecodeMethods = {
 
     initSpecDecode() {
         this._sdVisible = false;
-        this._sdTimer = null;
         this._sdHasData = false;
+        this._sdEmptyPollCount = 0;
+        this._sdUnsub = null;
 
         const toggle = document.getElementById('spec-decode-toggle');
         if (toggle) {
@@ -27,7 +28,6 @@ const SpecDecodeMethods = {
             });
         }
 
-        // Show/hide spec-decode sub-fields based on method dropdown
         const specMethodSelect = document.getElementById('spec-decode-method');
         if (specMethodSelect) {
             const updateSpecFields = () => {
@@ -75,36 +75,24 @@ const SpecDecodeMethods = {
         }
 
         this._sdShowNoData(true);
-        this._sdStartPolling();
-    },
 
-    _sdStartPolling() {
-        if (this._sdTimer) clearInterval(this._sdTimer);
-        this._sdTimer = setInterval(() => this._sdPoll(), POLL_INTERVAL);
-    },
-
-    async _sdPoll() {
-        try {
-            const resp = await fetch('/api/vllm/metrics');
-            if (!resp.ok) {
-                this._sdEmptyPollCount = (this._sdEmptyPollCount || 0) + 1;
+        this._sdUnsub = metricsPoller.subscribe(({ legacy }) => {
+            if (!legacy) {
+                this._sdEmptyPollCount++;
                 this._sdHandleNoData();
                 return;
             }
-            const m = await resp.json();
-            if (m.spec_decode_accepted != null || m.spec_decode_draft != null) {
+            if (legacy.spec_decode_accepted != null || legacy.spec_decode_draft != null) {
                 this._sdEmptyPollCount = 0;
                 this._sdHasData = true;
                 this._sdShowNoData(false);
-                this._sdUpdate(m);
+                this._sdUpdate(legacy);
             } else {
-                this._sdEmptyPollCount = (this._sdEmptyPollCount || 0) + 1;
+                this._sdEmptyPollCount++;
                 this._sdHandleNoData();
             }
-        } catch {
-            this._sdEmptyPollCount = (this._sdEmptyPollCount || 0) + 1;
-            this._sdHandleNoData();
-        }
+        });
+        if (!metricsPoller._timer) metricsPoller.start();
     },
 
     _sdHandleNoData() {
@@ -146,7 +134,6 @@ const SpecDecodeMethods = {
         const draft = Math.round(m.spec_decode_draft || 0);
         const emitted = Math.round(m.spec_decode_emitted || 0);
 
-        // Acceptance rate
         const rate = draft > 0 ? (accepted / draft) * 100 : 0;
         const rateEl = document.getElementById('spec-acceptance-rate');
         const fillEl = document.getElementById('spec-acceptance-fill');
@@ -158,7 +145,6 @@ const SpecDecodeMethods = {
             else fillEl.style.background = 'var(--danger-color)';
         }
 
-        // Speedup heuristic
         let speedup = 1.0;
         if (draft > 0 && emitted > 0) {
             const verificationSteps = draft - accepted + emitted;
@@ -168,13 +154,11 @@ const SpecDecodeMethods = {
         const speedupEl = document.getElementById('spec-speedup-value');
         if (speedupEl) speedupEl.textContent = speedup.toFixed(2) + 'x';
 
-        // Raw counters
         const draftEl = document.getElementById('spec-draft-tokens');
         const acceptedEl = document.getElementById('spec-accepted-tokens');
         if (draftEl) draftEl.textContent = draft.toLocaleString();
         if (acceptedEl) acceptedEl.textContent = accepted.toLocaleString();
 
-        // Model info
         const infoEl = document.getElementById('spec-decode-model-info');
         if (infoEl && emitted > 0) {
             infoEl.textContent = `Total emitted: ${emitted.toLocaleString()} tokens`;
@@ -182,9 +166,9 @@ const SpecDecodeMethods = {
     },
 
     destroySpecDecode() {
-        if (this._sdTimer) {
-            clearInterval(this._sdTimer);
-            this._sdTimer = null;
+        if (this._sdUnsub) {
+            this._sdUnsub();
+            this._sdUnsub = null;
         }
     },
 };

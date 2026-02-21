@@ -7,7 +7,8 @@
  * Usage: Import and call initPagedAttentionModule(uiInstance).
  */
 
-const POLL_INTERVAL_MS = 3000;
+import { metricsPoller } from './metrics-poller.js';
+
 const HEATMAP_MAX_POINTS = 40;
 const EVICTION_WARN_THRESHOLD = 0.90;
 const EVICTION_CRITICAL_THRESHOLD = 0.95;
@@ -22,10 +23,10 @@ const PagedAttentionMethods = {
     initPagedAttention() {
         this._paHeatmapData = [];
         this._paPrevPreemptions = null;
-        this._paPollTimer = null;
-        this._paEvictionState = 'none'; // 'none' | 'warning' | 'critical'
+        this._paEvictionState = 'none';
         this._paEmptyPollCount = 0;
         this._paHasData = false;
+        this._paUnsub = null;
 
         const toggle = document.getElementById('context-obs-toggle');
         if (toggle) {
@@ -36,7 +37,17 @@ const PagedAttentionMethods = {
         }
 
         this._paInitCanvas();
-        this._paStartPolling();
+
+        this._paUnsub = metricsPoller.subscribe(({ legacy }) => {
+            if (!legacy || Object.keys(legacy).length === 0) {
+                this._paEmptyPollCount++;
+                this._paHandleNoData();
+            } else {
+                this._paEmptyPollCount = 0;
+                this._paUpdateFromMetrics(legacy);
+            }
+        });
+        if (!metricsPoller._timer) metricsPoller.start();
     },
 
     _paInitCanvas() {
@@ -62,32 +73,6 @@ const PagedAttentionMethods = {
             this._paCanvasHeight = h;
             this._paDrawHeatmap();
         });
-    },
-
-    _paStartPolling() {
-        this._paPoll();
-        this._paPollTimer = setInterval(() => this._paPoll(), POLL_INTERVAL_MS);
-    },
-
-    async _paPoll() {
-        try {
-            const resp = await fetch('/api/vllm/metrics');
-            if (!resp.ok) {
-                this._paEmptyPollCount++;
-                this._paHandleNoData();
-                return;
-            }
-            const data = await resp.json();
-            if (data.error || Object.keys(data).length === 0) {
-                this._paEmptyPollCount++;
-                this._paHandleNoData();
-                return;
-            }
-            this._paUpdateFromMetrics(data);
-        } catch {
-            this._paEmptyPollCount++;
-            this._paHandleNoData();
-        }
     },
 
     _paHandleNoData() {
@@ -185,10 +170,10 @@ const PagedAttentionMethods = {
     },
 
     _paColorForPct(pct) {
-        if (pct < 50) return '#10b981';      // green
-        if (pct < 80) return '#f59e0b';      // yellow/amber
-        if (pct < 90) return '#f97316';      // orange
-        return '#ef4444';                     // red
+        if (pct < 50) return '#10b981';
+        if (pct < 80) return '#f59e0b';
+        if (pct < 90) return '#f97316';
+        return '#ef4444';
     },
 
     _paUpdateUtilizationBar(kvPct) {
@@ -274,7 +259,6 @@ const PagedAttentionMethods = {
         let newState = 'none';
         let preemptionDelta = 0;
 
-        // Detect preemption increases
         if (numPreemptions !== null && this._paPrevPreemptions !== null) {
             preemptionDelta = numPreemptions - this._paPrevPreemptions;
         }
@@ -282,7 +266,6 @@ const PagedAttentionMethods = {
             this._paPrevPreemptions = numPreemptions;
         }
 
-        // Active eviction: preemptions increasing
         if (preemptionDelta > 0) {
             newState = 'critical';
         } else if (kvPct !== null && kvPct >= EVICTION_CRITICAL_THRESHOLD * 100) {
@@ -310,7 +293,6 @@ const PagedAttentionMethods = {
                     ` Preemptions: ${totalStr} (+${preemptionDelta})`;
             }
 
-            // Fire toast notification only on state transition
             if (this._paEvictionState !== 'critical' && this.showNotification) {
                 this.showNotification(
                     window.i18n?.t('contextObs.eviction.toast') ||
@@ -335,9 +317,9 @@ const PagedAttentionMethods = {
     },
 
     destroyPagedAttention() {
-        if (this._paPollTimer) {
-            clearInterval(this._paPollTimer);
-            this._paPollTimer = null;
+        if (this._paUnsub) {
+            this._paUnsub();
+            this._paUnsub = null;
         }
     },
 };

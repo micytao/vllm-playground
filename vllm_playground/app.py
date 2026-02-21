@@ -326,12 +326,25 @@ class MetricStore:
 
     # -- Ingest helpers (log-parsed, simulated) ------------------------------
 
+    _PERCENT_LEGACY_KEYS = frozenset(
+        {
+            "kv_cache_usage_perc",
+            "gpu_cache_usage_perc",
+            "cpu_cache_usage_perc",
+            "prefix_cache_hit_rate",
+        }
+    )
+
     def ingest_log_parsed(self, key: str, value: float):
         """Ingest a metric from vLLM stdout log parsing.
 
         These use the legacy flat key names (e.g. ``kv_cache_usage_perc``).
         We store them under both the legacy key and the canonical ``vllm:``
         key so that both ``to_legacy_dict()`` and ``latest`` are consistent.
+
+        Log-parsed and simulated values arrive as 0-100 percentages, but
+        Prometheus (and the canonical store) uses 0-1 fractions, so we
+        divide percentage keys by 100 before storing.
         """
         reverse_map = {
             "kv_cache_usage_perc": "vllm:kv_cache_usage_perc",
@@ -349,7 +362,8 @@ class MetricStore:
 
         prom_key = reverse_map.get(key)
         if prom_key:
-            self.latest[prom_key] = {"value": value, "type": "gauge", "labels": ""}
+            stored = value / 100.0 if key in self._PERCENT_LEGACY_KEYS else value
+            self.latest[prom_key] = {"value": stored, "type": "gauge", "labels": ""}
 
     def ingest_simulated(self, payload: Dict[str, Any]):
         """Inject simulated metrics (from the simulate endpoint).
@@ -3164,118 +3178,37 @@ async def broadcast_log(message: str):
     if not message:
         return
 
-    # Parse metrics from log messages with more flexible patterns
+    # Minimal fallback: parse a few key metrics from vLLM log lines.
+    # The MetricStore background scraper handles comprehensive metrics via
+    # Prometheus; these patterns are only needed for remote/managed endpoints
+    # where Prometheus may be inaccessible.
     import re
 
-    metrics_updated = False  # Track if we updated any metrics in this log line
+    metrics_updated = False
 
-    # Try various patterns for KV cache usage
-    # Examples: "GPU KV cache usage: 0.3%", "KV cache usage: 0.3%", "cache usage: 0.3%"
     if "cache usage" in message.lower() and "%" in message:
-        # More flexible pattern - match any number before %
         match = re.search(r"cache usage[:\s]+([\d.]+)\s*%", message, re.IGNORECASE)
         if match:
-            cache_usage = float(match.group(1))
-            latest_vllm_metrics["kv_cache_usage_perc"] = cache_usage
+            latest_vllm_metrics["kv_cache_usage_perc"] = float(match.group(1))
             metrics_updated = True
-            logger.info(f"✓ Captured KV cache usage: {cache_usage}% from: {message[:100]}")
-        else:
-            logger.debug(f"Failed to parse cache usage from: {message[:100]}")
 
-    # Try various patterns for prefix cache hit rate
-    # Examples: "Prefix cache hit rate: 36.1%", "hit rate: 36.1%", "cache hit rate: 36.1%"
     if "hit rate" in message.lower() and "%" in message:
-        # More flexible pattern
         match = re.search(r"hit rate[:\s]+([\d.]+)\s*%", message, re.IGNORECASE)
         if match:
-            hit_rate = float(match.group(1))
-            latest_vllm_metrics["prefix_cache_hit_rate"] = hit_rate
-            metrics_updated = True
-            logger.info(f"✓ Captured prefix cache hit rate: {hit_rate}% from: {message[:100]}")
-        else:
-            logger.debug(f"Failed to parse hit rate from: {message[:100]}")
-
-    # Try to parse avg prompt throughput
-    if "prompt throughput" in message.lower():
-        match = re.search(r"prompt throughput[:\s]+([\d.]+)", message, re.IGNORECASE)
-        if match:
-            prompt_throughput = float(match.group(1))
-            latest_vllm_metrics["avg_prompt_throughput"] = prompt_throughput
-            metrics_updated = True
-            logger.info(f"✓ Captured prompt throughput: {prompt_throughput}")
-
-    # Try to parse avg generation throughput
-    if "generation throughput" in message.lower():
-        match = re.search(r"generation throughput[:\s]+([\d.]+)", message, re.IGNORECASE)
-        if match:
-            generation_throughput = float(match.group(1))
-            latest_vllm_metrics["avg_generation_throughput"] = generation_throughput
-            metrics_updated = True
-            logger.info(f"✓ Captured generation throughput: {generation_throughput}")
-
-    # Parse Running / Waiting request counts from standard vLLM log
-    # Example: "Running: 1 reqs, Waiting: 0 reqs"
-    if "running:" in message.lower() and "reqs" in message.lower():
-        match = re.search(r"Running:\s+(\d+)\s+reqs", message)
-        if match:
-            latest_vllm_metrics["num_requests_running"] = float(match.group(1))
-            metrics_updated = True
-        match = re.search(r"Waiting:\s+(\d+)\s+reqs", message)
-        if match:
-            latest_vllm_metrics["num_requests_waiting"] = float(match.group(1))
+            latest_vllm_metrics["prefix_cache_hit_rate"] = float(match.group(1))
             metrics_updated = True
 
-    # Parse SpecDecoding metrics from vLLM log
-    # Example: "SpecDecoding metrics: Mean acceptance length: 3.20, ...
-    #   Accepted: 22 tokens, Drafted: 50 tokens, ...
-    #   Avg Draft acceptance rate: 44.0%"
     if "specdecoding metrics" in message.lower():
-        m = re.search(r"Accepted:\s+(\d+)\s+tokens", message)
-        if m:
-            latest_vllm_metrics["spec_decode_accepted"] = float(m.group(1))
-            metrics_updated = True
-        m = re.search(r"Drafted:\s+(\d+)\s+tokens", message)
-        if m:
-            latest_vllm_metrics["spec_decode_draft"] = float(m.group(1))
-            metrics_updated = True
         m = re.search(r"Draft acceptance rate:\s+([\d.]+)%", message)
         if m:
             latest_vllm_metrics["spec_decode_acceptance_rate"] = float(m.group(1))
             metrics_updated = True
-        logger.info(f"✓ Captured spec decode metrics from log")
 
-    # Update timestamp if we captured any metrics
     if metrics_updated:
         metrics_timestamp = datetime.now()
         latest_vllm_metrics["timestamp"] = metrics_timestamp.isoformat()
-        logger.info(f"📊 Metrics updated at: {metrics_timestamp.strftime('%H:%M:%S')}")
 
-        # Append snapshot to legacy metrics history
-        metrics_history.append(
-            {
-                "timestamp": metrics_timestamp.isoformat(),
-                "kv_cache_usage_perc": latest_vllm_metrics.get("kv_cache_usage_perc"),
-                "prefix_cache_hit_rate": latest_vllm_metrics.get("prefix_cache_hit_rate"),
-                "num_preemptions": latest_vllm_metrics.get("num_preemptions"),
-                "num_requests_running": latest_vllm_metrics.get("num_requests_running"),
-                "num_requests_waiting": latest_vllm_metrics.get("num_requests_waiting"),
-                "prefix_cache_hits": latest_vllm_metrics.get("prefix_cache_hits"),
-                "prefix_cache_queries": latest_vllm_metrics.get("prefix_cache_queries"),
-            }
-        )
-
-        # Also push log-parsed metrics into MetricStore for unified access
-        for key in (
-            "kv_cache_usage_perc",
-            "prefix_cache_hit_rate",
-            "avg_prompt_throughput",
-            "avg_generation_throughput",
-            "num_requests_running",
-            "num_requests_waiting",
-            "spec_decode_accepted",
-            "spec_decode_draft",
-            "spec_decode_acceptance_rate",
-        ):
+        for key in ("kv_cache_usage_perc", "prefix_cache_hit_rate", "spec_decode_acceptance_rate"):
             val = latest_vllm_metrics.get(key)
             if val is not None:
                 metric_store.ingest_log_parsed(key, val)
@@ -4827,30 +4760,6 @@ async def check_vllm_health():
 
 
 # ---------------------------------------------------------------------------
-# Legacy whitelist maps -- kept for reference; MetricStore.to_legacy_dict()
-# now handles the Prometheus-to-legacy-key mapping directly.
-# ---------------------------------------------------------------------------
-
-_PROMETHEUS_GAUGE_MAP = {
-    "vllm:gpu_cache_usage_perc": "gpu_cache_usage_perc",
-    "vllm:cpu_cache_usage_perc": "cpu_cache_usage_perc",
-    "vllm:kv_cache_usage_perc": "kv_cache_usage_perc",
-    "vllm:num_requests_running": "num_requests_running",
-    "vllm:num_requests_waiting": "num_requests_waiting",
-    "vllm:avg_prompt_throughput_toks_per_s": "avg_prompt_throughput",
-    "vllm:avg_generation_throughput_toks_per_s": "avg_generation_throughput",
-}
-
-_PROMETHEUS_COUNTER_MAP = {
-    "vllm:num_preemptions": "num_preemptions",
-    "vllm:prefix_cache_hits": "prefix_cache_hits",
-    "vllm:prefix_cache_queries": "prefix_cache_queries",
-    "vllm:spec_decode_num_accepted_tokens": "spec_decode_accepted",
-    "vllm:spec_decode_num_draft_tokens": "spec_decode_draft",
-    "vllm:spec_decode_num_emitted_tokens": "spec_decode_emitted",
-}
-
-
 # ---------------------------------------------------------------------------
 # Metrics endpoints (new + legacy)
 # ---------------------------------------------------------------------------

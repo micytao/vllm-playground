@@ -13,6 +13,7 @@
             <span class="obs-simulated-badge" id="obs-simulated-badge">SIMULATED</span>
             <button class="obs-btn" id="obs-demo-btn" title="Run demo simulation">Demo</button>
             <button class="obs-btn" id="obs-clear-btn" title="Clear simulated data">Clear</button>
+            <button class="obs-btn" id="obs-alerts-settings-btn" title="Alert settings">Alerts</button>
             <button class="obs-btn" id="obs-export-btn" title="Export all metrics">Export</button>
         </div>
     </div>
@@ -28,6 +29,10 @@
     <!-- Overview Tab -->
     <div class="obs-tab-content active" id="obs-tab-overview">
         <div class="obs-alerts" id="obs-alerts"></div>
+        <div class="obs-alert-history" id="obs-alert-history" style="display:none;">
+            <h4 class="obs-category-title">Alert History</h4>
+            <div id="obs-alert-history-list"></div>
+        </div>
         <div id="obs-overview-cards">
             <div class="obs-no-data" id="obs-overview-no-data">
                 <h3>No metrics available</h3>
@@ -59,18 +64,34 @@
         </div>
     </div>
 
-    <!-- Time Series Tab (Phase 4) -->
+    <!-- Time Series Tab -->
     <div class="obs-tab-content" id="obs-tab-time-series">
-        <div class="obs-chart-placeholder" id="obs-timeseries-placeholder">
-            Time Series charts will be available in a future update (requires uPlot).
+        <div class="obs-ts-controls">
+            <div class="obs-ts-range-btns">
+                <button class="obs-btn obs-ts-range active" data-minutes="5">5m</button>
+                <button class="obs-btn obs-ts-range" data-minutes="15">15m</button>
+                <button class="obs-btn obs-ts-range" data-minutes="30">30m</button>
+            </div>
+            <div class="obs-ts-picker" id="obs-ts-picker"></div>
+            <button class="obs-btn" id="obs-export-ts-btn">Export</button>
+        </div>
+        <div class="obs-ts-chart-wrap" id="obs-ts-chart-wrap"></div>
+        <div class="obs-no-data" id="obs-ts-no-data" style="display:none;">
+            <h3>No time-series data</h3>
+            <p>History will appear after the vLLM server has been running for a few seconds.</p>
         </div>
     </div>
 
-    <!-- Latency Tab (Phase 4) -->
+    <!-- Latency Tab -->
     <div class="obs-tab-content" id="obs-tab-latency">
-        <div class="obs-latency-cards" id="obs-latency-cards"></div>
-        <div class="obs-chart-placeholder" id="obs-latency-placeholder">
-            Latency histogram charts will be available in a future update.
+        <div class="obs-latency-summary" id="obs-latency-summary"></div>
+        <div class="obs-latency-histograms" id="obs-latency-histograms"></div>
+        <div class="obs-no-data" id="obs-latency-no-data" style="display:none;">
+            <h3>No latency data</h3>
+            <p>Latency histograms require request traffic on the vLLM server.</p>
+        </div>
+        <div style="text-align:right; margin-top:8px;">
+            <button class="obs-btn" id="obs-export-latency-btn">Export Latency</button>
         </div>
     </div>
 </div>

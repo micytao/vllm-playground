@@ -3,11 +3,10 @@ import { initMCPModule } from './modules/mcp.js';
 import { initGuideLLMModule } from './modules/guidellm.js';
 import { initClaudeCodeModule } from './modules/claudecode.js';
 import { initOmniModule } from './modules/omni.js';
-import { initPagedAttentionModule } from './modules/paged-attention.js';
 import { initTokenCounterModule } from './modules/token-counter.js';
 import { initLogprobsModule } from './modules/logprobs.js';
-import { initSpecDecodeModule } from './modules/spec-decode.js';
 import { initObservabilityModule } from './modules/observability.js';
+import { metricsPoller } from './modules/metrics-poller.js';
 
 class VLLMWebUI {
     constructor() {
@@ -1707,32 +1706,17 @@ number ::= [0-9]+`
             this.omniVersion = features.vllm_omni_version || null;
             initOmniModule(this);
 
-            // Initialize PagedAttention Visualizer (Context Observability)
-            initPagedAttentionModule(this);
-
             // Initialize Live Token Counter
             initTokenCounterModule(this);
 
             // Initialize Logprobs Visualizer
             initLogprobsModule(this);
 
-            // Initialize Speculative Decoding Dashboard
-            initSpecDecodeModule(this);
-
             // Initialize Observability Dashboard
             initObservabilityModule(this);
 
-            // Response Metrics collapsible toggle
-            const rmToggle = document.getElementById('response-metrics-toggle');
-            const rmSection = document.getElementById('response-metrics-section');
-            if (rmToggle && rmSection) {
-                rmToggle.addEventListener('click', () => {
-                    rmSection.classList.toggle('collapsed');
-                });
-            }
-
-            // Sidebar panel resize handles
-            this.initSidebarResize();
+            // Sidebar health badge (replaces per-panel resize handles)
+            this.initSidebarHealthBadge();
 
             // Preload vLLM-Omni template immediately (like MCP/Claude Code which are inline)
             this.loadOmniTemplate();
@@ -3573,55 +3557,19 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
             console.log('Full usage data:', usageData);
 
-            // Wait a moment for vLLM to log stats for this request
-            // vLLM logs stats after request completion, so we need to give it time
-            console.log('⏳ Waiting 2 seconds for vLLM to log metrics...');
-            await new Promise(resolve => setTimeout(resolve, 2000));
-
-            // Fetch additional metrics from vLLM's metrics endpoint
+            // Read latest metrics from shared MetricsPoller (no extra HTTP request)
             let metricsAge = null;
-            try {
-                const metricsResponse = await fetch('/api/vllm/metrics');
-                console.log('Metrics response status:', metricsResponse.status);
-
-                if (metricsResponse.ok) {
-                    const vllmMetrics = await metricsResponse.json();
-                    console.log('✓ Fetched vLLM metrics:', vllmMetrics);
-
-                    // Check how fresh the metrics are
-                    if (vllmMetrics.metrics_age_seconds !== undefined) {
-                        metricsAge = vllmMetrics.metrics_age_seconds;
-                        console.log(`  → Metrics age: ${metricsAge}s`);
-
-                        // Metrics should be very fresh (< 5 seconds) to be from this request
-                        if (metricsAge <= 5) {
-                            console.log(`  ✅ Metrics are fresh - likely from this response`);
-                        } else if (metricsAge > 30) {
-                            console.warn(`  ⚠️ Metrics are stale (${metricsAge}s old) - definitely NOT from this response`);
-                        } else {
-                            console.warn(`  ⚠️ Metrics are ${metricsAge}s old - may not be from this response`);
-                        }
-                    }
-
-                    // Update metrics if available
-                    if (vllmMetrics.kv_cache_usage_perc !== undefined) {
-                        console.log('  → Using KV cache usage:', vllmMetrics.kv_cache_usage_perc);
-                        kvCacheUsage = vllmMetrics.kv_cache_usage_perc;
-                    } else {
-                        console.log('  → No kv_cache_usage_perc in response');
-                    }
-
-                    if (vllmMetrics.prefix_cache_hit_rate !== undefined) {
-                        console.log('  → Using prefix cache hit rate:', vllmMetrics.prefix_cache_hit_rate);
-                        prefixCacheHitRate = vllmMetrics.prefix_cache_hit_rate;
-                    } else {
-                        console.log('  → No prefix_cache_hit_rate in response');
-                    }
-                } else {
-                    console.warn('Metrics endpoint returned non-ok status:', metricsResponse.status);
+            const vllmMetrics = metricsPoller.latest?.legacy;
+            if (vllmMetrics) {
+                if (vllmMetrics.metrics_age_seconds !== undefined) {
+                    metricsAge = vllmMetrics.metrics_age_seconds;
                 }
-            } catch (e) {
-                console.warn('Could not fetch vLLM metrics:', e);
+                if (vllmMetrics.kv_cache_usage_perc !== undefined) {
+                    kvCacheUsage = vllmMetrics.kv_cache_usage_perc;
+                }
+                if (vllmMetrics.prefix_cache_hit_rate !== undefined) {
+                    prefixCacheHitRate = vllmMetrics.prefix_cache_hit_rate;
+                }
             }
 
             console.log('Final Metrics:', {
@@ -4236,134 +4184,41 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     }
 
     updateChatMetrics(metrics) {
-        // Update all metric displays
-        const promptTokensEl = document.getElementById('metric-prompt-tokens');
-        const completionTokensEl = document.getElementById('metric-completion-tokens');
-        const totalTokensEl = document.getElementById('metric-total-tokens');
-        const timeTakenEl = document.getElementById('metric-time-taken');
-        const tokensPerSecEl = document.getElementById('metric-tokens-per-sec');
-        const promptThroughputEl = document.getElementById('metric-prompt-throughput');
-        const generationThroughputEl = document.getElementById('metric-generation-throughput');
-        const kvCacheUsageEl = document.getElementById('metric-kv-cache-usage');
-        const prefixCacheHitEl = document.getElementById('metric-prefix-cache-hit');
+        const parts = [];
+        const prompt = metrics.promptTokens;
+        const completion = metrics.completionTokens;
+        const total = metrics.totalTokens || (prompt + completion);
 
-        if (promptTokensEl) {
-            promptTokensEl.textContent = metrics.promptTokens || '-';
-            promptTokensEl.classList.add('updated');
-            setTimeout(() => promptTokensEl.classList.remove('updated'), 500);
-        }
-
-        if (completionTokensEl) {
-            completionTokensEl.textContent = metrics.completionTokens || '-';
-            completionTokensEl.classList.add('updated');
-            setTimeout(() => completionTokensEl.classList.remove('updated'), 500);
-        }
-
-        if (totalTokensEl) {
-            const total = (metrics.totalTokens || (metrics.promptTokens + metrics.completionTokens));
-            totalTokensEl.textContent = total;
-            totalTokensEl.classList.add('updated');
-            setTimeout(() => totalTokensEl.classList.remove('updated'), 500);
-        }
-
-        if (timeTakenEl) {
-            timeTakenEl.textContent = metrics.timeTaken != null ? `${metrics.timeTaken.toFixed(2)}s` : '-';
-            timeTakenEl.classList.add('updated');
-            setTimeout(() => timeTakenEl.classList.remove('updated'), 500);
-        }
-
-        if (tokensPerSecEl) {
-            const tokensPerSec = (metrics.completionTokens && metrics.timeTaken) ? metrics.completionTokens / metrics.timeTaken : 0;
-            tokensPerSecEl.textContent = tokensPerSec.toFixed(2);
-            tokensPerSecEl.classList.add('updated');
-            setTimeout(() => tokensPerSecEl.classList.remove('updated'), 500);
-        }
-
-        // New metrics
-        if (promptThroughputEl) {
-            if (metrics.timeToFirstToken && metrics.timeToFirstToken > 0) {
-                const promptThroughput = metrics.promptTokens / metrics.timeToFirstToken;
-                promptThroughputEl.textContent = `${promptThroughput.toFixed(2)} tok/s`;
-            } else if (metrics.timeTaken && metrics.timeTaken > 0) {
-                const promptThroughput = metrics.promptTokens / metrics.timeTaken;
-                promptThroughputEl.textContent = `${promptThroughput.toFixed(2)} tok/s`;
-            } else {
-                promptThroughputEl.textContent = '-';
+        if (total) parts.push(`<span><span class="metric-highlight">${total}</span> tokens (${prompt} in / ${completion} out)</span>`);
+        if (metrics.timeTaken != null) {
+            parts.push(`<span><span class="metric-highlight">${metrics.timeTaken.toFixed(2)}s</span></span>`);
+            if (completion && metrics.timeTaken > 0) {
+                parts.push(`<span><span class="metric-highlight">${(completion / metrics.timeTaken).toFixed(1)}</span> tok/s</span>`);
             }
-            promptThroughputEl.classList.add('updated');
-            setTimeout(() => promptThroughputEl.classList.remove('updated'), 500);
+        }
+        if (metrics.kvCacheUsage != null) {
+            parts.push(`<span>KV: <span class="metric-highlight">${metrics.kvCacheUsage.toFixed(1)}%</span></span>`);
+        }
+        if (metrics.prefixCacheHitRate != null) {
+            parts.push(`<span>Cache: <span class="metric-highlight">${metrics.prefixCacheHitRate.toFixed(1)}%</span></span>`);
         }
 
-        if (generationThroughputEl) {
-            if (metrics.timeToFirstToken && metrics.timeTaken) {
-                const generationTime = metrics.timeTaken - metrics.timeToFirstToken;
-                if (generationTime > 0) {
-                    const generationThroughput = metrics.completionTokens / generationTime;
-                    generationThroughputEl.textContent = `${generationThroughput.toFixed(2)} tok/s`;
-                } else {
-                    generationThroughputEl.textContent = '-';
-                }
-            } else if (metrics.timeTaken && metrics.timeTaken > 0) {
-                const generationThroughput = metrics.completionTokens / metrics.timeTaken;
-                generationThroughputEl.textContent = `${generationThroughput.toFixed(2)} tok/s`;
-            } else {
-                generationThroughputEl.textContent = '-';
-            }
-            generationThroughputEl.classList.add('updated');
-            setTimeout(() => generationThroughputEl.classList.remove('updated'), 500);
+        if (parts.length === 0) return;
+
+        const chatContainer = this.elements.chatContainer;
+        if (!chatContainer) return;
+        const messages = chatContainer.querySelectorAll('.chat-message.assistant');
+        const lastMsg = messages[messages.length - 1];
+        if (!lastMsg) return;
+
+        let strip = lastMsg.querySelector('.message-metrics-inline');
+        if (!strip) {
+            strip = document.createElement('div');
+            strip.className = 'message-metrics-inline';
+            const contentDiv = lastMsg.querySelector('.message-content');
+            if (contentDiv) contentDiv.appendChild(strip);
         }
-
-        if (kvCacheUsageEl) {
-            // GPU KV cache usage - from vLLM stats if available
-            if (metrics.kvCacheUsage !== undefined && metrics.kvCacheUsage !== null) {
-                // Server already sends percentage values (e.g., 0.2 = 0.2%, not 20%)
-                // No conversion needed
-                const percentage = metrics.kvCacheUsage.toFixed(1);
-
-                // Add staleness indicator if metrics are old
-                if (metrics.metricsAge != null && metrics.metricsAge > 5) {
-                    kvCacheUsageEl.textContent = `${percentage}% ⚠️`;
-                    kvCacheUsageEl.title = `Metrics age: ${metrics.metricsAge.toFixed(1)}s - may not reflect this response`;
-                } else if (metrics.metricsAge != null) {
-                    kvCacheUsageEl.textContent = `${percentage}%`;
-                    kvCacheUsageEl.title = `Fresh metrics (${metrics.metricsAge.toFixed(1)}s old) - from this response`;
-                } else {
-                    kvCacheUsageEl.textContent = `${percentage}%`;
-                    kvCacheUsageEl.title = '';
-                }
-            } else {
-                kvCacheUsageEl.textContent = 'N/A';
-                kvCacheUsageEl.title = 'No data available';
-            }
-            kvCacheUsageEl.classList.add('updated');
-            setTimeout(() => kvCacheUsageEl.classList.remove('updated'), 500);
-        }
-
-        if (prefixCacheHitEl) {
-            // Prefix cache hit rate - from vLLM stats if available
-            if (metrics.prefixCacheHitRate !== undefined && metrics.prefixCacheHitRate !== null) {
-                // Server already sends percentage values (e.g., 36.1 = 36.1%, not 3610%)
-                // No conversion needed
-                const percentage = metrics.prefixCacheHitRate.toFixed(1);
-
-                // Add staleness indicator if metrics are old
-                if (metrics.metricsAge != null && metrics.metricsAge > 5) {
-                    prefixCacheHitEl.textContent = `${percentage}% ⚠️`;
-                    prefixCacheHitEl.title = `Metrics age: ${metrics.metricsAge.toFixed(1)}s - may not reflect this response`;
-                } else if (metrics.metricsAge != null) {
-                    prefixCacheHitEl.textContent = `${percentage}%`;
-                    prefixCacheHitEl.title = `Fresh metrics (${metrics.metricsAge.toFixed(1)}s old) - from this response`;
-                } else {
-                    prefixCacheHitEl.textContent = `${percentage}%`;
-                    prefixCacheHitEl.title = '';
-                }
-            } else {
-                prefixCacheHitEl.textContent = 'N/A';
-                prefixCacheHitEl.title = 'No data available';
-            }
-            prefixCacheHitEl.classList.add('updated');
-            setTimeout(() => prefixCacheHitEl.classList.remove('updated'), 500);
-        }
+        strip.innerHTML = parts.join('');
     }
 
     updateToolParserVisibility() {
@@ -5087,66 +4942,131 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         this.saveLayoutPreferences();
     }
 
-    initSidebarResize() {
-        const handles = document.querySelectorAll('.sidebar-resize-handle');
-        handles.forEach(handle => {
-            handle.addEventListener('mousedown', (e) => this._startSidebarResize(e, handle));
+    initSidebarHealthBadge() {
+        const openObs = document.getElementById('sidebar-open-obs');
+        if (openObs) {
+            openObs.addEventListener('click', () => this.switchView('observability'));
+        }
+
+        this._healthBadgeUnsub = metricsPoller.subscribe(({ legacy }) => {
+            this._updateHealthBadge(legacy);
         });
-        document.addEventListener('mousemove', (e) => this._doSidebarResize(e));
-        document.addEventListener('mouseup', () => this._stopSidebarResize());
+        if (!metricsPoller._timer) metricsPoller.start();
     }
 
-    _startSidebarResize(e, handle) {
-        e.preventDefault();
-        e.stopPropagation();
+    _updateHealthBadge(m) {
+        const kvValEl  = document.getElementById('health-kv-value');
+        const kvFillEl = document.getElementById('health-kv-fill');
+        const reqsEl   = document.getElementById('health-reqs');
+        const evictEl  = document.getElementById('health-preemptions');
+        const promptEl = document.getElementById('health-prompt-tps');
+        const genEl    = document.getElementById('health-gen-tps');
+        const cacheEl  = document.getElementById('health-cache-rate');
+        const specSec  = document.getElementById('sidebar-spec-section');
+        const specRate = document.getElementById('health-spec-rate');
+        const specDraft= document.getElementById('health-spec-draft');
+        const alertsSec= document.getElementById('sidebar-alerts-section');
+        const alertsList= document.getElementById('sidebar-alerts-list');
 
-        const aboveId = handle.dataset.above;
-        const belowId = handle.dataset.below;
-        const aboveEl = document.getElementById(aboveId);
-        const belowEl = document.getElementById(belowId);
-        if (!aboveEl || !belowEl) return;
+        if (!m || Object.keys(m).length === 0) {
+            if (kvValEl) { kvValEl.textContent = '--%'; kvValEl.className = 'sidebar-gauge-value'; }
+            if (kvFillEl) { kvFillEl.style.width = '0%'; kvFillEl.style.background = 'var(--border-color)'; }
+            if (reqsEl)  { reqsEl.textContent = 'Reqs: --/--'; reqsEl.className = 'health-item'; }
+            if (evictEl) { evictEl.textContent = 'Evict: --'; evictEl.className = 'health-item'; }
+            if (promptEl) promptEl.textContent = '-- tok/s';
+            if (genEl)    genEl.textContent = '-- tok/s';
+            if (cacheEl)  cacheEl.textContent = '--%';
+            if (specSec)  specSec.style.display = 'none';
+            if (alertsSec) alertsSec.style.display = 'none';
+            return;
+        }
 
-        this._sidebarResize = {
-            active: true,
-            handle,
-            aboveEl,
-            belowEl,
-            startY: e.clientY,
-            aboveStartH: aboveEl.offsetHeight,
-            belowStartH: belowEl.offsetHeight,
-        };
-        handle.classList.add('active');
-        document.body.style.cursor = 'row-resize';
-        document.body.style.userSelect = 'none';
+        const kv = m.kv_cache_usage_perc;
+        if (kvValEl) {
+            if (kv != null) {
+                kvValEl.textContent = `${kv.toFixed(1)}%`;
+                kvValEl.className = 'sidebar-gauge-value ' + (kv >= 90 ? 'status-danger' : kv >= 70 ? 'status-warning' : 'status-ok');
+            } else {
+                kvValEl.textContent = '--%';
+                kvValEl.className = 'sidebar-gauge-value';
+            }
+        }
+        if (kvFillEl) {
+            const pct = kv != null ? Math.min(kv, 100) : 0;
+            kvFillEl.style.width = `${pct}%`;
+            kvFillEl.style.background = kv >= 90 ? 'var(--danger-color, #ef4444)' : kv >= 70 ? 'var(--warning-color, #f59e0b)' : 'var(--success-color, #22c55e)';
+        }
+
+        if (reqsEl) {
+            const running = m.num_requests_running ?? '--';
+            const waiting = m.num_requests_waiting ?? '--';
+            reqsEl.textContent = `Reqs: ${running}/${waiting}`;
+            const w = m.num_requests_waiting ?? 0;
+            reqsEl.className = 'health-item ' + (w >= 50 ? 'status-danger' : w >= 10 ? 'status-warning' : 'status-ok');
+        }
+
+        if (evictEl) {
+            const preemptions = m.num_preemptions;
+            if (preemptions != null) {
+                evictEl.textContent = `Evict: ${preemptions}`;
+                evictEl.className = 'health-item ' + (preemptions > 0 ? 'status-warning' : 'status-ok');
+            } else {
+                evictEl.textContent = 'Evict: --';
+                evictEl.className = 'health-item';
+            }
+        }
+
+        if (promptEl) {
+            const v = m.avg_prompt_throughput;
+            promptEl.textContent = v != null ? `${v.toFixed(1)} tok/s` : '-- tok/s';
+        }
+        if (genEl) {
+            const v = m.avg_generation_throughput;
+            genEl.textContent = v != null ? `${v.toFixed(1)} tok/s` : '-- tok/s';
+        }
+
+        if (cacheEl) {
+            const v = m.prefix_cache_hit_rate;
+            cacheEl.textContent = v != null ? `${v.toFixed(1)}%` : '--%';
+        }
+
+        const accepted = m.spec_decode_accepted;
+        const draft    = m.spec_decode_draft;
+        const hasSpec  = accepted != null && draft != null && draft > 0;
+        if (specSec) specSec.style.display = hasSpec ? '' : 'none';
+        if (hasSpec) {
+            const rate = ((accepted / draft) * 100).toFixed(0);
+            if (specRate) specRate.textContent = `${rate}%`;
+            if (specDraft) specDraft.textContent = `${draft}`;
+        }
+
+        this._updateSidebarAlerts(m, alertsSec, alertsList);
     }
 
-    _doSidebarResize(e) {
-        const s = this._sidebarResize;
-        if (!s || !s.active) return;
-        e.preventDefault();
+    _updateSidebarAlerts(m, section, list) {
+        if (!section || !list) return;
 
-        const delta = e.clientY - s.startY;
-        const newAbove = s.aboveStartH + delta;
-        const newBelow = s.belowStartH - delta;
+        const alerts = [];
+        const kv = m.kv_cache_usage_perc;
+        if (kv != null && kv >= 90)      alerts.push({ level: 'danger',  text: `KV Cache critical: ${kv.toFixed(1)}%` });
+        else if (kv != null && kv >= 70)  alerts.push({ level: 'warning', text: `KV Cache high: ${kv.toFixed(1)}%` });
 
-        const minH = 40;
-        if (newAbove < minH || newBelow < minH) return;
+        const wait = m.num_requests_waiting;
+        if (wait != null && wait >= 50)   alerts.push({ level: 'danger',  text: `${wait} requests queued` });
+        else if (wait != null && wait >= 10) alerts.push({ level: 'warning', text: `${wait} requests waiting` });
 
-        s.aboveEl.style.flex = 'none';
-        s.belowEl.style.flex = 'none';
-        s.aboveEl.style.height = `${newAbove}px`;
-        s.belowEl.style.height = `${newBelow}px`;
-    }
+        const pre = m.num_preemptions;
+        if (pre != null && pre > 0)       alerts.push({ level: 'warning', text: `${pre} preemption(s)` });
 
-    _stopSidebarResize() {
-        const s = this._sidebarResize;
-        if (!s || !s.active) return;
+        if (alerts.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
 
-        s.active = false;
-        s.handle.classList.remove('active');
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        this._sidebarResize = null;
+        section.style.display = '';
+        list.innerHTML = alerts.map(a =>
+            `<div class="sidebar-alert-item"><span class="sidebar-alert-dot ${a.level}"></span><span class="sidebar-alert-text">${a.text}</span></div>`
+        ).join('');
     }
 
     saveLayoutPreferences() {

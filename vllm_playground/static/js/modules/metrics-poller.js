@@ -1,14 +1,17 @@
 /**
  * MetricsPoller -- single shared polling loop for all metric consumers.
  *
- * Replaces three independent setInterval calls in paged-attention.js,
- * spec-decode.js, and app.js with one fetch + broadcast.
+ * Makes one HTTP request per poll cycle (/api/vllm/metrics/all) and
+ * derives the legacy flat dict client-side using the key map from
+ * metrics-registry.js.
  *
  * Usage:
  *   import { metricsPoller } from './metrics-poller.js';
  *   metricsPoller.subscribe(data => { ... });
  *   metricsPoller.start();
  */
+
+import { toLegacyDict } from './metrics-registry.js';
 
 class MetricsPoller {
     constructor(interval = 3000) {
@@ -23,7 +26,7 @@ class MetricsPoller {
      * Subscribe to metric updates.
      * @param {function} callback - called with { all, legacy } on each poll
      *   all:    structured dict from /api/vllm/metrics/all
-     *   legacy: flat dict from /api/vllm/metrics (backward compat)
+     *   legacy: flat dict derived client-side (backward compat)
      * @returns {function} unsubscribe function
      */
     subscribe(callback) {
@@ -64,9 +67,7 @@ class MetricsPoller {
             }
             const data = await resp.json();
             this._latestAll = data;
-
-            const legacyResp = await fetch('/api/vllm/metrics');
-            this._latestLegacy = legacyResp.ok ? await legacyResp.json() : null;
+            this._latestLegacy = data?.metrics ? toLegacyDict(data.metrics) : null;
 
             this._notify(data, this._latestLegacy);
         } catch {

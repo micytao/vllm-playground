@@ -23,6 +23,13 @@ const ObservabilityModule = {
     _sortColumn: 'name',
     _sortAsc: true,
     _searchFilter: '',
+    _uplotChart: null,
+    _tsMinutes: 5,
+    _tsSelectedMetrics: new Set(),
+    _tsHistory: [],
+    _alertedMetrics: new Set(),
+    _alertHistory: [],
+    _customThresholds: null,
 
     // -- Template loading (same pattern as OmniModule) ---------------------
 
@@ -45,6 +52,7 @@ const ObservabilityModule = {
             container.innerHTML = html;
             this.templateLoaded = true;
 
+            this._loadAlertThresholds();
             this._bindEvents();
             console.log('Observability template loaded');
         } catch (error) {
@@ -123,6 +131,27 @@ const ObservabilityModule = {
 
         const exportTableBtn = document.getElementById('obs-export-table-btn');
         if (exportTableBtn) exportTableBtn.addEventListener('click', () => this._exportCSV());
+
+        // Time Series controls
+        document.querySelectorAll('.obs-ts-range').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.obs-ts-range').forEach((b) => b.classList.remove('active'));
+                btn.classList.add('active');
+                this._tsMinutes = parseInt(btn.dataset.minutes, 10);
+                this._loadTimeSeries();
+            });
+        });
+
+        const exportTsBtn = document.getElementById('obs-export-ts-btn');
+        if (exportTsBtn) exportTsBtn.addEventListener('click', () => this._exportTimeSeries());
+
+        // Latency export
+        const exportLatBtn = document.getElementById('obs-export-latency-btn');
+        if (exportLatBtn) exportLatBtn.addEventListener('click', () => this._exportLatency());
+
+        // Alert settings
+        const alertSettingsBtn = document.getElementById('obs-alerts-settings-btn');
+        if (alertSettingsBtn) alertSettingsBtn.addEventListener('click', () => this._showAlertSettings());
     },
 
     _switchTab(tabId) {
@@ -135,6 +164,14 @@ const ObservabilityModule = {
         });
         const target = document.getElementById(`obs-tab-${tabId}`);
         if (target) target.classList.add('active');
+
+        if (tabId === 'time-series') {
+            this._initTsPicker();
+            this._loadTimeSeries();
+        }
+        if (tabId === 'latency' && this._latestMetrics) {
+            this._renderLatency(this._latestMetrics);
+        }
     },
 
     _onMetrics({ all }) {
@@ -158,6 +195,13 @@ const ObservabilityModule = {
         this._renderOverview(metrics);
         this._renderAllMetricsTable();
         this._renderAlerts(metrics);
+
+        if (this._currentTab === 'time-series' && this._uplotChart) {
+            this._appendLivePoint(metrics);
+        }
+        if (this._currentTab === 'latency') {
+            this._renderLatency(metrics);
+        }
     },
 
     _showNoData(show) {
@@ -187,7 +231,8 @@ const ObservabilityModule = {
                 const value = entry.value ?? entry.p50 ?? null;
                 const format = reg.format || this._guessFormat(entry);
                 const formatted = formatMetricValue(value, format, reg.unit);
-                const status = getThresholdStatus(value, reg.thresholds);
+                const thresholds = this._getThresholds(key);
+                const status = getThresholdStatus(value, thresholds);
                 const label = reg.label || key.replace('vllm:', '').replace(/_/g, ' ');
                 const typeStr = entry.type || 'unknown';
 
@@ -211,6 +256,27 @@ const ObservabilityModule = {
 
     // -- Alerts -------------------------------------------------------------
 
+    _getThresholds(key) {
+        if (this._customThresholds && this._customThresholds[key]) {
+            return this._customThresholds[key];
+        }
+        const reg = METRIC_REGISTRY[key];
+        return reg ? reg.thresholds : null;
+    },
+
+    _loadAlertThresholds() {
+        try {
+            const stored = localStorage.getItem('obs-alert-thresholds');
+            if (stored) this._customThresholds = JSON.parse(stored);
+        } catch { /* ignore */ }
+    },
+
+    _saveAlertThresholds() {
+        try {
+            localStorage.setItem('obs-alert-thresholds', JSON.stringify(this._customThresholds));
+        } catch { /* ignore */ }
+    },
+
     _renderAlerts(metrics) {
         const container = document.getElementById('obs-alerts');
         if (!container) return;
@@ -218,21 +284,144 @@ const ObservabilityModule = {
         let html = '';
         for (const [key, entry] of Object.entries(metrics)) {
             const reg = METRIC_REGISTRY[key];
-            if (!reg || !reg.thresholds) continue;
+            if (!reg) continue;
+            const thresholds = this._getThresholds(key);
+            if (!thresholds) continue;
             const value = entry.value ?? null;
             if (value == null) continue;
-            const status = getThresholdStatus(value, reg.thresholds);
-            if (status === 'ok') continue;
+            const status = getThresholdStatus(value, thresholds);
+            if (status === 'ok') {
+                this._alertedMetrics.delete(key);
+                continue;
+            }
 
             const label = reg.label || key;
             const formatted = formatMetricValue(value, reg.format, reg.unit);
             const level = status === 'danger' ? 'danger' : 'warning';
+            const threshVal = status === 'danger' ? thresholds.danger : thresholds.warning;
+            const threshDisplay = reg.format === 'percent' ? `${(threshVal * 100).toFixed(0)}%` : threshVal;
             html += `<div class="obs-alert ${level}">
                 <strong>${this._escapeHtml(label)}</strong>: ${formatted}
-                (threshold: ${status === 'danger' ? reg.thresholds.danger : reg.thresholds.warning})
+                (threshold: ${threshDisplay})
             </div>`;
+
+            if (!this._alertedMetrics.has(key)) {
+                this._alertedMetrics.add(key);
+                if (this.ui && this.ui.showNotification) {
+                    this.ui.showNotification(
+                        `${label}: ${formatted} (${level})`,
+                        level === 'danger' ? 'error' : 'warning',
+                        5000
+                    );
+                }
+                this._alertHistory.unshift({
+                    time: new Date(),
+                    label,
+                    formatted,
+                    level,
+                });
+                if (this._alertHistory.length > 20) this._alertHistory.pop();
+            }
         }
         container.innerHTML = html;
+        this._renderAlertHistory();
+    },
+
+    _renderAlertHistory() {
+        const container = document.getElementById('obs-alert-history');
+        const list = document.getElementById('obs-alert-history-list');
+        if (!container || !list) return;
+
+        if (this._alertHistory.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+        container.style.display = '';
+        let html = '';
+        for (const a of this._alertHistory) {
+            const t = a.time;
+            const ts = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}`;
+            html += `<div class="obs-alert-history-item ${a.level}">
+                <span class="alert-time">${ts}</span>
+                <strong>${this._escapeHtml(a.label)}</strong>: ${a.formatted}
+            </div>`;
+        }
+        list.innerHTML = html;
+    },
+
+    _showAlertSettings() {
+        let overlay = document.getElementById('obs-alert-settings-overlay');
+        if (overlay) {
+            overlay.classList.toggle('visible');
+            return;
+        }
+
+        overlay = document.createElement('div');
+        overlay.id = 'obs-alert-settings-overlay';
+        overlay.className = 'obs-alert-settings visible';
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) overlay.classList.remove('visible');
+        });
+
+        const thresholdMetrics = Object.entries(METRIC_REGISTRY).filter(([, r]) => r.thresholds);
+        let rows = '';
+        for (const [key, reg] of thresholdMetrics) {
+            const t = this._getThresholds(key) || reg.thresholds;
+            const isPct = reg.format === 'percent';
+            const warnDisplay = isPct ? (t.warning * 100) : t.warning;
+            const dangerDisplay = isPct ? (t.danger * 100) : t.danger;
+            const suffix = isPct ? '%' : '';
+            rows += `<tr>
+                <td>${this._escapeHtml(reg.label)}${suffix ? ` (${suffix})` : ''}</td>
+                <td><input type="number" data-key="${key}" data-level="warning" data-pct="${isPct}" value="${warnDisplay}" /></td>
+                <td><input type="number" data-key="${key}" data-level="danger" data-pct="${isPct}" value="${dangerDisplay}" /></td>
+            </tr>`;
+        }
+
+        overlay.innerHTML = `<div class="obs-alert-settings-panel">
+            <h3>Alert Thresholds</h3>
+            <table>
+                <thead><tr><th>Metric</th><th>Warning</th><th>Danger</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            <div style="margin-top:16px; display:flex; gap:8px; justify-content:flex-end;">
+                <button class="obs-btn" id="obs-alert-reset-btn">Reset Defaults</button>
+                <button class="obs-btn obs-btn-primary" id="obs-alert-save-btn">Save</button>
+            </div>
+        </div>`;
+
+        document.body.appendChild(overlay);
+
+        document.getElementById('obs-alert-save-btn').addEventListener('click', () => {
+            if (!this._customThresholds) this._customThresholds = {};
+            overlay.querySelectorAll('input[type="number"]').forEach((inp) => {
+                const key = inp.dataset.key;
+                const level = inp.dataset.level;
+                const isPct = inp.dataset.pct === 'true';
+                if (!this._customThresholds[key]) {
+                    const reg = METRIC_REGISTRY[key];
+                    this._customThresholds[key] = { ...reg.thresholds };
+                }
+                let val = parseFloat(inp.value);
+                if (isPct) val = val / 100;
+                this._customThresholds[key][level] = val;
+            });
+            this._saveAlertThresholds();
+            overlay.classList.remove('visible');
+        });
+
+        document.getElementById('obs-alert-reset-btn').addEventListener('click', () => {
+            this._customThresholds = null;
+            localStorage.removeItem('obs-alert-thresholds');
+            overlay.querySelectorAll('input[type="number"]').forEach((inp) => {
+                const reg = METRIC_REGISTRY[inp.dataset.key];
+                if (reg && reg.thresholds) {
+                    const isPct = inp.dataset.pct === 'true';
+                    const raw = reg.thresholds[inp.dataset.level];
+                    inp.value = isPct ? raw * 100 : raw;
+                }
+            });
+        });
     },
 
     // -- All Metrics table --------------------------------------------------
@@ -301,6 +490,229 @@ const ObservabilityModule = {
         });
     },
 
+    // -- Time Series tab ----------------------------------------------------
+
+    _initTsPicker() {
+        const picker = document.getElementById('obs-ts-picker');
+        if (!picker || picker.children.length > 0) return;
+
+        const defaultMetrics = [
+            'vllm:kv_cache_usage_perc',
+            'vllm:num_requests_running',
+            'vllm:avg_generation_throughput_toks_per_s',
+        ];
+        this._tsSelectedMetrics = new Set(defaultMetrics);
+
+        const allKeys = Object.keys(METRIC_REGISTRY).filter((k) => {
+            const r = METRIC_REGISTRY[k];
+            return r.format !== 'duration_ms';
+        });
+
+        let html = '';
+        for (const key of allKeys) {
+            const reg = METRIC_REGISTRY[key];
+            const checked = defaultMetrics.includes(key) ? 'checked' : '';
+            html += `<label><input type="checkbox" value="${key}" ${checked} /> ${this._escapeHtml(reg.label)}</label>`;
+        }
+        picker.innerHTML = html;
+
+        picker.addEventListener('change', (e) => {
+            if (e.target.type !== 'checkbox') return;
+            if (e.target.checked) {
+                this._tsSelectedMetrics.add(e.target.value);
+            } else {
+                this._tsSelectedMetrics.delete(e.target.value);
+            }
+            this._buildChart();
+        });
+    },
+
+    async _loadTimeSeries() {
+        const noData = document.getElementById('obs-ts-no-data');
+        try {
+            this._tsHistory = await metricsPoller.getHistory(this._tsMinutes);
+        } catch {
+            this._tsHistory = [];
+        }
+        if (this._tsHistory.length === 0) {
+            if (noData) noData.style.display = '';
+            const wrap = document.getElementById('obs-ts-chart-wrap');
+            if (wrap) wrap.style.display = 'none';
+            return;
+        }
+        if (noData) noData.style.display = 'none';
+        const wrap = document.getElementById('obs-ts-chart-wrap');
+        if (wrap) wrap.style.display = '';
+        this._buildChart();
+    },
+
+    _buildChart() {
+        const wrap = document.getElementById('obs-ts-chart-wrap');
+        if (!wrap) return;
+
+        if (this._uplotChart) {
+            this._uplotChart.destroy();
+            this._uplotChart = null;
+        }
+
+        const selected = [...this._tsSelectedMetrics];
+        if (selected.length === 0 || this._tsHistory.length === 0) return;
+
+        const timestamps = this._tsHistory.map((s) => {
+            const d = new Date(s.timestamp);
+            return d.getTime() / 1000;
+        });
+
+        const series = [{ label: 'Time' }];
+        const data = [timestamps];
+
+        const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#ec4899', '#14b8a6', '#f97316'];
+
+        for (let i = 0; i < selected.length; i++) {
+            const key = selected[i];
+            const reg = METRIC_REGISTRY[key] || {};
+            series.push({
+                label: reg.label || key.replace('vllm:', ''),
+                stroke: colors[i % colors.length],
+                width: 2,
+            });
+            data.push(this._tsHistory.map((s) => {
+                const v = s[key];
+                return v != null ? v : null;
+            }));
+        }
+
+        const width = wrap.clientWidth - 16;
+        const height = Math.max(280, wrap.clientHeight - 16);
+
+        const opts = {
+            width,
+            height,
+            series,
+            axes: [
+                { stroke: '#888', grid: { stroke: 'rgba(255,255,255,0.06)' } },
+                { stroke: '#888', grid: { stroke: 'rgba(255,255,255,0.06)' } },
+            ],
+            cursor: { sync: { key: 'obs' } },
+            scales: { x: { time: true } },
+        };
+
+        wrap.innerHTML = '';
+        try {
+            this._uplotChart = new uPlot(opts, data, wrap);
+        } catch (e) {
+            console.error('uPlot init error:', e);
+            wrap.innerHTML = `<div style="padding:20px;color:var(--text-secondary)">Chart error: ${e.message}</div>`;
+        }
+    },
+
+    _appendLivePoint(metrics) {
+        if (!this._uplotChart || this._tsSelectedMetrics.size === 0) return;
+        const now = Date.now() / 1000;
+        const selected = [...this._tsSelectedMetrics];
+
+        const newData = this._uplotChart.data.map((arr) => [...arr]);
+        newData[0].push(now);
+
+        for (let i = 0; i < selected.length; i++) {
+            const key = selected[i];
+            const entry = metrics[key];
+            const val = entry ? (entry.value ?? entry.p50 ?? null) : null;
+            newData[i + 1].push(val);
+        }
+
+        const cutoff = now - this._tsMinutes * 60;
+        let start = 0;
+        while (start < newData[0].length && newData[0][start] < cutoff) start++;
+        if (start > 0) {
+            for (let i = 0; i < newData.length; i++) {
+                newData[i] = newData[i].slice(start);
+            }
+        }
+
+        this._uplotChart.setData(newData);
+    },
+
+    // -- Latency tab --------------------------------------------------------
+
+    _renderLatency(metrics) {
+        const summaryEl = document.getElementById('obs-latency-summary');
+        const histEl = document.getElementById('obs-latency-histograms');
+        const noData = document.getElementById('obs-latency-no-data');
+        if (!summaryEl || !histEl) return;
+
+        const latencyMetrics = Object.entries(METRIC_REGISTRY)
+            .filter(([, r]) => r.histogramDisplay)
+            .map(([key, reg]) => ({ key, reg, entry: metrics[key] }))
+            .filter(({ entry }) => entry);
+
+        if (latencyMetrics.length === 0) {
+            if (noData) noData.style.display = '';
+            summaryEl.innerHTML = '';
+            histEl.innerHTML = '';
+            return;
+        }
+        if (noData) noData.style.display = 'none';
+
+        let summaryHtml = '';
+        for (const { key, reg, entry } of latencyMetrics) {
+            summaryHtml += `<div class="obs-latency-card">
+                <div class="obs-latency-card-title">${this._escapeHtml(reg.label)}</div>
+                <div class="obs-latency-percentiles">`;
+            for (const p of reg.histogramDisplay) {
+                const val = entry[p];
+                const ms = val != null ? `${(val * 1000).toFixed(1)}ms` : '--';
+                summaryHtml += `<div class="obs-latency-pct">
+                    <span class="obs-latency-pct-label">${p}</span>
+                    <span class="obs-latency-pct-value">${ms}</span>
+                </div>`;
+            }
+            summaryHtml += `</div></div>`;
+        }
+        summaryEl.innerHTML = summaryHtml;
+
+        let histHtml = '';
+        for (const { key, reg, entry } of latencyMetrics) {
+            const bucketKey = key + '_bucket';
+            const bucketEntries = Object.entries(metrics)
+                .filter(([k]) => k.startsWith(bucketKey) || k === bucketKey)
+                .map(([, e]) => e);
+
+            if (bucketEntries.length === 0) continue;
+
+            histHtml += `<div class="obs-histogram-group">
+                <div class="obs-histogram-title">${this._escapeHtml(reg.label)} Distribution</div>`;
+
+            const total = entry.p99 ? 1 : 0;
+            if (bucketEntries.length > 0 && bucketEntries[0].value != null) {
+                const maxCount = Math.max(...bucketEntries.map((e) => e.value || 0), 1);
+                for (const be of bucketEntries) {
+                    const le = be.labels ? this._extractLe(be.labels) : '?';
+                    const count = be.value || 0;
+                    const pct = (count / maxCount) * 100;
+                    histHtml += `<div class="obs-histogram-bar-row">
+                        <span class="obs-histogram-le">${le}</span>
+                        <div class="obs-histogram-bar-bg"><div class="obs-histogram-bar-fill" style="width:${pct}%"></div></div>
+                        <span class="obs-histogram-count">${Math.round(count)}</span>
+                    </div>`;
+                }
+            }
+            histHtml += `</div>`;
+        }
+        histEl.innerHTML = histHtml;
+    },
+
+    _extractLe(labels) {
+        const match = labels.match(/le="([^"]+)"/);
+        if (!match) return '?';
+        const val = match[1];
+        if (val === '+Inf') return 'Inf';
+        const num = parseFloat(val);
+        if (num < 0.001) return `${(num * 1e6).toFixed(0)}us`;
+        if (num < 1) return `${(num * 1000).toFixed(0)}ms`;
+        return `${num.toFixed(1)}s`;
+    },
+
     // -- Demo / Clear -------------------------------------------------------
 
     async _runDemo() {
@@ -344,6 +756,10 @@ const ObservabilityModule = {
             if (cards) {
                 cards.querySelectorAll('.obs-category-group').forEach((g) => g.remove());
             }
+            if (this._uplotChart) {
+                this._uplotChart.destroy();
+                this._uplotChart = null;
+            }
         } catch (err) {
             console.error('Clear failed:', err);
         }
@@ -374,6 +790,36 @@ const ObservabilityModule = {
         }
         const blob = new Blob([csv], { type: 'text/csv' });
         this._download(blob, `vllm-metrics-${this._timestamp()}.csv`);
+    },
+
+    _exportTimeSeries() {
+        if (!this._tsHistory || this._tsHistory.length === 0) return;
+        const blob = new Blob(
+            [JSON.stringify(this._tsHistory, null, 2)],
+            { type: 'application/json' }
+        );
+        this._download(blob, `vllm-timeseries-${this._timestamp()}.json`);
+    },
+
+    _exportLatency() {
+        if (!this._latestMetrics) return;
+        const latencyData = {};
+        for (const [key, reg] of Object.entries(METRIC_REGISTRY)) {
+            if (!reg.histogramDisplay) continue;
+            const entry = this._latestMetrics[key];
+            if (!entry) continue;
+            latencyData[key] = {
+                label: reg.label,
+                p50: entry.p50,
+                p95: entry.p95,
+                p99: entry.p99,
+            };
+        }
+        const blob = new Blob(
+            [JSON.stringify(latencyData, null, 2)],
+            { type: 'application/json' }
+        );
+        this._download(blob, `vllm-latency-${this._timestamp()}.json`);
     },
 
     _download(blob, filename) {
