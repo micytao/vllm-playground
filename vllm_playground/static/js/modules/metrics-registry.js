@@ -250,6 +250,7 @@ export function groupByCategory(metrics) {
     }
 
     for (const [key, entry] of Object.entries(metrics)) {
+        if (entry.type === 'histogram_bucket') continue;
         const reg = METRIC_REGISTRY[key];
         const catId = reg ? reg.category : 'other';
         if (!groups[catId]) groups[catId] = [];

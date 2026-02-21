@@ -265,6 +265,7 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 0.85rem;
+    table-layout: fixed;
 }
 
 .obs-table th,
@@ -309,7 +310,15 @@
 .obs-table .metric-name {
     font-family: var(--font-mono, 'SF Mono', monospace);
     font-size: 0.8rem;
-    word-break: break-all;
+    white-space: nowrap;
+}
+
+.obs-table .metric-labels {
+    word-break: break-word;
+    overflow-wrap: break-word;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
 }
 
 .obs-table .metric-badge {
@@ -445,81 +454,223 @@
 .uplot .u-legend { text-align: left; padding: 4px 0; }
 
 /* --- Latency tab --- */
+
+/* Percentile summary table */
 .obs-latency-summary {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 12px;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 }
 
-.obs-latency-card {
+.obs-latency-table {
+    width: 100%;
+    border-collapse: collapse;
     background: var(--card-bg, var(--bg-tertiary));
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 14px 16px;
+    overflow: hidden;
 }
 
-.obs-latency-card-title {
+.obs-latency-table th {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 10px 16px;
+    text-align: right;
+    border-bottom: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.obs-latency-table th:first-child {
+    text-align: left;
+}
+
+.obs-latency-table td {
+    padding: 12px 16px;
+    font-size: 0.85rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    text-align: right;
+    font-family: var(--font-mono, monospace);
+    color: var(--text-primary);
+}
+
+.obs-latency-table td:first-child {
+    text-align: left;
+    font-family: inherit;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.obs-latency-table tr:last-child td {
+    border-bottom: none;
+}
+
+.obs-latency-table tr:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.obs-latency-val-good { color: var(--success-color, #22c55e); }
+.obs-latency-val-warn { color: var(--warning-color, #f59e0b); }
+.obs-latency-val-bad  { color: var(--danger-color, #ef4444); }
+
+/* Percentile marker bar */
+.obs-pct-bar-cell {
+    padding: 12px 16px !important;
+    vertical-align: middle;
+}
+
+.obs-pct-bar {
+    position: relative;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    min-width: 120px;
+}
+
+.obs-pct-bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--success-color, #22c55e), var(--warning-color, #f59e0b), var(--danger-color, #ef4444));
+    opacity: 0.3;
+}
+
+.obs-pct-pin {
+    position: absolute;
+    top: -4px;
+    width: 2px;
+    height: 16px;
+    border-radius: 1px;
+    transform: translateX(-1px);
+}
+
+.obs-pct-pin-p50 { background: var(--success-color, #22c55e); }
+.obs-pct-pin-p95 { background: var(--warning-color, #f59e0b); }
+.obs-pct-pin-p99 { background: var(--danger-color, #ef4444); }
+
+.obs-pct-pin-label {
+    position: absolute;
+    top: -16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.6rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+/* Differential histogram */
+.obs-diff-hist-title {
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
 }
 
-.obs-latency-percentiles {
+.obs-diff-bar-row {
     display: flex;
-    gap: 16px;
-    margin-bottom: 8px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+    font-size: 0.78rem;
 }
 
-.obs-latency-pct {
-    text-align: center;
-}
-
-.obs-latency-pct-label {
-    font-size: 0.7rem;
+.obs-diff-range {
+    width: 100px;
+    text-align: right;
     color: var(--text-secondary);
-    display: block;
+    font-family: var(--font-mono, monospace);
+    flex-shrink: 0;
+    font-size: 0.72rem;
 }
 
-.obs-latency-pct-value {
-    font-size: 1.2rem;
-    font-weight: 700;
-    color: var(--text-primary);
+.obs-diff-bar-bg {
+    flex: 1;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 3px;
+    overflow: hidden;
 }
 
+.obs-diff-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s;
+    background: var(--primary-color);
+}
+
+.obs-diff-bar-fill.peak {
+    background: linear-gradient(90deg, var(--primary-color), #818cf8);
+}
+
+.obs-diff-count {
+    width: 50px;
+    text-align: right;
+    color: var(--text-secondary);
+    font-family: var(--font-mono, monospace);
+    flex-shrink: 0;
+}
+
+.obs-diff-pct {
+    width: 45px;
+    text-align: right;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    flex-shrink: 0;
+}
+
+[data-theme="light"] .obs-pct-bar {
+    background: rgba(0, 0, 0, 0.06);
+}
+[data-theme="light"] .obs-diff-bar-bg {
+    background: rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .obs-latency-table th {
+    background: rgba(0, 0, 0, 0.03);
+}
+[data-theme="light"] .obs-latency-table td {
+    border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+[data-theme="light"] .obs-latency-table tr:hover {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+/* Histogram distribution sections */
 .obs-latency-histograms {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 20px;
 }
 
 .obs-histogram-group {
     background: var(--card-bg, var(--bg-tertiary));
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 14px 16px;
+    padding: 16px 20px;
 }
 
 .obs-histogram-title {
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--text-secondary);
-    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 12px;
 }
 
 .obs-histogram-bar-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 3px;
-    font-size: 0.75rem;
+    gap: 10px;
+    margin-bottom: 4px;
+    font-size: 0.78rem;
 }
 
 .obs-histogram-le {
-    width: 60px;
+    width: 65px;
     text-align: right;
     color: var(--text-secondary);
     font-family: var(--font-mono, monospace);
@@ -528,7 +679,7 @@
 
 .obs-histogram-bar-bg {
     flex: 1;
-    height: 14px;
+    height: 16px;
     background: var(--border-color);
     border-radius: 3px;
     overflow: hidden;

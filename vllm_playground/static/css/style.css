@@ -2222,6 +2222,7 @@ code.remote-model-id {
     line-height: 1.6;
     font-size: 0.9rem;
     min-width: 0;
+    overflow: hidden;
 }
 
 /* Hide bold sender labels (non-markdown context) */

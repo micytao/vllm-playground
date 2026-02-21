@@ -200,6 +200,15 @@ class MetricStore:
                     "labels": "",
                     **percentiles,
                 }
+                sorted_buckets = sorted(buckets, key=lambda x: x[0])
+                for le_val, count in sorted_buckets:
+                    le_str = "+Inf" if le_val == float("inf") else str(le_val)
+                    bucket_key = f"{base_name}_bucket_le_{le_str}"
+                    metrics[bucket_key] = {
+                        "value": count,
+                        "type": "histogram_bucket",
+                        "labels": f'le="{le_str}"',
+                    }
 
         return metrics, types
 
@@ -333,19 +342,21 @@ class MetricStore:
             "gpu_cache_usage_perc",
             "cpu_cache_usage_perc",
             "prefix_cache_hit_rate",
+            "spec_decode_acceptance_rate",
         }
     )
 
     def ingest_log_parsed(self, key: str, value: float):
-        """Ingest a metric from vLLM stdout log parsing.
+        """Ingest a metric from vLLM stdout log parsing (fallback path).
 
-        These use the legacy flat key names (e.g. ``kv_cache_usage_perc``).
-        We store them under both the legacy key and the canonical ``vllm:``
-        key so that both ``to_legacy_dict()`` and ``latest`` are consistent.
+        Only writes a key if the Prometheus scraper has NOT already populated
+        it.  When Prometheus is active (subprocess / container mode) it
+        provides higher-fidelity data for the same keys, so the log parser
+        should not overwrite it.  When Prometheus is unreachable (remote
+        mode), ``last_scrape`` stays ``None`` and the log parser fills gaps.
 
-        Log-parsed and simulated values arrive as 0-100 percentages, but
-        Prometheus (and the canonical store) uses 0-1 fractions, so we
-        divide percentage keys by 100 before storing.
+        Log-parsed values arrive as 0-100 percentages for percent keys;
+        we normalise to 0-1 fractions before storing (Prometheus convention).
         """
         reverse_map = {
             "kv_cache_usage_perc": "vllm:kv_cache_usage_perc",
@@ -363,6 +374,8 @@ class MetricStore:
 
         prom_key = reverse_map.get(key)
         if prom_key:
+            if prom_key in self.latest and self.last_scrape is not None:
+                return
             stored = value / 100.0 if key in self._PERCENT_LEGACY_KEYS else value
             self.latest[prom_key] = {"value": stored, "type": "gauge", "labels": ""}
 
@@ -4892,6 +4905,7 @@ def _inject_legacy_fallback(target: dict, legacy: dict):
             "gpu_cache_usage_perc",
             "cpu_cache_usage_perc",
             "prefix_cache_hit_rate",
+            "spec_decode_acceptance_rate",
         }
     )
     for legacy_key, canonical in _LEGACY_TO_CANONICAL.items():

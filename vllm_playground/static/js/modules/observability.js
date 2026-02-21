@@ -241,7 +241,7 @@ const ObservabilityModule = {
             for (const { key, entry, registry } of items) {
                 const reg = registry || {};
                 const value = entry.value ?? entry.p50 ?? null;
-                const format = reg.format || this._guessFormat(entry);
+                const format = reg.format || this._guessFormat(key, entry);
                 const formatted = formatMetricValue(value, format, reg.unit);
                 const thresholds = this._getThresholds(key);
                 const status = getThresholdStatus(value, thresholds);
@@ -445,6 +445,8 @@ const ObservabilityModule = {
 
         let rows = [];
         for (const [key, entry] of Object.entries(this._latestMetrics)) {
+            if (entry.type === 'histogram_bucket') continue;
+
             const reg = METRIC_REGISTRY[key] || null;
             const value = entry.value ?? entry.p50 ?? null;
             const type = entry.type || 'unknown';
@@ -473,14 +475,14 @@ const ObservabilityModule = {
 
         let html = '';
         for (const row of rows) {
-            const fmt = row.reg ? row.reg.format : this._guessFormat(this._latestMetrics[row.key]);
+            const fmt = row.reg ? row.reg.format : this._guessFormat(row.key, this._latestMetrics[row.key]);
             const formatted = formatMetricValue(row.value, fmt, row.reg?.unit);
             html += `<tr>
                 <td class="metric-name">${this._escapeHtml(row.key)}</td>
                 <td><span class="metric-badge ${row.type}">${row.type}</span></td>
                 <td>${formatted}</td>
                 <td>${this._escapeHtml(row.catTitle)}</td>
-                <td>${this._escapeHtml(row.labels)}</td>
+                <td class="metric-labels">${this._escapeHtml(row.labels)}</td>
             </tr>`;
         }
 
@@ -666,52 +668,126 @@ const ObservabilityModule = {
         }
         if (noData) noData.style.display = 'none';
 
-        let summaryHtml = '';
+        const percentiles = ['p50', 'p95', 'p99'];
+
+        const globalMaxSec = Math.max(
+            ...latencyMetrics.map(({ entry }) =>
+                Math.max(...percentiles.map(p => entry[p] ?? 0))
+            ), 0.001
+        );
+
+        let tableHtml = `<table class="obs-latency-table">
+            <thead><tr>
+                <th style="width:22%">Metric</th>
+                ${percentiles.map(p => `<th style="width:13%">${p.toUpperCase()}</th>`).join('')}
+                <th style="width:39%">Distribution</th>
+            </tr></thead><tbody>`;
+
         for (const { key, reg, entry } of latencyMetrics) {
-            summaryHtml += `<div class="obs-latency-card">
-                <div class="obs-latency-card-title">${this._escapeHtml(reg.label)}</div>
-                <div class="obs-latency-percentiles">`;
-            for (const p of reg.histogramDisplay) {
+            tableHtml += `<tr><td>${this._escapeHtml(reg.label)}</td>`;
+            for (const p of percentiles) {
                 const val = entry[p];
-                const ms = val != null ? `${(val * 1000).toFixed(1)}ms` : '--';
-                summaryHtml += `<div class="obs-latency-pct">
-                    <span class="obs-latency-pct-label">${p}</span>
-                    <span class="obs-latency-pct-value">${ms}</span>
-                </div>`;
+                if (val == null) {
+                    tableHtml += `<td>--</td>`;
+                } else {
+                    const ms = val * 1000;
+                    const display = this._formatMs(ms);
+                    const cls = ms > 2000 ? 'obs-latency-val-bad'
+                              : ms > 500  ? 'obs-latency-val-warn'
+                              : 'obs-latency-val-good';
+                    tableHtml += `<td class="${cls}">${display}</td>`;
+                }
             }
-            summaryHtml += `</div></div>`;
+
+            const p50 = entry.p50 ?? 0;
+            const p95 = entry.p95 ?? 0;
+            const p99 = entry.p99 ?? 0;
+            const scale = globalMaxSec * 1.05;
+            const p50Pct = (p50 / scale) * 100;
+            const p95Pct = (p95 / scale) * 100;
+            const p99Pct = (p99 / scale) * 100;
+            const fillPct = Math.min(p99Pct + 2, 100);
+
+            tableHtml += `<td class="obs-pct-bar-cell">
+                <div class="obs-pct-bar">
+                    <div class="obs-pct-bar-fill" style="width:${fillPct.toFixed(1)}%"></div>
+                    <div class="obs-pct-pin obs-pct-pin-p50" style="left:${p50Pct.toFixed(1)}%"
+                         title="p50: ${this._formatMs(p50 * 1000)}"></div>
+                    <div class="obs-pct-pin obs-pct-pin-p95" style="left:${p95Pct.toFixed(1)}%"
+                         title="p95: ${this._formatMs(p95 * 1000)}"></div>
+                    <div class="obs-pct-pin obs-pct-pin-p99" style="left:${p99Pct.toFixed(1)}%"
+                         title="p99: ${this._formatMs(p99 * 1000)}"></div>
+                </div>
+            </td>`;
+            tableHtml += `</tr>`;
         }
-        summaryEl.innerHTML = summaryHtml;
+        tableHtml += `</tbody></table>`;
+        summaryEl.innerHTML = tableHtml;
 
         let histHtml = '';
-        for (const { key, reg, entry } of latencyMetrics) {
+        for (const { key, reg } of latencyMetrics) {
             const bucketKey = key + '_bucket';
-            const bucketEntries = Object.entries(metrics)
-                .filter(([k]) => k.startsWith(bucketKey) || k === bucketKey)
-                .map(([, e]) => e);
+            const rawBuckets = Object.entries(metrics)
+                .filter(([k]) => k.startsWith(bucketKey))
+                .map(([, e]) => ({
+                    le: e.labels ? this._extractLeRaw(e.labels) : Infinity,
+                    leLabel: e.labels ? this._extractLe(e.labels) : 'Inf',
+                    count: e.value || 0,
+                }))
+                .sort((a, b) => a.le - b.le);
 
-            if (bucketEntries.length === 0) continue;
+            if (rawBuckets.length === 0) continue;
+
+            const diffBuckets = [];
+            let prevCount = 0;
+            let prevLabel = '0';
+            for (const b of rawBuckets) {
+                const diff = Math.max(b.count - prevCount, 0);
+                const rangeLabel = b.le === Infinity
+                    ? `> ${prevLabel}`
+                    : `${prevLabel} \u2013 ${b.leLabel}`;
+                diffBuckets.push({ range: rangeLabel, count: diff, le: b.le });
+                prevCount = b.count;
+                prevLabel = b.leLabel;
+            }
+
+            const total = prevCount || 1;
+            const maxDiff = Math.max(...diffBuckets.map(d => d.count), 1);
+            const peakCount = maxDiff;
 
             histHtml += `<div class="obs-histogram-group">
-                <div class="obs-histogram-title">${this._escapeHtml(reg.label)} Distribution</div>`;
+                <div class="obs-diff-hist-title">${this._escapeHtml(reg.label)} Distribution</div>`;
 
-            const total = entry.p99 ? 1 : 0;
-            if (bucketEntries.length > 0 && bucketEntries[0].value != null) {
-                const maxCount = Math.max(...bucketEntries.map((e) => e.value || 0), 1);
-                for (const be of bucketEntries) {
-                    const le = be.labels ? this._extractLe(be.labels) : '?';
-                    const count = be.value || 0;
-                    const pct = (count / maxCount) * 100;
-                    histHtml += `<div class="obs-histogram-bar-row">
-                        <span class="obs-histogram-le">${le}</span>
-                        <div class="obs-histogram-bar-bg"><div class="obs-histogram-bar-fill" style="width:${pct}%"></div></div>
-                        <span class="obs-histogram-count">${Math.round(count)}</span>
-                    </div>`;
-                }
+            for (const d of diffBuckets) {
+                if (d.count === 0 && d.le === Infinity) continue;
+                const barPct = (d.count / maxDiff) * 100;
+                const freqPct = ((d.count / total) * 100).toFixed(0);
+                const isPeak = d.count === peakCount && d.count > 0;
+                histHtml += `<div class="obs-diff-bar-row">
+                    <span class="obs-diff-range">${d.range}</span>
+                    <div class="obs-diff-bar-bg">
+                        <div class="obs-diff-bar-fill${isPeak ? ' peak' : ''}" style="width:${barPct.toFixed(1)}%"></div>
+                    </div>
+                    <span class="obs-diff-count">${d.count}</span>
+                    <span class="obs-diff-pct">${freqPct}%</span>
+                </div>`;
             }
             histHtml += `</div>`;
         }
         histEl.innerHTML = histHtml;
+    },
+
+    _formatMs(ms) {
+        if (ms < 1) return `${(ms * 1000).toFixed(0)} \u00b5s`;
+        if (ms < 1000) return `${ms.toFixed(1)} ms`;
+        return `${(ms / 1000).toFixed(2)} s`;
+    },
+
+    _extractLeRaw(labels) {
+        const match = labels.match(/le="([^"]+)"/);
+        if (!match) return Infinity;
+        if (match[1] === '+Inf') return Infinity;
+        return parseFloat(match[1]);
     },
 
     _extractLe(labels) {
@@ -852,10 +928,14 @@ const ObservabilityModule = {
 
     // -- Utilities ----------------------------------------------------------
 
-    _guessFormat(entry) {
+    _guessFormat(key, entry) {
         if (!entry) return 'number';
         const type = entry.type || '';
-        if (type === 'histogram') return 'duration_ms';
+        if (type === 'histogram') {
+            const k = (key || '').toLowerCase();
+            if (/seconds|latency|time/.test(k)) return 'duration_ms';
+            return 'number';
+        }
         return 'number';
     },
 
