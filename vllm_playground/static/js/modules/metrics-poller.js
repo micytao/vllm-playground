@@ -85,17 +85,27 @@ class MetricsPoller {
     /**
      * Fetch time-series history for charting.
      * @param {number} [minutes] - optional window in minutes
+     * @param {number} [seconds] - optional window in seconds (takes precedence)
      * @returns {Promise<Array>}
      */
-    async getHistory(minutes) {
-        const url = minutes != null
-            ? `/api/vllm/metrics/history?minutes=${minutes}`
-            : '/api/vllm/metrics/history';
+    async getHistory(minutes, seconds) {
+        let url = '/api/vllm/metrics/history';
+        if (seconds != null) url += `?seconds=${seconds}`;
+        else if (minutes != null) url += `?minutes=${minutes}`;
         try {
             const resp = await fetch(url);
             return resp.ok ? await resp.json() : [];
         } catch {
             return [];
+        }
+    }
+
+    async getHistorySummary() {
+        try {
+            const resp = await fetch('/api/vllm/metrics/history/summary');
+            return resp.ok ? await resp.json() : null;
+        } catch {
+            return null;
         }
     }
 }
