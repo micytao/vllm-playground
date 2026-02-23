@@ -24,7 +24,7 @@ const ObservabilityModule = {
     _sortAsc: true,
     _searchFilter: '',
     _uplotChart: null,
-    _tsMinutes: 5,
+    _tsSeconds: 300,
     _tsSelectedMetrics: new Set(),
     _tsHistory: [],
     _alertedMetrics: new Set(),
@@ -139,9 +139,40 @@ const ObservabilityModule = {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.obs-ts-range').forEach((b) => b.classList.remove('active'));
                 btn.classList.add('active');
-                this._tsMinutes = parseInt(btn.dataset.minutes, 10);
+                this._tsSeconds = parseInt(btn.dataset.seconds, 10);
+                const customVal = document.getElementById('obs-ts-custom-val');
+                if (customVal) customVal.value = '';
                 this._loadTimeSeries();
             });
+        });
+
+        // Custom range input
+        const customGoBtn = document.getElementById('obs-ts-custom-go');
+        const customValInput = document.getElementById('obs-ts-custom-val');
+        const customUnitSelect = document.getElementById('obs-ts-custom-unit');
+        const applyCustomRange = () => {
+            if (!customValInput || !customUnitSelect) return;
+            const val = parseInt(customValInput.value, 10);
+            if (!val || val < 1) return;
+            const multiplier = customUnitSelect.value === 'm' ? 60 : 1;
+            this._tsSeconds = val * multiplier;
+            document.querySelectorAll('.obs-ts-range').forEach((b) => b.classList.remove('active'));
+            this._loadTimeSeries();
+        };
+        if (customGoBtn) customGoBtn.addEventListener('click', applyCustomRange);
+        if (customValInput) customValInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') applyCustomRange();
+        });
+
+        // "Back to live" button
+        const backToLiveBtn = document.getElementById('obs-ts-back-to-live');
+        if (backToLiveBtn) backToLiveBtn.addEventListener('click', () => {
+            this._tsSeconds = 300;
+            document.querySelectorAll('.obs-ts-range').forEach((b) => b.classList.remove('active'));
+            const defaultBtn = document.querySelector('.obs-ts-range[data-seconds="300"]');
+            if (defaultBtn) defaultBtn.classList.add('active');
+            if (customValInput) customValInput.value = '';
+            this._loadTimeSeries();
         });
 
         const exportTsBtn = document.getElementById('obs-export-ts-btn');
@@ -554,20 +585,77 @@ const ObservabilityModule = {
 
     async _loadTimeSeries() {
         const noData = document.getElementById('obs-ts-no-data');
+        const hint = document.getElementById('obs-ts-history-hint');
+        const hintText = document.getElementById('obs-ts-hint-text');
+        const hintBtn = document.getElementById('obs-ts-hint-btn');
+        const defaultMsg = document.getElementById('obs-ts-no-data-msg');
+
         try {
-            this._tsHistory = await metricsPoller.getHistory(this._tsMinutes);
+            this._tsHistory = await metricsPoller.getHistory(null, this._tsSeconds);
         } catch {
             this._tsHistory = [];
         }
+
         if (this._tsHistory.length === 0) {
             if (noData) noData.style.display = '';
             const wrap = document.getElementById('obs-ts-chart-wrap');
             if (wrap) wrap.style.display = 'none';
+            const liveBar = document.getElementById('obs-ts-live-bar');
+            if (liveBar) liveBar.style.display = 'none';
+
+            if (hint) hint.style.display = 'none';
+            if (defaultMsg) defaultMsg.style.display = '';
+
+            try {
+                const summary = await metricsPoller.getHistorySummary();
+                if (summary && summary.total > 0 && summary.oldest_age_seconds > 0) {
+                    const age = summary.oldest_age_seconds;
+                    const ageLabel = age >= 3600
+                        ? `${(age / 3600).toFixed(1)} hours`
+                        : age >= 60
+                            ? `${Math.round(age / 60)} min`
+                            : `${Math.round(age)} sec`;
+                    const spanLabel = summary.span_seconds >= 60
+                        ? `${Math.round(summary.span_seconds / 60)} min`
+                        : `${Math.round(summary.span_seconds)} sec`;
+                    if (hintText) {
+                        hintText.textContent =
+                            `${summary.total} data points from ${ageLabel} ago (spanning ${spanLabel}) — outside the current window.`;
+                    }
+                    if (defaultMsg) defaultMsg.style.display = 'none';
+                    if (hint) hint.style.display = '';
+                    if (hintBtn) {
+                        hintBtn.onclick = () => {
+                            const needed = Math.ceil(summary.oldest_age_seconds) + 60;
+                            this._tsSeconds = needed;
+                            document.querySelectorAll('.obs-ts-range').forEach((b) => b.classList.remove('active'));
+                            const customVal = document.getElementById('obs-ts-custom-val');
+                            const customUnit = document.getElementById('obs-ts-custom-unit');
+                            if (needed >= 60 && customVal && customUnit) {
+                                customVal.value = Math.ceil(needed / 60);
+                                customUnit.value = 'm';
+                            } else if (customVal && customUnit) {
+                                customVal.value = needed;
+                                customUnit.value = 's';
+                            }
+                            this._loadTimeSeries();
+                        };
+                    }
+                }
+            } catch { /* summary fetch is best-effort */ }
             return;
         }
+
         if (noData) noData.style.display = 'none';
         const wrap = document.getElementById('obs-ts-chart-wrap');
         if (wrap) wrap.style.display = '';
+
+        const liveBar = document.getElementById('obs-ts-live-bar');
+        if (liveBar) {
+            const hasActivePreset = document.querySelector('.obs-ts-range.active') !== null;
+            liveBar.style.display = hasActivePreset ? 'none' : 'flex';
+        }
+
         this._buildChart();
     },
 
@@ -646,7 +734,7 @@ const ObservabilityModule = {
             newData[i + 1].push(val);
         }
 
-        const cutoff = now - this._tsMinutes * 60;
+        const cutoff = now - this._tsSeconds;
         let start = 0;
         while (start < newData[0].length && newData[0][start] < cutoff) start++;
         if (start > 0) {
@@ -837,7 +925,6 @@ const ObservabilityModule = {
                     gpu_cache_usage_perc: 38.7,
                     spec_decode_accepted: 180,
                     spec_decode_draft: 320,
-                    spec_decode_emitted: 150,
                 }),
             });
             const badge = document.getElementById('obs-simulated-badge');

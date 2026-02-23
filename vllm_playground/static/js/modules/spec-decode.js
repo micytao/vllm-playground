@@ -132,7 +132,6 @@ const SpecDecodeMethods = {
     _sdUpdate(m) {
         const accepted = Math.round(m.spec_decode_accepted || 0);
         const draft = Math.round(m.spec_decode_draft || 0);
-        const emitted = Math.round(m.spec_decode_emitted || 0);
 
         const rate = draft > 0 ? (accepted / draft) * 100 : 0;
         const rateEl = document.getElementById('spec-acceptance-rate');
@@ -145,10 +144,12 @@ const SpecDecodeMethods = {
             else fillEl.style.background = 'var(--danger-color)';
         }
 
+        const numDrafts = Math.round(m.spec_decode_num_drafts || 0);
         let speedup = 1.0;
-        if (draft > 0 && emitted > 0) {
-            const verificationSteps = draft - accepted + emitted;
-            speedup = verificationSteps > 0 ? emitted / (emitted - accepted + (draft - accepted)) : 1.0;
+        if (numDrafts > 0 && draft > 0) {
+            const meanAcceptLen = 1 + (accepted / numDrafts);
+            const avgSpecTokens = draft / numDrafts;
+            speedup = avgSpecTokens > 0 ? meanAcceptLen / 1.0 : 1.0;
             if (speedup < 1) speedup = 1.0;
         }
         const speedupEl = document.getElementById('spec-speedup-value');
@@ -158,11 +159,6 @@ const SpecDecodeMethods = {
         const acceptedEl = document.getElementById('spec-accepted-tokens');
         if (draftEl) draftEl.textContent = draft.toLocaleString();
         if (acceptedEl) acceptedEl.textContent = accepted.toLocaleString();
-
-        const infoEl = document.getElementById('spec-decode-model-info');
-        if (infoEl && emitted > 0) {
-            infoEl.textContent = `Total emitted: ${emitted.toLocaleString()} tokens`;
-        }
     },
 
     destroySpecDecode() {

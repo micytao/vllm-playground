@@ -101,9 +101,9 @@ export const METRIC_REGISTRY = {
         format: 'integer',
         obsTab: 'overview',
     },
-    'vllm:spec_decode_num_emitted_tokens': {
+    'vllm:spec_decode_num_drafts': {
         category: 'spec-decode',
-        label: 'Emitted Tokens',
+        label: 'Drafts',
         format: 'integer',
         obsTab: 'overview',
     },
@@ -139,7 +139,7 @@ export const METRIC_REGISTRY = {
         obsTab: 'latency',
         histogramDisplay: ['p50', 'p95', 'p99'],
     },
-    'vllm:time_per_output_token_seconds': {
+    'vllm:request_time_per_output_token_seconds': {
         category: 'latency',
         label: 'Time per Output Token',
         format: 'duration_ms',
@@ -211,7 +211,7 @@ const _LEGACY_KEY_MAP = {
     'vllm:avg_generation_throughput_toks_per_s': 'avg_generation_throughput',
     'vllm:spec_decode_num_accepted_tokens': 'spec_decode_accepted',
     'vllm:spec_decode_num_draft_tokens': 'spec_decode_draft',
-    'vllm:spec_decode_num_emitted_tokens': 'spec_decode_emitted',
+    'vllm:spec_decode_num_drafts': 'spec_decode_num_drafts',
     'vllm:spec_decode_acceptance_rate': 'spec_decode_acceptance_rate',
 };
 

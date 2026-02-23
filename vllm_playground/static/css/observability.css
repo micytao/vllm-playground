@@ -354,6 +354,12 @@
     font-size: 0.9rem;
 }
 
+.obs-ts-hint-text {
+    margin: 0 0 12px;
+    color: var(--primary-color);
+    font-size: 0.9rem;
+}
+
 /* --- Demo badge --- */
 .obs-simulated-badge {
     display: none;
@@ -425,6 +431,49 @@
     border-color: var(--primary-color);
 }
 
+.obs-ts-custom-range {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.obs-ts-custom-input {
+    width: 64px;
+    padding: 5px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    -moz-appearance: textfield;
+}
+
+.obs-ts-custom-input::-webkit-outer-spin-button,
+.obs-ts-custom-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.obs-ts-custom-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.obs-ts-custom-select {
+    padding: 5px 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.obs-ts-custom-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
 .obs-ts-picker {
     display: flex;
     gap: 8px;
@@ -444,6 +493,31 @@
 
 .obs-ts-picker label:hover {
     color: var(--text-primary);
+}
+
+.obs-ts-live-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 14px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.obs-ts-live-btn {
+    padding: 3px 12px;
+    font-size: 0.78rem;
+    background: var(--primary-color);
+    color: #fff;
+    border-color: var(--primary-color);
+}
+
+.obs-ts-live-btn:hover {
+    opacity: 0.85;
 }
 
 .obs-ts-chart-wrap {

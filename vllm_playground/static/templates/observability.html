@@ -73,17 +73,35 @@
     <div class="obs-tab-content" id="obs-tab-time-series">
         <div class="obs-ts-controls">
             <div class="obs-ts-range-btns">
-                <button class="obs-btn obs-ts-range active" data-minutes="5">5m</button>
-                <button class="obs-btn obs-ts-range" data-minutes="15">15m</button>
-                <button class="obs-btn obs-ts-range" data-minutes="30">30m</button>
+                <button class="obs-btn obs-ts-range" data-seconds="30">30s</button>
+                <button class="obs-btn obs-ts-range" data-seconds="120">2m</button>
+                <button class="obs-btn obs-ts-range active" data-seconds="300">5m</button>
+                <button class="obs-btn obs-ts-range" data-seconds="900">15m</button>
+                <button class="obs-btn obs-ts-range" data-seconds="1800">30m</button>
+            </div>
+            <div class="obs-ts-custom-range">
+                <input type="number" id="obs-ts-custom-val" min="1" max="1440" placeholder="Custom" class="obs-ts-custom-input">
+                <select id="obs-ts-custom-unit" class="obs-ts-custom-select">
+                    <option value="s">sec</option>
+                    <option value="m" selected>min</option>
+                </select>
+                <button class="obs-btn" id="obs-ts-custom-go">Go</button>
             </div>
             <div class="obs-ts-picker" id="obs-ts-picker"></div>
             <button class="obs-btn" id="obs-export-ts-btn">Export</button>
         </div>
+        <div class="obs-ts-live-bar" id="obs-ts-live-bar" style="display:none;">
+            <span id="obs-ts-live-bar-text">Viewing historical data</span>
+            <button class="obs-btn obs-ts-live-btn" id="obs-ts-back-to-live">Back to live</button>
+        </div>
         <div class="obs-ts-chart-wrap" id="obs-ts-chart-wrap"></div>
         <div class="obs-no-data" id="obs-ts-no-data" style="display:none;">
-            <h3>No time-series data</h3>
-            <p>History will appear after the vLLM server has been running for a few seconds.</p>
+            <h3>No time-series data in this range</h3>
+            <p id="obs-ts-no-data-msg">History will appear after the vLLM server has been running for a few seconds.</p>
+            <div id="obs-ts-history-hint" style="display:none;">
+                <p class="obs-ts-hint-text" id="obs-ts-hint-text"></p>
+                <button class="obs-btn obs-btn-primary" id="obs-ts-hint-btn">Show all history</button>
+            </div>
         </div>
     </div>
 

@@ -6,14 +6,16 @@ CONTAINERIZED VERSION - Uses Podman to run vLLM in containers
 import asyncio
 import json
 import logging
+import math
 import os
+import random
 import sys
 import subprocess
 import tempfile
 import shutil
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Literal, Union
 from pathlib import Path
 
@@ -50,6 +52,8 @@ app = FastAPI(title="vLLM Playground", version="1.0.0")
 @app.on_event("startup")
 async def startup_event():
     """Start background tasks on app startup."""
+    metric_store._load_from_disk()
+    metric_store._open_history_file()
     await metric_store.start_scrape_loop()
     logger.info("MetricStore background scrape loop started")
 
@@ -58,6 +62,7 @@ async def startup_event():
 async def shutdown_event():
     """Clean up MCP connections and background tasks on shutdown"""
     await metric_store.stop_scrape_loop()
+    metric_store.close_history_file()
     logger.info("Shutting down - cleaning up MCP connections...")
     try:
         # Check if MCP is available (these are defined later in the file)
@@ -110,7 +115,9 @@ class MetricStore:
     buffer for time-series charting.
     """
 
-    def __init__(self, history_maxlen: int = 360, scrape_interval: float = 5.0):
+    _HISTORY_MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB rotation threshold
+
+    def __init__(self, history_maxlen: int = 8640, scrape_interval: float = 5.0, history_path: Optional[str] = None):
         self.latest: Dict[str, Any] = {}
         self.history: deque = deque(maxlen=history_maxlen)
         self.scrape_interval = scrape_interval
@@ -119,6 +126,112 @@ class MetricStore:
         self._task: Optional[asyncio.Task] = None
         self._types: Dict[str, str] = {}  # metric name -> gauge/counter/histogram/...
         self._scrape_warned: bool = False
+        self._dirty: bool = False
+
+        default_dir = Path.home() / ".vllm-playground"
+        self._history_path = Path(history_path) if history_path else default_dir / "metrics-history.jsonl"
+        self._history_file: Optional[Any] = None
+        self._disk_write_count: int = 0
+
+    # -- JSONL disk persistence -----------------------------------------------
+
+    def _open_history_file(self):
+        """Open the JSONL file for appending, creating parent dirs if needed."""
+        if self._history_file is not None:
+            return
+        try:
+            self._history_path.parent.mkdir(parents=True, exist_ok=True)
+            self._history_file = open(self._history_path, "a", encoding="utf-8")
+            logger.info("MetricStore: history file opened at %s", self._history_path)
+        except OSError as exc:
+            logger.warning("MetricStore: cannot open history file %s: %s", self._history_path, exc)
+            self._history_file = None
+
+    def _append_to_disk(self, snapshot: dict):
+        """Append a single snapshot as a JSONL line.  Flushes every 10 writes."""
+        if self._history_file is None:
+            return
+        try:
+            self._history_file.write(json.dumps(snapshot, default=str) + "\n")
+            self._disk_write_count += 1
+            if self._disk_write_count >= 10:
+                self._history_file.flush()
+                self._disk_write_count = 0
+        except OSError as exc:
+            logger.warning("MetricStore: disk write failed: %s", exc)
+
+    def _load_from_disk(self):
+        """Load persisted history from the JSONL file into the in-memory deque.
+
+        If the file exceeds ``_HISTORY_MAX_FILE_BYTES``, it is rotated first
+        (trimmed to the last ``history.maxlen`` lines).
+        """
+        if not self._history_path.exists():
+            logger.info("MetricStore: no history file at %s — starting fresh", self._history_path)
+            return
+
+        try:
+            file_size = self._history_path.stat().st_size
+        except OSError:
+            return
+
+        if file_size > self._HISTORY_MAX_FILE_BYTES:
+            self._rotate_history_file()
+
+        loaded = 0
+        try:
+            with open(self._history_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        snap = json.loads(line)
+                        self.history.append(snap)
+                        loaded += 1
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+        except OSError as exc:
+            logger.warning("MetricStore: cannot read history file: %s", exc)
+            return
+
+        if loaded:
+            logger.info("MetricStore: restored %d snapshots from disk", loaded)
+
+    def _rotate_history_file(self):
+        """Truncate the JSONL file to the last ``history.maxlen`` lines."""
+        try:
+            with open(self._history_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            keep = lines[-self.history.maxlen :] if len(lines) > self.history.maxlen else lines
+            with open(self._history_path, "w", encoding="utf-8") as f:
+                f.writelines(keep)
+            logger.info(
+                "MetricStore: rotated history file from %d to %d lines",
+                len(lines),
+                len(keep),
+            )
+        except OSError as exc:
+            logger.warning("MetricStore: rotation failed: %s", exc)
+
+    def flush_history_file(self):
+        """Flush any buffered writes to disk."""
+        if self._history_file is not None:
+            try:
+                self._history_file.flush()
+            except OSError:
+                pass
+
+    def close_history_file(self):
+        """Flush and close the history file handle."""
+        if self._history_file is not None:
+            try:
+                self._history_file.flush()
+                self._history_file.close()
+            except OSError:
+                pass
+            self._history_file = None
+            logger.info("MetricStore: history file closed")
 
     # -- Generic Prometheus parser -------------------------------------------
 
@@ -319,7 +432,6 @@ class MetricStore:
             "vllm:prefix_cache_hit_rate": "prefix_cache_hit_rate",
             "vllm:spec_decode_num_accepted_tokens": "spec_decode_accepted",
             "vllm:spec_decode_num_draft_tokens": "spec_decode_draft",
-            "vllm:spec_decode_num_emitted_tokens": "spec_decode_emitted",
         }
 
         for prom_key, legacy_key in key_map.items():
@@ -347,14 +459,16 @@ class MetricStore:
         }
     )
 
-    def ingest_log_parsed(self, key: str, value: float):
+    def ingest_log_parsed(self, key: str, value: float) -> bool:
         """Ingest a metric from vLLM stdout log parsing (fallback path).
 
-        Only writes a key if the Prometheus scraper has NOT already populated
-        it.  When Prometheus is active (subprocess / container mode) it
-        provides higher-fidelity data for the same keys, so the log parser
-        should not overwrite it.  When Prometheus is unreachable (remote
-        mode), ``last_scrape`` stays ``None`` and the log parser fills gaps.
+        Returns True if the value was stored, False if skipped.
+
+        Prometheus-scraped data takes precedence: if the key already exists
+        and a recent scrape succeeded (within ``2 * scrape_interval``), the
+        log-parsed value is dropped.  Once Prometheus appears to be down
+        (scrape age exceeds the window), log parsing is allowed to update
+        stale keys so the dashboard can recover.
 
         Log-parsed values arrive as 0-100 percentages for percent keys;
         we normalise to 0-1 fractions before storing (Prometheus convention).
@@ -376,9 +490,14 @@ class MetricStore:
         prom_key = reverse_map.get(key)
         if prom_key:
             if prom_key in self.latest and self.last_scrape is not None:
-                return
+                elapsed = (datetime.now() - self.last_scrape).total_seconds()
+                if elapsed < self.scrape_interval * 2:
+                    return False
             stored = value / 100.0 if key in self._PERCENT_LEGACY_KEYS else value
             self.latest[prom_key] = {"value": stored, "type": "gauge", "labels": ""}
+            self._dirty = True
+            return True
+        return False
 
     def ingest_simulated(self, payload: Dict[str, Any]):
         """Inject simulated metrics (from the simulate endpoint).
@@ -405,6 +524,8 @@ class MetricStore:
             else:
                 snapshot[k] = v
         self.history.append(snapshot)
+        self._append_to_disk(snapshot)
+        self._dirty = False
 
     # -- Background scrape ---------------------------------------------------
 
@@ -444,7 +565,7 @@ class MetricStore:
             except Exception:
                 logger.debug("MetricStore: scrape error", exc_info=True)
 
-            if not scrape_ok and self.latest:
+            if not scrape_ok and self.latest and self._dirty:
                 self.append_snapshot_from_latest()
 
             await asyncio.sleep(self.scrape_interval)
@@ -509,12 +630,21 @@ class MetricStore:
             else:
                 snapshot[k] = v
         self.history.append(snapshot)
+        self._append_to_disk(snapshot)
 
-    def get_history(self, minutes: Optional[int] = None) -> list:
-        """Return history snapshots, optionally filtered to last N minutes."""
-        if minutes is None:
+    def get_history(self, minutes: Optional[int] = None, seconds: Optional[int] = None) -> list:
+        """Return history snapshots, optionally filtered by time window.
+
+        ``seconds`` takes precedence over ``minutes`` when both are given.
+        """
+        if seconds is not None:
+            window_secs = seconds
+        elif minutes is not None:
+            window_secs = minutes * 60
+        else:
             return list(self.history)
-        cutoff = datetime.now().timestamp() - (minutes * 60)
+
+        cutoff = datetime.now().timestamp() - window_secs
         result = []
         for snap in self.history:
             try:
@@ -526,7 +656,7 @@ class MetricStore:
         return result
 
 
-metric_store = MetricStore(history_maxlen=360, scrape_interval=5.0)
+metric_store = MetricStore(history_maxlen=8640, scrape_interval=5.0)
 current_model_identifier: Optional[str] = None  # Track the actual model identifier passed to vLLM
 current_served_model_name: Optional[str] = None  # Track the served model name alias (for API calls)
 
@@ -3254,20 +3384,33 @@ async def broadcast_log(message: str):
     import re
 
     metrics_updated = False
+    msg_lower = message.lower()
 
-    if "cache usage" in message.lower() and "%" in message:
+    if "avg prompt throughput" in msg_lower:
+        m = re.search(r"Avg prompt throughput:\s+([\d.]+)\s+tokens/s", message, re.IGNORECASE)
+        if m:
+            latest_vllm_metrics["avg_prompt_throughput"] = float(m.group(1))
+            metrics_updated = True
+
+    if "avg generation throughput" in msg_lower:
+        m = re.search(r"Avg generation throughput:\s+([\d.]+)\s+tokens/s", message, re.IGNORECASE)
+        if m:
+            latest_vllm_metrics["avg_generation_throughput"] = float(m.group(1))
+            metrics_updated = True
+
+    if "cache usage" in msg_lower and "%" in message:
         match = re.search(r"cache usage[:\s]+([\d.]+)\s*%", message, re.IGNORECASE)
         if match:
             latest_vllm_metrics["kv_cache_usage_perc"] = float(match.group(1))
             metrics_updated = True
 
-    if "hit rate" in message.lower() and "%" in message:
+    if "hit rate" in msg_lower and "%" in message:
         match = re.search(r"hit rate[:\s]+([\d.]+)\s*%", message, re.IGNORECASE)
         if match:
             latest_vllm_metrics["prefix_cache_hit_rate"] = float(match.group(1))
             metrics_updated = True
 
-    if "specdecoding metrics" in message.lower():
+    if "specdecoding metrics" in msg_lower:
         m = re.search(r"Draft acceptance rate:\s+([\d.]+)%", message)
         if m:
             latest_vllm_metrics["spec_decode_acceptance_rate"] = float(m.group(1))
@@ -3277,12 +3420,21 @@ async def broadcast_log(message: str):
         metrics_timestamp = datetime.now()
         latest_vllm_metrics["timestamp"] = metrics_timestamp.isoformat()
 
-        for key in ("kv_cache_usage_perc", "prefix_cache_hit_rate", "spec_decode_acceptance_rate"):
+        any_ingested = False
+        for key in (
+            "kv_cache_usage_perc",
+            "prefix_cache_hit_rate",
+            "spec_decode_acceptance_rate",
+            "avg_prompt_throughput",
+            "avg_generation_throughput",
+        ):
             val = latest_vllm_metrics.get(key)
             if val is not None:
-                metric_store.ingest_log_parsed(key, val)
+                if metric_store.ingest_log_parsed(key, val):
+                    any_ingested = True
 
-        metric_store.append_snapshot_from_latest()
+        if any_ingested:
+            metric_store.append_snapshot_from_latest()
 
     disconnected = []
     for ws in websocket_connections:
@@ -4836,6 +4988,63 @@ async def check_vllm_health():
 # ---------------------------------------------------------------------------
 
 
+def _extract_metric_value(metrics: dict, key: str):
+    """Extract the scalar value from a structured or raw metric entry."""
+    entry = metrics.get(key)
+    if entry is None:
+        return None
+    return entry.get("value") if isinstance(entry, dict) else entry
+
+
+def _derive_computed_metrics(metrics: dict):
+    """Derive metrics that vLLM does not expose via Prometheus.
+
+    These are computed from counter pairs already present in ``metrics``.
+    Only injects a key when it is absent so that explicit sources (log
+    parsing, simulation) are never overwritten.
+    """
+    # acceptance_rate = accepted_tokens / draft_tokens  (0-1 fraction)
+    if "vllm:spec_decode_acceptance_rate" not in metrics:
+        acc = _extract_metric_value(metrics, "vllm:spec_decode_num_accepted_tokens")
+        draft = _extract_metric_value(metrics, "vllm:spec_decode_num_draft_tokens")
+        if acc is not None and draft is not None and draft > 0:
+            metrics["vllm:spec_decode_acceptance_rate"] = {
+                "value": acc / draft,
+                "type": "gauge",
+                "labels": "",
+            }
+
+    # prefix_cache_hit_rate = hits / queries  (0-1 fraction)
+    if "vllm:prefix_cache_hit_rate" not in metrics:
+        hits = _extract_metric_value(metrics, "vllm:prefix_cache_hits")
+        queries = _extract_metric_value(metrics, "vllm:prefix_cache_queries")
+        if hits is not None and queries is not None and queries > 0:
+            metrics["vllm:prefix_cache_hit_rate"] = {
+                "value": hits / queries,
+                "type": "gauge",
+                "labels": "",
+            }
+
+
+def _derive_history_metrics(snapshot: dict):
+    """Derive computed metrics for a flat history snapshot.
+
+    History snapshots store raw scalars (not wrapped dicts), so this is
+    the flat-value counterpart of ``_derive_computed_metrics``.
+    """
+    if "vllm:spec_decode_acceptance_rate" not in snapshot:
+        acc = snapshot.get("vllm:spec_decode_num_accepted_tokens")
+        draft = snapshot.get("vllm:spec_decode_num_draft_tokens")
+        if acc is not None and draft is not None and draft > 0:
+            snapshot["vllm:spec_decode_acceptance_rate"] = acc / draft
+
+    if "vllm:prefix_cache_hit_rate" not in snapshot:
+        hits = snapshot.get("vllm:prefix_cache_hits")
+        queries = snapshot.get("vllm:prefix_cache_queries")
+        if hits is not None and queries is not None and queries > 0:
+            snapshot["vllm:prefix_cache_hit_rate"] = hits / queries
+
+
 @app.get("/api/vllm/metrics/all")
 async def get_vllm_metrics_all():
     """Return ALL vLLM metrics as a structured dict with types.
@@ -4851,6 +5060,8 @@ async def get_vllm_metrics_all():
 
     if latest_vllm_metrics:
         _inject_legacy_fallback(metrics, latest_vllm_metrics)
+
+    _derive_computed_metrics(metrics)
 
     if not metrics:
         return {
@@ -4955,16 +5166,58 @@ async def get_vllm_metrics():
 
 
 @app.get("/api/vllm/metrics/history")
-async def get_vllm_metrics_history(minutes: Optional[int] = None):
+async def get_vllm_metrics_history(
+    minutes: Optional[int] = None,
+    seconds: Optional[int] = None,
+):
     """Return time-series metrics snapshots for charting.
 
-    If ``minutes`` is provided, only return snapshots from the last N minutes.
+    Accepts either ``seconds`` or ``minutes`` as the time window.
+    ``seconds`` takes precedence when both are supplied.
     Falls back to the legacy ``metrics_history`` deque if MetricStore has
     no data (e.g. remote mode with only log-parsed metrics).
     """
     if metric_store.history:
-        return metric_store.get_history(minutes)
+        snapshots = metric_store.get_history(minutes=minutes, seconds=seconds)
+        for snap in snapshots:
+            _derive_history_metrics(snap)
+        return snapshots
     return list(metrics_history)
+
+
+@app.get("/api/vllm/metrics/history/summary")
+async def get_vllm_metrics_history_summary():
+    """Return lightweight metadata about the stored history.
+
+    Lets the frontend know whether older data exists outside the current
+    time window so it can prompt the user to widen the range.
+    """
+    total = len(metric_store.history)
+    if total == 0:
+        return {"total": 0, "oldest": None, "newest": None, "span_seconds": 0, "oldest_age_seconds": 0}
+
+    oldest_snap = metric_store.history[0]
+    newest_snap = metric_store.history[-1]
+
+    def _ts(snap):
+        try:
+            return datetime.fromisoformat(snap["timestamp"]).timestamp()
+        except (KeyError, ValueError):
+            return None
+
+    now = datetime.now().timestamp()
+    oldest_ts = _ts(oldest_snap)
+    newest_ts = _ts(newest_snap)
+    span = round(newest_ts - oldest_ts, 1) if oldest_ts and newest_ts else 0
+    oldest_age = round(now - oldest_ts, 1) if oldest_ts else 0
+
+    return {
+        "total": total,
+        "oldest": oldest_snap.get("timestamp"),
+        "newest": newest_snap.get("timestamp"),
+        "span_seconds": span,
+        "oldest_age_seconds": oldest_age,
+    }
 
 
 # --- Tokenize proxy for Live Token Counter ---
@@ -5013,7 +5266,6 @@ class SimulateMetricsRequest(BaseModel):
     cpu_cache_usage_perc: Optional[float] = None
     spec_decode_accepted: Optional[float] = None
     spec_decode_draft: Optional[float] = None
-    spec_decode_emitted: Optional[float] = None
 
 
 @app.post("/api/vllm/metrics/simulate")
@@ -5043,13 +5295,37 @@ async def simulate_vllm_metrics(req: SimulateMetricsRequest):
     # Also push into MetricStore so /api/vllm/metrics/all reflects simulated data
     metric_store.ingest_simulated(payload)
     metric_store.last_simulated = now
-    snapshot = {"timestamp": now.isoformat()}
+
+    # Build base values from metric_store.latest (already in Prometheus-key space)
+    base_values: Dict[str, float] = {}
     for k, v in metric_store.latest.items():
         if isinstance(v, dict):
-            snapshot[k] = v.get("value", v.get("p50"))
+            base_values[k] = v.get("value", v.get("p50", 0)) or 0
         else:
-            snapshot[k] = v
-    metric_store.history.append(snapshot)
+            base_values[k] = v if isinstance(v, (int, float)) else 0
+
+    # Generate 30 seconds of time-varying history so the time-series chart
+    # shows realistic curves rather than flat lines.
+    num_points = 30
+    for i in range(num_points):
+        ts = now - timedelta(seconds=num_points - 1 - i)
+        snap = {"timestamp": ts.isoformat()}
+        t = i / num_points  # normalised 0..1
+        for k, base in base_values.items():
+            if isinstance(base, (int, float)) and base > 0:
+                wave = (
+                    0.12 * math.sin(2 * math.pi * t * 2.5)
+                    + 0.06 * math.sin(2 * math.pi * t * 5.3)
+                    + random.uniform(-0.03, 0.03)
+                )
+                snap[k] = max(0, base * (1 + wave))
+            else:
+                snap[k] = base
+        _derive_history_metrics(snap)
+        metric_store.history.append(snap)
+        metric_store._append_to_disk(snap)
+
+    metric_store._dirty = False
 
     return {"status": "ok", "metrics": latest_vllm_metrics}
 
