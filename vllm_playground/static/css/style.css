@@ -1465,6 +1465,17 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     overflow-x: hidden;
 }
 
+.sidebar.config-highlight {
+    animation: config-flash 0.8s ease;
+}
+
+@keyframes config-flash {
+    0%, 100% { box-shadow: none; }
+    15% { box-shadow: inset 0 0 0 3px var(--accent-color, #6366f1), 0 0 20px rgba(99, 102, 241, 0.5); }
+    50% { box-shadow: inset 0 0 0 2px var(--accent-color, #6366f1), 0 0 12px rgba(99, 102, 241, 0.3); }
+    75% { box-shadow: inset 0 0 0 1px var(--accent-color, #6366f1), 0 0 6px rgba(99, 102, 241, 0.15); }
+}
+
 /* Logs Section Panel */
 .logs-section .panel {
     overflow-y: hidden;
@@ -1981,10 +1992,21 @@ code.remote-model-id {
 }
 
 /* Buttons */
+
+.button-group-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 25px;
+}
+
+.btn-full-width {
+    width: 100%;
+}
+
 .button-group {
     display: flex;
     gap: 10px;
-    margin-top: 25px;
 }
 
 .btn {
@@ -6709,4 +6731,372 @@ code.remote-model-id {
 
 .language-dropdown.show {
     animation: fadeInDown 0.2s ease;
+}
+
+/* =============================================================================
+   Multi-Instance Tab Bar
+   ============================================================================= */
+
+.instance-tab-bar {
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    height: 38px;
+    min-height: 38px;
+    border-bottom: 1px solid var(--border-color, #333);
+    background: var(--panel-bg, #1a1a2e);
+    gap: 2px;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.instance-tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.instance-tabs::-webkit-scrollbar {
+    height: 2px;
+}
+
+.instance-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px 6px 0 0;
+    border: 1px solid transparent;
+    border-bottom: none;
+    background: transparent;
+    color: var(--text-secondary, #999);
+    cursor: pointer;
+    white-space: nowrap;
+    font-size: 12px;
+    line-height: 1.4;
+    transition: background 0.15s, color 0.15s;
+    max-width: 220px;
+    min-width: 0;
+    position: relative;
+}
+
+.instance-tab:hover:not(.active) {
+    background: var(--hover-bg, rgba(255, 255, 255, 0.05));
+    color: var(--text-primary, #eee);
+}
+
+.instance-tab.active {
+    background: var(--accent-color, #6c5ce7);
+    color: #fff;
+    border-color: var(--accent-color, #6c5ce7);
+    border-bottom-color: var(--accent-color, #6c5ce7);
+    margin-bottom: -1px;
+    z-index: 1;
+}
+
+.instance-tab.active .tab-detail {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.instance-tab.active .tab-status-dot {
+    box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
+}
+
+.instance-tab .tab-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.instance-tab .tab-status-dot.healthy { background: #22c55e; }
+.instance-tab .tab-status-dot.starting { background: #eab308; animation: pulse-dot 1.5s infinite; }
+.instance-tab .tab-status-dot.unhealthy { background: #ef4444; }
+.instance-tab .tab-status-dot.stopped { background: #666; }
+.instance-tab .tab-status-dot.unknown { background: #666; }
+.instance-tab .tab-status-dot.swapping { background: #eab308; animation: spin-dot 1s linear infinite; }
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+@keyframes spin-dot {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.instance-tab .tab-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.instance-tab .tab-model-name {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.instance-tab .tab-detail {
+    font-size: 10px;
+    opacity: 0.6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.instance-tab .tab-close {
+    opacity: 0;
+    background: none;
+    border: none;
+    color: var(--text-secondary, #999);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 2px;
+    line-height: 1;
+    border-radius: 3px;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+    flex-shrink: 0;
+}
+
+.instance-tab:hover .tab-close,
+.instance-tab.active .tab-close {
+    opacity: 0.6;
+}
+
+.instance-tab .tab-close:hover {
+    opacity: 1;
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+/* Single tab: look like a status bar, not tabs */
+.instance-tab-bar.single-tab .instance-tab {
+    border-color: transparent;
+    background: transparent;
+    cursor: default;
+}
+
+.instance-tab-bar.single-tab .instance-tab .tab-close {
+    display: none;
+}
+
+/* Saved indicator */
+.instance-tab .tab-saved {
+    font-size: 10px;
+    color: var(--accent-primary, #4f8cff);
+    opacity: 0.7;
+    flex-shrink: 0;
+    margin-left: -2px;
+}
+
+/* Draft tab */
+.instance-tab.draft {
+    border-style: dashed;
+    border-color: var(--accent-color, #6366f1);
+    background: rgba(99, 102, 241, 0.05);
+}
+
+.instance-tab.draft .tab-model-name {
+    font-style: italic;
+    opacity: 0.85;
+}
+
+.tab-status-dot.draft {
+    background: transparent;
+    border: 2px solid var(--accent-color, #6366f1);
+    box-shadow: none;
+}
+
+/* Draft placeholder in chat area */
+.draft-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 300px;
+    text-align: center;
+    color: var(--text-secondary, #999);
+    user-select: none;
+    padding: 40px 20px;
+}
+
+.draft-placeholder-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: 3px dashed var(--accent-color, #6366f1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    color: var(--accent-color, #6366f1);
+    margin-bottom: 20px;
+    opacity: 0.7;
+}
+
+.draft-placeholder h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary, #eee);
+    margin: 0 0 8px 0;
+}
+
+.draft-placeholder p {
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 0;
+    color: var(--text-secondary, #999);
+}
+
+.draft-placeholder p strong {
+    color: var(--accent-color, #6366f1);
+}
+
+/* [+] button */
+.instance-tab-actions {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.instance-tab-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px dashed var(--border-color, #333);
+    background: transparent;
+    color: var(--text-secondary, #999);
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.instance-tab-add:hover {
+    background: var(--hover-bg, rgba(255, 255, 255, 0.05));
+    color: var(--accent-color, #6c5ce7);
+    border-color: var(--accent-color, #6c5ce7);
+}
+
+/* [+] dropdown */
+.instance-add-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    min-width: 220px;
+    background: var(--dropdown-bg, #2a2a3e);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+    padding: 4px 0;
+}
+
+.instance-add-dropdown .dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 8px 14px;
+    border: none;
+    background: none;
+    color: var(--text-primary, #eee);
+    cursor: pointer;
+    font-size: 13px;
+    text-align: left;
+    transition: background 0.15s;
+}
+
+.instance-add-dropdown .dropdown-item:hover {
+    background: var(--hover-bg, rgba(255, 255, 255, 0.05));
+}
+
+.instance-add-dropdown .dropdown-divider {
+    border-top: 1px solid var(--border-color, #333);
+    margin: 4px 0;
+}
+
+.instance-add-dropdown .dropdown-label {
+    padding: 4px 14px;
+    font-size: 11px;
+    color: var(--text-secondary, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.instance-add-dropdown .dropdown-empty {
+    padding: 4px 14px;
+    font-size: 12px;
+    color: var(--text-secondary, #666);
+    font-style: italic;
+}
+
+.instance-add-dropdown .dropdown-item .item-status {
+    font-size: 10px;
+    margin-left: 6px;
+    opacity: 0.6;
+}
+
+/* Sidebar instance count badge */
+.instance-count-badge {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--accent-color, #6c5ce7);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 4px;
+}
+
+/* Tab context menu (right-click) */
+.tab-context-menu {
+    position: fixed;
+    min-width: 180px;
+    background: var(--dropdown-bg, #2a2a3e);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    padding: 4px 0;
+}
+
+.context-menu-item {
+    display: block;
+    width: 100%;
+    padding: 8px 14px;
+    border: none;
+    background: none;
+    color: var(--text-primary, #eee);
+    cursor: pointer;
+    font-size: 13px;
+    text-align: left;
+    transition: background 0.15s;
+}
+
+.context-menu-item:hover {
+    background: var(--hover-bg, rgba(255, 255, 255, 0.05));
+}
+
+.context-menu-danger {
+    color: var(--danger-color, #e74c3c);
+}
+
+.context-menu-danger:hover {
+    background: rgba(231, 76, 60, 0.1);
+}
+
+.context-menu-divider {
+    border-top: 1px solid var(--border-color, #333);
+    margin: 4px 0;
 }

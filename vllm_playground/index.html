@@ -38,6 +38,7 @@
                 <button class="nav-item active" data-view="vllm-server" title="vLLM Server">
                     <img src="/assets/vllm-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label" data-i18n="nav.vllmServer">vLLM Server</span>
+                    <span class="nav-badge instance-count-badge" id="instance-count-badge" style="display: none;"></span>
                 </button>
                 <button class="nav-item" data-view="guidellm" title="GuideLLM Benchmark">
                     <img src="/assets/guidellm-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
@@ -119,6 +120,31 @@
 
             <!-- vLLM Server View -->
             <div class="view-content active" id="vllm-server-view">
+                <!-- Instance Tab Bar (multi-instance) -->
+                <div class="instance-tab-bar" id="instance-tab-bar">
+                    <div class="instance-tabs" id="instance-tabs">
+                        <!-- Tabs rendered dynamically by JS -->
+                    </div>
+                    <div class="instance-tab-actions">
+                        <button class="instance-tab-add" id="instance-tab-add" title="Add instance">
+                            <span class="add-icon">+</span>
+                        </button>
+                        <div class="instance-add-dropdown" id="instance-add-dropdown" style="display: none;">
+                            <button class="dropdown-item" data-action="new-instance">New Instance</button>
+                            <div class="dropdown-divider" id="saved-instances-divider" style="display: none;"></div>
+                            <div class="dropdown-label" id="saved-instances-label" style="display: none;">Saved Instances</div>
+                            <div id="saved-instances-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Context Menu (right-click) -->
+                <div class="tab-context-menu" id="tab-context-menu" style="display: none;">
+                    <button class="context-menu-item" data-action="save-instance">Save Instance</button>
+                    <div class="context-menu-divider"></div>
+                    <button class="context-menu-item context-menu-danger" data-action="remove-instance">Remove Instance</button>
+                </div>
+
                 <!-- Main Content - Two Row Layout -->
                 <div class="main-content-wrapper">
                     <!-- Row 1: Config | Chat | Metrics -->
@@ -127,6 +153,7 @@
                     <aside class="sidebar resizable" id="config-panel">
                         <div class="panel">
                             <h2 data-i18n="serverConfig.title">⚙️ Server Configuration</h2>
+
 
                             <!-- Run Mode Toggle (always visible) -->
                             <div class="form-group mode-toggle-group">
@@ -574,9 +601,12 @@
                                 <small class="command-help" data-i18n="serverConfig.commandPreview.help">Editable for customization. Copy to run manually. "Start Server" uses settings above.</small>
                             </div>
 
-                            <div class="button-group">
-                                <button id="start-btn" class="btn btn-primary" data-i18n="serverConfig.buttons.start">Start Server</button>
-                                <button id="stop-btn" class="btn btn-danger" disabled data-i18n="serverConfig.buttons.stop">Stop Server</button>
+                            <div class="button-group-stack">
+                                <button id="save-instance-btn" class="btn btn-secondary btn-full-width" disabled title="Save this instance so it persists across playground restarts">Save Instance</button>
+                                <div class="button-group">
+                                    <button id="start-btn" class="btn btn-primary" data-i18n="serverConfig.buttons.start">Start Server</button>
+                                    <button id="stop-btn" class="btn btn-danger" disabled data-i18n="serverConfig.buttons.stop">Stop Server</button>
+                                </div>
                             </div>
                         </div>
                         <div class="resize-handle resize-handle-vertical" data-direction="horizontal"></div>

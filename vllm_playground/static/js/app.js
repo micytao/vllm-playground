@@ -63,6 +63,14 @@ class VLLMWebUI {
         this.omniAvailable = false;
         this.omniVersion = null;
 
+        // Multi-instance state
+        this._instances = [];
+        this._activeInstanceId = null;
+        this._chatHistories = {};  // instance_id -> messages[]
+        this._logBuffers = {};     // instance_id -> string[]
+        this._tabBarInitialized = false;
+        this._draftMode = false;
+
         this.init();
     }
 
@@ -172,6 +180,7 @@ class VLLMWebUI {
             // Buttons
             startBtn: document.getElementById('start-btn'),
             stopBtn: document.getElementById('stop-btn'),
+            saveInstanceBtn: document.getElementById('save-instance-btn'),
             sendBtn: document.getElementById('send-btn'),
             clearChatBtn: document.getElementById('clear-chat-btn'),
             exportChatBtn: document.getElementById('export-chat-btn'),
@@ -352,6 +361,9 @@ class VLLMWebUI {
 
         // Tool Calling event listeners
         this.initToolCalling();
+
+        // Multi-instance tab bar
+        this.initInstanceTabBar();
     }
 
     // ============ View Switching ============
@@ -1419,6 +1431,9 @@ number ::= [0-9]+`
         // Server control
         this.elements.startBtn.addEventListener('click', () => this.startServer());
         this.elements.stopBtn.addEventListener('click', () => this.stopServer());
+        if (this.elements.saveInstanceBtn) {
+            this.elements.saveInstanceBtn.addEventListener('click', () => this.saveInstance());
+        }
 
         // CPU/GPU mode toggle
         this.elements.modeCpu.addEventListener('change', () => this.toggleComputeMode());
@@ -1644,7 +1659,28 @@ number ::= [0-9]+`
         };
 
         this.ws.onmessage = (event) => {
-            if (event.data) {
+            if (!event.data) return;
+            try {
+                const data = JSON.parse(event.data);
+                const instId = data.instance_id;
+                const msg = data.message;
+                if (!msg) return;
+
+                // Buffer per-instance
+                if (instId) {
+                    if (!this._logBuffers[instId]) this._logBuffers[instId] = [];
+                    this._logBuffers[instId].push(msg);
+                    if (this._logBuffers[instId].length > 2000) {
+                        this._logBuffers[instId].shift();
+                    }
+                }
+
+                // Only render if this message belongs to the active instance (or is global)
+                if (!instId || instId === this._activeInstanceId) {
+                    this.addLog(msg);
+                }
+            } catch {
+                // Fallback for non-JSON messages
                 this.addLog(event.data);
             }
         };
@@ -1880,14 +1916,18 @@ number ::= [0-9]+`
                 this.currentConfig = data.config;  // Store current config
                 const isRemote = data.config && data.config.run_mode === 'remote';
                 this.updateStatus('running', isRemote ? 'Connected (Remote)' : 'Server Running');
-                this.elements.startBtn.disabled = true;
-                this.elements.stopBtn.disabled = false;
-                // Only enable send button if server is ready
-                this.elements.sendBtn.disabled = !this.serverReady;
+                if (!this._draftMode) {
+                    this.elements.startBtn.disabled = true;
+                    this.elements.startBtn.textContent = isRemote ? 'Connect' : 'Start Server';
+                    this.elements.stopBtn.disabled = false;
+                    this.elements.stopBtn.textContent = isRemote ? 'Disconnect' : 'Stop Server';
+                    if (this.elements.saveInstanceBtn) this.elements.saveInstanceBtn.disabled = false;
+                    this.elements.sendBtn.disabled = !this.serverReady;
+                }
                 this.elements.runBenchmarkBtn.disabled = false;
 
                 // Update send button state only if serverReady (don't remove class unnecessarily)
-                if (this.serverReady) {
+                if (this.serverReady && !this._draftMode) {
                     this.updateSendButtonState();
                 }
 
@@ -1898,14 +1938,22 @@ number ::= [0-9]+`
                 this.serverRunning = false;
                 this.serverReady = false;  // Reset ready state when server stops
                 this.healthCheckStarted = false;  // Reset health check flag
+                const stoppedIsRemote = this.currentConfig && this.currentConfig.run_mode === 'remote';
                 this.currentConfig = null;  // Clear config when server stops
-                this.updateStatus('connected', 'Server Stopped');
+                this.updateStatus('connected', stoppedIsRemote ? 'Disconnected' : 'Server Stopped');
                 this.elements.startBtn.disabled = false;
                 this.elements.stopBtn.disabled = true;
+                if (this.elements.saveInstanceBtn) this.elements.saveInstanceBtn.disabled = true;
                 this.elements.sendBtn.disabled = true;
                 this.elements.sendBtn.classList.remove('btn-ready');
                 this.elements.runBenchmarkBtn.disabled = true;
                 this.elements.uptime.textContent = '';
+            }
+            // Refresh tab bar every ~5 polls (5s)
+            if (!this._tabBarPollCount) this._tabBarPollCount = 0;
+            this._tabBarPollCount++;
+            if (this._tabBarPollCount % 5 === 0) {
+                this._refreshTabBarOnPoll();
             }
         } catch (error) {
             console.error('Failed to poll status:', error);
@@ -2885,6 +2933,10 @@ number ::= [0-9]+`
                 this.saveSettings({ vllm_run_mode: 'subprocess' });
             }
 
+            // Exit draft mode and refresh the instance tab bar
+            this._draftMode = false;
+            this.fetchInstances();
+
         } catch (error) {
             this.addLog(`❌ ${isRemote ? 'Failed to connect' : 'Failed to start server'}: ${error.message}`, 'error');
             this.showNotification(`${isRemote ? 'Failed to connect' : 'Failed to start'}: ${error.message}`, 'error');
@@ -2920,6 +2972,10 @@ number ::= [0-9]+`
             // Clear config so tool panel reverts to local checkbox state
             this.currentConfig = null;
             this.updateToolPanelStatus();
+
+            // Re-enable start button and refresh tab bar
+            this.elements.startBtn.disabled = false;
+            this.fetchInstances();
 
         } catch (error) {
             this.addLog(`❌ ${isRemote ? 'Failed to disconnect' : 'Failed to stop server'}: ${error.message}`, 'error');
@@ -3768,6 +3824,9 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
     performClearChat() {
         this.chatHistory = [];
+        if (this._activeInstanceId) {
+            this._saveChatHistoryToStorage(this._activeInstanceId);
+        }
         this.elements.chatContainer.innerHTML = `
             <div class="chat-message system">
                 <div class="message-content">
@@ -4168,6 +4227,91 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
             // Focus confirm button
             confirmBtn.focus();
+        });
+    }
+
+    showPrompt(options = {}) {
+        return new Promise((resolve) => {
+            const {
+                title = 'Enter Value',
+                message = '',
+                placeholder = '',
+                defaultValue = '',
+                confirmText = 'Save',
+                cancelText = 'Cancel',
+                icon = '💾',
+                type = 'primary'
+            } = options;
+
+            const modal = document.getElementById('confirm-modal');
+            const overlay = document.getElementById('confirm-modal-overlay');
+            const iconEl = document.getElementById('confirm-modal-icon');
+            const titleEl = document.getElementById('confirm-modal-title');
+            const messageEl = document.getElementById('confirm-modal-message');
+            const confirmBtn = document.getElementById('confirm-modal-confirm');
+            const cancelBtn = document.getElementById('confirm-modal-cancel');
+
+            if (!modal) {
+                const result = window.prompt(message, defaultValue);
+                resolve(result);
+                return;
+            }
+
+            iconEl.textContent = icon;
+            titleEl.textContent = title;
+            confirmBtn.textContent = confirmText;
+            cancelBtn.textContent = cancelText;
+            confirmBtn.className = `btn btn-${type}`;
+
+            messageEl.innerHTML = '';
+            if (message) {
+                const msgP = document.createElement('p');
+                msgP.textContent = message;
+                msgP.style.margin = '0 0 12px 0';
+                messageEl.appendChild(msgP);
+            }
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'form-control';
+            input.placeholder = placeholder;
+            input.value = defaultValue;
+            input.style.width = '100%';
+            messageEl.appendChild(input);
+
+            modal.style.display = 'flex';
+            setTimeout(() => { input.focus(); input.select(); }, 50);
+
+            const cleanup = () => {
+                modal.style.display = 'none';
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
+                overlay.removeEventListener('click', handleCancel);
+                document.removeEventListener('keydown', handleKeydown);
+            };
+
+            const handleConfirm = () => {
+                const val = input.value.trim();
+                cleanup();
+                resolve(val || null);
+            };
+
+            const handleCancel = () => {
+                cleanup();
+                resolve(null);
+            };
+
+            const handleKeydown = (e) => {
+                if (e.key === 'Escape') {
+                    handleCancel();
+                } else if (e.key === 'Enter') {
+                    handleConfirm();
+                }
+            };
+
+            confirmBtn.addEventListener('click', handleConfirm);
+            cancelBtn.addEventListener('click', handleCancel);
+            overlay.addEventListener('click', handleCancel);
+            document.addEventListener('keydown', handleKeydown);
         });
     }
 
@@ -6853,6 +6997,557 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     // ============================================
     // Claude Code methods are dynamically added via initClaudeCodeModule()
     // See: static/js/modules/claudecode.js
+
+    // ============================================
+    // Multi-Instance Tab Bar
+    // ============================================
+
+    initInstanceTabBar() {
+        const addBtn = document.getElementById('instance-tab-add');
+        const dropdown = document.getElementById('instance-add-dropdown');
+        if (!addBtn || !dropdown) return;
+
+        addBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._populateSavedInstancesDropdown();
+            dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+        });
+
+        document.addEventListener('click', () => {
+            dropdown.style.display = 'none';
+        });
+
+        dropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const action = e.target.dataset?.action;
+            if (action === 'new-instance') {
+                dropdown.style.display = 'none';
+                this.showConfigForNewInstance();
+            }
+            const instanceId = e.target.dataset?.instanceId || e.target.closest('[data-instance-id]')?.dataset?.instanceId;
+            if (instanceId) {
+                dropdown.style.display = 'none';
+                this.activateInstance(instanceId);
+            }
+        });
+
+        this._tabBarInitialized = true;
+        this.fetchInstances();
+    }
+
+    _populateSavedInstancesDropdown() {
+        const listEl = document.getElementById('saved-instances-list');
+        const divider = document.getElementById('saved-instances-divider');
+        const label = document.getElementById('saved-instances-label');
+        if (!listEl) return;
+
+        const savedInstances = this._instances.filter(i => i.saved);
+        const currentTabIds = new Set(this._instances.map(i => i.id));
+
+        if (savedInstances.length === 0) {
+            listEl.innerHTML = '';
+            if (divider) divider.style.display = 'none';
+            if (label) label.style.display = 'none';
+            return;
+        }
+
+        if (divider) divider.style.display = '';
+        if (label) label.style.display = '';
+
+        listEl.innerHTML = savedInstances.map(inst => {
+            const modelName = this._escapeHtml(inst.model || inst.name || 'Unknown');
+            const port = inst.port || '?';
+            const isActive = inst.id === this._activeInstanceId;
+            const healthDot = inst.health === 'healthy' ? '🟢'
+                : inst.health === 'stopped' ? '⏹️'
+                : inst.health === 'unreachable' ? '🔴'
+                : '⚪';
+            const activeTag = isActive ? ' <span class="item-status">(active)</span>' : '';
+            return `<button class="dropdown-item" data-instance-id="${inst.id}">${healthDot} ${modelName} :${port}${activeTag}</button>`;
+        }).join('');
+    }
+
+    async fetchInstances() {
+        try {
+            const resp = await fetch('/api/instances');
+            const data = await resp.json();
+            this._instances = data.instances || [];
+
+            // In draft mode, don't overwrite the local active/chat state
+            if (!this._draftMode) {
+                const prevActiveId = this._activeInstanceId;
+                const newActiveId = data.active_id;
+
+                if (newActiveId !== prevActiveId) {
+                    // Save current chat BEFORE switching the pointer
+                    if (prevActiveId && this.chatHistory.length > 0) {
+                        this._chatHistories[prevActiveId] = [...this.chatHistory];
+                        this._saveChatHistoryToStorage(prevActiveId);
+                    }
+
+                    this._activeInstanceId = newActiveId;
+
+                    if (newActiveId) {
+                        const saved = this._chatHistories[newActiveId]
+                            || this._loadChatHistoryFromStorage(newActiveId);
+                        this.chatHistory = saved;
+                    } else {
+                        this.chatHistory = [];
+                    }
+                    this._renderChatFromHistory();
+                } else {
+                    this._activeInstanceId = newActiveId;
+                }
+            }
+
+            this.renderTabBar();
+            this.updateInstanceBadge();
+        } catch (e) {
+            // Registry not ready yet; will update on next pollStatus
+        }
+    }
+
+
+    renderTabBar() {
+        const container = document.getElementById('instance-tabs');
+        const tabBar = document.getElementById('instance-tab-bar');
+        if (!container || !tabBar) return;
+
+        container.innerHTML = '';
+
+        const hasDraft = this._draftMode;
+        const totalTabs = this._instances.length + (hasDraft ? 1 : 0);
+        const isSingle = totalTabs <= 1;
+        tabBar.classList.toggle('single-tab', isSingle);
+
+        if (this._instances.length === 0 && !hasDraft) {
+            container.innerHTML = '<span class="instance-tab active" style="cursor:default;"><span class="tab-status-dot stopped"></span><span class="tab-info"><span class="tab-model-name">No instances</span></span></span>';
+            return;
+        }
+
+        this._instances.forEach(instance => {
+            const isActive = !hasDraft && instance.id === this._activeInstanceId;
+            const tab = document.createElement('div');
+            tab.className = `instance-tab${isActive ? ' active' : ''}`;
+            tab.dataset.instanceId = instance.id;
+
+            const statusClass = instance.health || 'unknown';
+            const modelName = instance.model || instance.name || 'Unknown';
+            const detail = `:${instance.port || '?'}${instance.gpu_devices ? ' GPU ' + instance.gpu_devices.join(',') : ''}`;
+            const savedIndicator = instance.saved ? '<span class="tab-saved" title="Saved">&#9733;</span>' : '';
+
+            tab.innerHTML = `
+                <span class="tab-status-dot ${statusClass}"></span>
+                <span class="tab-info">
+                    <span class="tab-model-name">${this._escapeHtml(modelName)}</span>
+                    ${detail ? `<span class="tab-detail">${this._escapeHtml(detail)}</span>` : ''}
+                </span>
+                ${savedIndicator}
+                ${!isSingle ? '<button class="tab-close" title="Remove instance">&times;</button>' : ''}
+            `;
+
+            tab.addEventListener('click', (e) => {
+                if (e.target.classList.contains('tab-close')) return;
+                this.activateInstance(instance.id);
+            });
+            tab.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                this._showTabContextMenu(e.clientX, e.clientY, instance);
+            });
+
+            const closeBtn = tab.querySelector('.tab-close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.removeInstanceTab(instance);
+                });
+            }
+
+            container.appendChild(tab);
+        });
+
+        // Append draft tab when in draft mode
+        if (hasDraft) {
+            const draftTab = document.createElement('div');
+            draftTab.className = 'instance-tab active draft';
+            draftTab.innerHTML = `
+                <span class="tab-status-dot draft"></span>
+                <span class="tab-info">
+                    <span class="tab-model-name">New Instance</span>
+                </span>
+            `;
+            container.appendChild(draftTab);
+        }
+    }
+
+    async _switchLogsToInstance(instanceId) {
+        if (!this.elements.logsContainer) return;
+        this.elements.logsContainer.innerHTML = '';
+
+        let buf = this._logBuffers[instanceId];
+        if (!buf || buf.length === 0) {
+            try {
+                const resp = await fetch(`/api/instances/${instanceId}/logs`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    buf = data.logs || [];
+                    this._logBuffers[instanceId] = buf;
+                }
+            } catch {
+                // Best-effort
+            }
+        }
+
+        if (buf && buf.length > 0) {
+            for (const msg of buf) {
+                this.addLog(msg);
+            }
+        } else {
+            this.addLog('No logs yet for this instance.', 'info');
+        }
+    }
+
+    _restoreConfigPanel(instance) {
+        const cfg = instance.config;
+        if (!cfg) return;
+
+        if (cfg.port != null) this.elements.port.value = cfg.port;
+        if (cfg.host) this.elements.host.value = cfg.host;
+
+        // Run mode radio
+        if (cfg.run_mode) {
+            const radio = document.getElementById(`run-mode-${cfg.run_mode}`);
+            if (radio) {
+                radio.checked = true;
+                radio.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+
+        // Model field -- prefer the instance-level model (discovered/actual) over
+        // cfg.model which may still hold the VLLMConfig default.
+        const actualModel = instance.model || cfg.model;
+        if (actualModel) {
+            if (this.elements.customModel) this.elements.customModel.value = actualModel;
+        }
+
+        // Remote mode fields
+        if (cfg.remote_url && this.elements.remoteUrlInput) {
+            this.elements.remoteUrlInput.value = cfg.remote_url;
+        }
+        if (cfg.remote_api_key && this.elements.remoteApiKeyInput) {
+            this.elements.remoteApiKeyInput.value = cfg.remote_api_key;
+        }
+
+        // GPU settings
+        if (cfg.gpu_memory_utilization != null && this.elements.gpuMemory) {
+            this.elements.gpuMemory.value = cfg.gpu_memory_utilization;
+        }
+        if (cfg.tensor_parallel_size != null && this.elements.tensorParallel) {
+            this.elements.tensorParallel.value = cfg.tensor_parallel_size;
+        }
+        if (cfg.gpu_device != null && this.elements.gpuDevice) {
+            this.elements.gpuDevice.value = cfg.gpu_device;
+        }
+
+        // CPU settings
+        if (cfg.cpu_kvcache_space != null && this.elements.cpuKvcache) {
+            this.elements.cpuKvcache.value = cfg.cpu_kvcache_space;
+        }
+
+        // Advanced settings
+        if (cfg.dtype && this.elements.dtype) this.elements.dtype.value = cfg.dtype;
+        if (cfg.max_model_len != null && this.elements.maxModelLen) {
+            this.elements.maxModelLen.value = cfg.max_model_len;
+        }
+        if (this.elements.trustRemoteCode) {
+            this.elements.trustRemoteCode.checked = !!cfg.trust_remote_code;
+        }
+        if (this.elements.enablePrefixCaching) {
+            this.elements.enablePrefixCaching.checked = !!cfg.enable_prefix_caching;
+        }
+        if (this.elements.enableToolCalling) {
+            this.elements.enableToolCalling.checked = !!cfg.enable_tool_calling;
+        }
+        if (cfg.served_model_name && this.elements.servedModelName) {
+            this.elements.servedModelName.value = cfg.served_model_name;
+        }
+        if (cfg.venv_path && this.elements.venvPathInput) {
+            this.elements.venvPathInput.value = cfg.venv_path;
+        }
+
+        // Always update button labels to match the restored run mode
+        const isRemote = cfg.run_mode === 'remote';
+        if (this.elements.startBtn) {
+            this.elements.startBtn.textContent = isRemote ? 'Connect' : 'Start Server';
+        }
+        if (this.elements.stopBtn) {
+            this.elements.stopBtn.textContent = isRemote ? 'Disconnect' : 'Stop Server';
+        }
+    }
+
+    async activateInstance(instanceId) {
+        if (instanceId === this._activeInstanceId && !this._draftMode) return;
+
+        // Save current chat history before switching
+        if (this._activeInstanceId) {
+            this._chatHistories[this._activeInstanceId] = [...this.chatHistory];
+            this._saveChatHistoryToStorage(this._activeInstanceId);
+        }
+
+        // Exit draft mode when switching to an existing instance
+        this._draftMode = false;
+
+        try {
+            const resp = await fetch(`/api/instances/${instanceId}/activate`, { method: 'POST' });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                this.showNotification(err.detail || 'Failed to activate instance', 'error');
+                return;
+            }
+
+            this._activeInstanceId = instanceId;
+            this.renderTabBar();
+
+            // Load chat history for the new active instance
+            const saved = this._chatHistories[instanceId] || this._loadChatHistoryFromStorage(instanceId);
+            this.chatHistory = saved;
+            this._renderChatFromHistory();
+
+            // Restore config panel to reflect the activated instance
+            const inst = this._instances.find(i => i.id === instanceId);
+            if (inst) this._restoreConfigPanel(inst);
+
+            // Switch log display to the new instance
+            await this._switchLogsToInstance(instanceId);
+
+            // Force immediate status + metrics refresh
+            await this.pollStatus();
+
+            // Reset MetricStore charts to avoid showing stale data from previous backend
+            try {
+                const metricsResp = await fetch('/api/vllm/metrics/all');
+                if (metricsResp.ok) {
+                    const metricsData = await metricsResp.json();
+                    if (this.updateMetricsUI) {
+                        this.updateMetricsUI(metricsData);
+                    }
+                }
+            } catch (e) {
+                // Metrics refresh is best-effort
+            }
+        } catch (e) {
+            this.showNotification('Failed to switch instance', 'error');
+        }
+    }
+
+    async removeInstanceTab(instance) {
+        const confirmed = await this.showConfirm({
+            title: 'Remove Instance',
+            message: `Stop and remove "${instance.model || instance.name}" (:${instance.port})? This will terminate the server and delete its chat history.`,
+            confirmText: 'Remove',
+            cancelText: 'Keep',
+            icon: '⚠️',
+            type: 'danger'
+        });
+        if (!confirmed) return;
+
+        try {
+            await fetch(`/api/instances/${instance.id}`, { method: 'DELETE' });
+            delete this._chatHistories[instance.id];
+            delete this._logBuffers[instance.id];
+            this._removeChatHistoryFromStorage(instance.id);
+            await this.fetchInstances();
+            this.pollStatus();
+        } catch (e) {
+            this.showNotification('Failed to remove instance', 'error');
+        }
+    }
+
+    async showConfigForNewInstance() {
+        // Save current chat history before entering draft mode
+        if (this._activeInstanceId) {
+            this._chatHistories[this._activeInstanceId] = [...this.chatHistory];
+            this._saveChatHistoryToStorage(this._activeInstanceId);
+        }
+
+        // Enter draft mode
+        this._draftMode = true;
+        this._activeInstanceId = null;
+        this.chatHistory = [];
+
+        // Pre-fill port with next free port
+        let allocatedPort = null;
+        try {
+            const resp = await fetch('/api/instances/next-port');
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.port && this.elements.port) {
+                    this.elements.port.value = data.port;
+                    allocatedPort = data.port;
+                }
+            }
+        } catch (e) {
+            // Best effort
+        }
+
+        // Enable start button so the user can start a new instance
+        this.elements.startBtn.disabled = false;
+        this.elements.startBtn.textContent = 'Start Server';
+        this.elements.stopBtn.disabled = true;
+        if (this.elements.saveInstanceBtn) this.elements.saveInstanceBtn.disabled = true;
+        this.elements.sendBtn.disabled = true;
+
+        // Show draft tab, chat placeholder, and clear logs
+        this.renderTabBar();
+        this._showDraftPlaceholder();
+        if (this.elements.logsContainer) {
+            this.elements.logsContainer.innerHTML = '<div class="log-entry info">Configure and start a new instance to see logs.</div>';
+        }
+
+        const configPanel = document.getElementById('config-panel');
+        if (configPanel) {
+            configPanel.scrollTop = 0;
+            configPanel.classList.remove('config-highlight');
+            void configPanel.offsetWidth;
+            configPanel.classList.add('config-highlight');
+            setTimeout(() => configPanel.classList.remove('config-highlight'), 1200);
+        }
+
+        const portMsg = allocatedPort ? ` (port ${allocatedPort})` : '';
+        this.showNotification(`Configure a new instance${portMsg} and click Start Server`, 'info');
+    }
+
+    async saveInstance(instanceOverride) {
+        const instance = instanceOverride
+            || this._instances.find(i => i.id === this._activeInstanceId);
+        if (!instance) {
+            this.showNotification('No active instance to save', 'warning');
+            return;
+        }
+
+        if (instance.saved) {
+            this.showNotification('Instance is already saved', 'info');
+            return;
+        }
+
+        try {
+            const resp = await fetch(`/api/instances/${instance.id}/save`, { method: 'POST' });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                this.showNotification(err.detail || 'Failed to save instance', 'error');
+                return;
+            }
+            this.showNotification('Instance saved — it will persist across restarts', 'success');
+            await this.fetchInstances();
+        } catch (e) {
+            this.showNotification('Failed to save instance', 'error');
+        }
+    }
+
+    _showTabContextMenu(x, y, instance) {
+        const menu = document.getElementById('tab-context-menu');
+        if (!menu) return;
+
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
+        menu.style.display = 'block';
+
+        const hideHandler = () => {
+            menu.style.display = 'none';
+            document.removeEventListener('click', hideHandler);
+            document.removeEventListener('contextmenu', hideHandler);
+        };
+
+        menu.onclick = (e) => {
+            const action = e.target.dataset?.action;
+            menu.style.display = 'none';
+            document.removeEventListener('click', hideHandler);
+            document.removeEventListener('contextmenu', hideHandler);
+
+            if (action === 'save-instance') {
+                this.saveInstance(instance);
+            } else if (action === 'remove-instance') {
+                this.removeInstanceTab(instance);
+            }
+        };
+
+        setTimeout(() => {
+            document.addEventListener('click', hideHandler);
+            document.addEventListener('contextmenu', hideHandler);
+        }, 0);
+    }
+
+    updateInstanceBadge() {
+        const badge = document.getElementById('instance-count-badge');
+        if (!badge) return;
+        const running = this._instances.filter(i => i.health === 'healthy').length;
+        if (running > 1) {
+            badge.textContent = running;
+            badge.style.display = '';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    // Per-instance chat history persistence
+    _saveChatHistoryToStorage(backendId) {
+        if (!backendId) return;
+        try {
+            localStorage.setItem(`vllm_chat_${backendId}`, JSON.stringify(this.chatHistory));
+        } catch (e) { /* quota exceeded */ }
+    }
+
+    _loadChatHistoryFromStorage(backendId) {
+        try {
+            const raw = localStorage.getItem(`vllm_chat_${backendId}`);
+            return raw ? JSON.parse(raw) : [];
+        } catch (e) { return []; }
+    }
+
+    _removeChatHistoryFromStorage(backendId) {
+        try {
+            localStorage.removeItem(`vllm_chat_${backendId}`);
+        } catch (e) { /* ignore */ }
+    }
+
+    _renderChatFromHistory() {
+        const container = this.elements?.chatContainer;
+        if (!container) return;
+        container.innerHTML = '';
+        if (this.chatHistory.length === 0) {
+            container.innerHTML = '<div class="welcome-message"><h2>Start a conversation</h2><p>Switch to a running instance or start a new server.</p></div>';
+            return;
+        }
+        this.chatHistory.forEach(msg => {
+            if (msg.role === 'user' || msg.role === 'assistant') {
+                this.addChatMessage(msg.role, msg.content);
+            }
+        });
+    }
+
+    _showDraftPlaceholder() {
+        const container = this.elements?.chatContainer;
+        if (!container) return;
+        container.innerHTML = `
+            <div class="draft-placeholder">
+                <div class="draft-placeholder-icon">+</div>
+                <h3>New Instance</h3>
+                <p>Configure the server settings in the left panel,<br>then click <strong>Start Server</strong> to begin.</p>
+            </div>
+        `;
+    }
+
+    _escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Refresh tab bar during status polling
+    _refreshTabBarOnPoll() {
+        if (!this._tabBarInitialized) return;
+        this.fetchInstances();
+    }
 }
 // Add CSS animations for notifications
 const style = document.createElement('style');
@@ -6892,6 +7587,10 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('beforeunload', () => {
         if (window.vllmUI) {
             window.vllmUI.stopGpuStatusPolling();
+            // Persist current chat history for active instance
+            if (window.vllmUI._activeInstanceId) {
+                window.vllmUI._saveChatHistoryToStorage(window.vllmUI._activeInstanceId);
+            }
         }
     });
 });
