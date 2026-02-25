@@ -120,6 +120,24 @@ _LOG_BUFFER_MAX = 2000
 _globals_version: int = 0
 
 
+def _flush_global_logs_to_instance(inst_id: Optional[str]) -> None:
+    """Move pending ``__global__`` log buffer entries into a specific instance buffer.
+
+    Called right after ``_auto_register_instance()`` so that pre-registration
+    log messages (broadcast without an instance_id) are attributed to the
+    newly created instance and survive tab switches.
+    """
+    if not inst_id:
+        return
+    global_buf = _log_buffers.get("__global__")
+    if not global_buf:
+        return
+    if inst_id not in _log_buffers:
+        _log_buffers[inst_id] = deque(maxlen=_LOG_BUFFER_MAX)
+    _log_buffers[inst_id].extend(global_buf)
+    global_buf.clear()
+
+
 # ---------------------------------------------------------------------------
 # MetricStore: generic Prometheus scraper with typed values + ring buffer
 # ---------------------------------------------------------------------------
@@ -2709,7 +2727,8 @@ async def start_server(config: VLLMConfig):
             await broadcast_log(f"[WEBUI] URL: {remote_url}")
 
             # Auto-register in backend registry
-            await _auto_register_instance(config, current_model_identifier)
+            inst_id = await _auto_register_instance(config, current_model_identifier)
+            _flush_global_logs_to_instance(inst_id)
 
             return {
                 "status": "connected",
@@ -3194,6 +3213,7 @@ async def start_server(config: VLLMConfig):
 
             # Register first so log reader has an instance_id
             inst_id = await _auto_register_instance(config, model_source)
+            _flush_global_logs_to_instance(inst_id)
 
             # Start per-instance log reader
             if inst_id:
@@ -3261,6 +3281,7 @@ async def start_server(config: VLLMConfig):
 
             # Register first, then start per-instance log reader with the ID
             inst_id = await _auto_register_instance(config, model_source)
+            _flush_global_logs_to_instance(inst_id)
 
             if inst_id:
                 _log_reader_tasks[inst_id] = asyncio.create_task(read_logs_subprocess(inst_id, vllm_process))
@@ -3686,7 +3707,15 @@ async def _do_activate(backend_id: str) -> dict:
     # Trigger immediate metrics scrape for the new instance
     asyncio.ensure_future(metric_store._do_scrape())
 
-    return {"status": "activated", "instance": entry.id, "model": entry.model}
+    return {
+        "status": "activated",
+        "instance": entry.id,
+        "model": entry.model,
+        "health": entry.health,
+        "running": entry.health in ("healthy", "unknown"),
+        "config": entry.config,
+        "run_mode": entry.run_mode if entry.managed else "remote",
+    }
 
 
 @app.post("/api/instances/{backend_id}/health")

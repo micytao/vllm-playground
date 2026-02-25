@@ -68,8 +68,10 @@ class VLLMWebUI {
         this._activeInstanceId = null;
         this._chatHistories = {};  // instance_id -> messages[]
         this._logBuffers = {};     // instance_id -> string[]
+        this._tokenCounts = {};    // instance_id -> {conversationTokens, maxModelLen}
         this._tabBarInitialized = false;
         this._draftMode = false;
+        this._activating = false;
 
         this.init();
     }
@@ -1667,11 +1669,12 @@ number ::= [0-9]+`
                 if (!msg) return;
 
                 // Buffer per-instance
-                if (instId) {
-                    if (!this._logBuffers[instId]) this._logBuffers[instId] = [];
-                    this._logBuffers[instId].push(msg);
-                    if (this._logBuffers[instId].length > 2000) {
-                        this._logBuffers[instId].shift();
+                const bufId = instId || this._activeInstanceId;
+                if (bufId) {
+                    if (!this._logBuffers[bufId]) this._logBuffers[bufId] = [];
+                    this._logBuffers[bufId].push(msg);
+                    if (this._logBuffers[bufId].length > 2000) {
+                        this._logBuffers[bufId].shift();
                     }
                 }
 
@@ -1907,13 +1910,20 @@ number ::= [0-9]+`
     }
 
     async pollStatus() {
+        // Skip UI mutations while activateInstance is in progress to prevent
+        // stale /api/status data from overwriting the freshly derived state.
+        if (this._activating) return;
+
         try {
             const response = await fetch('/api/status');
             const data = await response.json();
 
+            // Re-check after await — activation may have started during fetch
+            if (this._activating) return;
+
             if (data.running) {
                 this.serverRunning = true;
-                this.currentConfig = data.config;  // Store current config
+                this.currentConfig = data.config;
                 const isRemote = data.config && data.config.run_mode === 'remote';
                 this.updateStatus('running', isRemote ? 'Connected (Remote)' : 'Server Running');
                 if (!this._draftMode) {
@@ -1926,7 +1936,6 @@ number ::= [0-9]+`
                 }
                 this.elements.runBenchmarkBtn.disabled = false;
 
-                // Update send button state only if serverReady (don't remove class unnecessarily)
                 if (this.serverReady && !this._draftMode) {
                     this.updateSendButtonState();
                 }
@@ -1936,10 +1945,10 @@ number ::= [0-9]+`
                 }
             } else {
                 this.serverRunning = false;
-                this.serverReady = false;  // Reset ready state when server stops
-                this.healthCheckStarted = false;  // Reset health check flag
+                this.serverReady = false;
+                this.healthCheckStarted = false;
                 const stoppedIsRemote = this.currentConfig && this.currentConfig.run_mode === 'remote';
-                this.currentConfig = null;  // Clear config when server stops
+                this.currentConfig = null;
                 this.updateStatus('connected', stoppedIsRemote ? 'Disconnected' : 'Server Stopped');
                 this.elements.startBtn.disabled = false;
                 this.elements.stopBtn.disabled = true;
@@ -3715,6 +3724,13 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     }
 
     addChatMessage(role, content, imageUrl = null) {
+        // Remove placeholder/welcome divs before the first real message
+        const chatContainer = this.elements?.chatContainer;
+        if (chatContainer) {
+            const placeholder = chatContainer.querySelector('.welcome-message, .draft-placeholder');
+            if (placeholder) placeholder.remove();
+        }
+
         const messageDiv = document.createElement('div');
         messageDiv.className = `chat-message ${role}`;
 
@@ -7073,16 +7089,25 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             const data = await resp.json();
             this._instances = data.instances || [];
 
-            // In draft mode, don't overwrite the local active/chat state
-            if (!this._draftMode) {
+            // Skip state-switching while activateInstance is in progress or in draft mode
+            if (!this._draftMode && !this._activating) {
                 const prevActiveId = this._activeInstanceId;
                 const newActiveId = data.active_id;
 
                 if (newActiveId !== prevActiveId) {
-                    // Save current chat BEFORE switching the pointer
+                    // Save current chat and token counts BEFORE switching
                     if (prevActiveId && this.chatHistory.length > 0) {
                         this._chatHistories[prevActiveId] = [...this.chatHistory];
                         this._saveChatHistoryToStorage(prevActiveId);
+                    }
+                    if (prevActiveId) this._saveTokenCountState(prevActiveId);
+
+                    // When exiting draft mode (prevActiveId is null), the start
+                    // handler may have already set _tcMaxModelLen / _tcConversationTokens.
+                    // Carry those values forward under the new instance ID so the
+                    // subsequent restore doesn't wipe them.
+                    if (!prevActiveId && newActiveId && !this._tokenCounts[newActiveId]) {
+                        this._saveTokenCountState(newActiveId);
                     }
 
                     this._activeInstanceId = newActiveId;
@@ -7095,6 +7120,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                         this.chatHistory = [];
                     }
                     this._renderChatFromHistory();
+                    this._restoreTokenCountState(newActiveId);
                 } else {
                     this._activeInstanceId = newActiveId;
                 }
@@ -7288,16 +7314,21 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     async activateInstance(instanceId) {
         if (instanceId === this._activeInstanceId && !this._draftMode) return;
 
-        // Save current chat history before switching
-        if (this._activeInstanceId) {
-            this._chatHistories[this._activeInstanceId] = [...this.chatHistory];
-            this._saveChatHistoryToStorage(this._activeInstanceId);
-        }
-
-        // Exit draft mode when switching to an existing instance
-        this._draftMode = false;
-
+        this._activating = true;
         try {
+            // Save current chat history and token counts before switching
+            if (this._activeInstanceId) {
+                this._chatHistories[this._activeInstanceId] = [...this.chatHistory];
+                this._saveChatHistoryToStorage(this._activeInstanceId);
+                this._saveTokenCountState(this._activeInstanceId);
+            }
+
+            // Cancel any in-progress health check from the previous instance
+            this.healthCheckStarted = false;
+
+            // Exit draft mode when switching to an existing instance
+            this._draftMode = false;
+
             const resp = await fetch(`/api/instances/${instanceId}/activate`, { method: 'POST' });
             if (!resp.ok) {
                 const err = await resp.json().catch(() => ({}));
@@ -7305,13 +7336,56 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 return;
             }
 
+            const activateData = await resp.json();
+
+            // --- Derive ALL UI state from the activate response ---
             this._activeInstanceId = instanceId;
+
+            const isRunning = !!activateData.running;
+            const runMode = activateData.run_mode || 'subprocess';
+            const isRemote = runMode === 'remote';
+            const cfg = activateData.config || {};
+
+            this.serverRunning = isRunning;
+            this.serverReady = isRunning;
+            this.currentConfig = cfg;
+
+            // Button states derived from the instance
+            if (isRunning) {
+                this.updateStatus('running', isRemote ? 'Connected (Remote)' : 'Server Running');
+                this.elements.startBtn.disabled = true;
+                this.elements.startBtn.textContent = isRemote ? 'Connect' : 'Start Server';
+                this.elements.stopBtn.disabled = false;
+                this.elements.stopBtn.textContent = isRemote ? 'Disconnect' : 'Stop Server';
+                if (this.elements.saveInstanceBtn) this.elements.saveInstanceBtn.disabled = false;
+                this.elements.sendBtn.disabled = false;
+                this.elements.runBenchmarkBtn.disabled = false;
+                this.updateSendButtonState();
+            } else {
+                this.updateStatus('connected', isRemote ? 'Disconnected' : 'Server Stopped');
+                this.elements.startBtn.disabled = false;
+                this.elements.startBtn.textContent = isRemote ? 'Connect' : 'Start Server';
+                this.elements.stopBtn.disabled = true;
+                this.elements.stopBtn.textContent = isRemote ? 'Disconnect' : 'Stop Server';
+                if (this.elements.saveInstanceBtn) this.elements.saveInstanceBtn.disabled = true;
+                this.elements.sendBtn.disabled = true;
+                this.elements.sendBtn.classList.remove('btn-ready');
+                this.elements.runBenchmarkBtn.disabled = true;
+                this.elements.uptime.textContent = '';
+            }
+
             this.renderTabBar();
 
-            // Load chat history for the new active instance
+            // Load chat history and token counts for the new active instance
             const saved = this._chatHistories[instanceId] || this._loadChatHistoryFromStorage(instanceId);
             this.chatHistory = saved;
             this._renderChatFromHistory();
+            this._restoreTokenCountState(instanceId);
+
+            // If the instance is running but max_model_len wasn't saved, discover it
+            if (isRunning && !this._tcMaxModelLen) {
+                this._tcDiscoverMaxModelLen(instanceId);
+            }
 
             // Restore config panel to reflect the activated instance
             const inst = this._instances.find(i => i.id === instanceId);
@@ -7320,23 +7394,26 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             // Switch log display to the new instance
             await this._switchLogsToInstance(instanceId);
 
-            // Force immediate status + metrics refresh
-            await this.pollStatus();
-
-            // Reset MetricStore charts to avoid showing stale data from previous backend
-            try {
-                const metricsResp = await fetch('/api/vllm/metrics/all');
-                if (metricsResp.ok) {
-                    const metricsData = await metricsResp.json();
-                    if (this.updateMetricsUI) {
-                        this.updateMetricsUI(metricsData);
+            // Refresh metrics only for running instances
+            if (isRunning) {
+                try {
+                    const metricsResp = await fetch('/api/vllm/metrics/all');
+                    if (metricsResp.ok) {
+                        const metricsData = await metricsResp.json();
+                        if (this.updateMetricsUI) {
+                            this.updateMetricsUI(metricsData);
+                        }
                     }
+                } catch (e) {
+                    // Metrics refresh is best-effort
                 }
-            } catch (e) {
-                // Metrics refresh is best-effort
+            } else if (this.updateMetricsUI) {
+                this.updateMetricsUI({});
             }
         } catch (e) {
             this.showNotification('Failed to switch instance', 'error');
+        } finally {
+            this._activating = false;
         }
     }
 
@@ -7355,6 +7432,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             await fetch(`/api/instances/${instance.id}`, { method: 'DELETE' });
             delete this._chatHistories[instance.id];
             delete this._logBuffers[instance.id];
+            delete this._tokenCounts[instance.id];
             this._removeChatHistoryFromStorage(instance.id);
             await this.fetchInstances();
             this.pollStatus();
@@ -7364,16 +7442,18 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     }
 
     async showConfigForNewInstance() {
-        // Save current chat history before entering draft mode
+        // Save current chat history and token counts before entering draft mode
         if (this._activeInstanceId) {
             this._chatHistories[this._activeInstanceId] = [...this.chatHistory];
             this._saveChatHistoryToStorage(this._activeInstanceId);
+            this._saveTokenCountState(this._activeInstanceId);
         }
 
         // Enter draft mode
         this._draftMode = true;
         this._activeInstanceId = null;
         this.chatHistory = [];
+        this._restoreTokenCountState(null);
 
         // Pre-fill port with next free port
         let allocatedPort = null;
@@ -7508,6 +7588,41 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         try {
             localStorage.removeItem(`vllm_chat_${backendId}`);
         } catch (e) { /* ignore */ }
+    }
+
+    _saveTokenCountState(instanceId) {
+        if (!instanceId) return;
+        this._tokenCounts[instanceId] = {
+            conversationTokens: this._tcConversationTokens || 0,
+            maxModelLen: this._tcMaxModelLen || null,
+        };
+    }
+
+    _restoreTokenCountState(instanceId) {
+        const saved = instanceId ? this._tokenCounts[instanceId] : null;
+        if (saved) {
+            this._tcConversationTokens = saved.conversationTokens;
+            this._tcMaxModelLen = saved.maxModelLen;
+        } else {
+            this._tcConversationTokens = 0;
+            this._tcMaxModelLen = null;
+        }
+        if (this._tcUpdateDisplay) this._tcUpdateDisplay();
+    }
+
+    async _tcDiscoverMaxModelLen(instanceId) {
+        try {
+            const resp = await fetch('/api/status');
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const len = data.config?.max_model_len
+                || data.models?.[0]?.max_model_len;
+            if (len && this._activeInstanceId === instanceId) {
+                this._tcMaxModelLen = len;
+                if (this._tcUpdateDisplay) this._tcUpdateDisplay();
+                this._saveTokenCountState(instanceId);
+            }
+        } catch { /* best-effort */ }
     }
 
     _renderChatFromHistory() {

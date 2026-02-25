@@ -618,7 +618,8 @@ class InstanceRegistry:
                     entry.health = "stopped"
 
             elif entry.run_mode == "remote":
-                self.start_health_loop(iid)
+                logger.info(f"Remote instance {iid} marked as stopped until user reconnects")
+                entry.health = "stopped"
 
         self._save()
 
