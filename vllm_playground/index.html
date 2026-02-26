@@ -49,6 +49,16 @@
                     <span class="nav-label">vLLM-Omni</span>
                 </button>
 
+                <!-- Management Section -->
+                <div class="nav-divider">
+                    <span class="nav-divider-label">Management</span>
+                </div>
+                <button class="nav-item" data-view="instances" title="Instances" id="nav-instances">
+                    <span class="nav-item-icon icon-instances-nav"></span>
+                    <span class="nav-label">Instances</span>
+                    <span class="nav-badge" id="instances-badge" style="display: none;">0</span>
+                </button>
+
                 <!-- Monitoring Section -->
                 <div class="nav-divider">
                     <span class="nav-divider-label">Monitoring</span>
@@ -1761,6 +1771,63 @@ claude --model <span class="env-model">your-model-name</span></code></pre>
                             </div>
                         </div>
 
+                    </div>
+                </div>
+            </div>
+
+            <!-- Instances View -->
+            <div class="view-content" id="instances-view" style="display: none;">
+                <div class="instances-page">
+                    <div class="instances-toolbar">
+                        <div class="instances-search-wrap">
+                            <input type="text" id="instances-search" class="instances-search" placeholder="Search instances by model, URL, mode...">
+                        </div>
+                        <div class="instances-view-toggle" id="instances-view-toggle">
+                            <button class="toggle-btn active" data-mode="card" title="Card view">
+                                <span class="toggle-icon-card"></span>
+                            </button>
+                            <button class="toggle-btn" data-mode="table" title="Table view">
+                                <span class="toggle-icon-table"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="instances-section" id="instances-section-vllm">
+                        <div class="instances-section-header">
+                            <img src="/assets/vllm-logo.svg" alt="" class="instances-section-logo">
+                            <h2>vLLM Server</h2>
+                            <span class="instances-section-count" id="vllm-instance-count">0 instances</span>
+                        </div>
+                        <div class="instances-grid" id="vllm-instances-grid"></div>
+                        <div class="instances-table-wrap" id="vllm-instances-table" style="display: none;">
+                            <table class="instances-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 25%">Model</th>
+                                        <th style="width: 30%">URL</th>
+                                        <th style="width: 65px">Port</th>
+                                        <th style="width: 100px">Run Mode</th>
+                                        <th style="width: 90px">Health</th>
+                                        <th style="width: 90px">Created</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="vllm-instances-tbody"></tbody>
+                            </table>
+                        </div>
+                        <div class="instances-empty" id="vllm-instances-empty" style="display: none;">
+                            No saved vLLM Server instances. Start a server and click "Save Instance" to see it here.
+                        </div>
+                    </div>
+
+                    <div class="instances-section instances-section-placeholder" id="instances-section-omni">
+                        <div class="instances-section-header">
+                            <img src="/assets/vllm-omni-logo.svg" alt="" class="instances-section-logo">
+                            <h2>vLLM-Omni</h2>
+                            <span class="instances-section-count">Coming soon</span>
+                        </div>
+                        <div class="instances-placeholder-message">
+                            Multi-instance support for vLLM-Omni is planned for a future release.
+                        </div>
                     </div>
                 </div>
             </div>

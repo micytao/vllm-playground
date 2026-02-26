@@ -366,6 +366,9 @@ class VLLMWebUI {
 
         // Multi-instance tab bar
         this.initInstanceTabBar();
+
+        // Instances page view toggle (card / table)
+        this.initInstancesViewToggle();
     }
 
     // ============ View Switching ============
@@ -526,6 +529,10 @@ class VLLMWebUI {
                     if (this.onObservabilityViewActivated) {
                         this.onObservabilityViewActivated();
                     }
+                    break;
+                case 'instances':
+                    viewTitle.innerHTML = '<span class="view-title-icon icon-instances-header"></span> Instances';
+                    this.refreshInstancesPage();
                     break;
                 default:
                     viewTitle.textContent = viewId;
@@ -7128,6 +7135,13 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
             this.renderTabBar();
             this.updateInstanceBadge();
+
+            const savedCount = this._instances.filter(i => i.saved).length;
+            this._updateInstancesBadge(savedCount);
+
+            if (this.currentView === 'instances') {
+                this._renderInstancesPageFromCache(this._instances);
+            }
         } catch (e) {
             // Registry not ready yet; will update on next pollStatus
         }
@@ -7662,6 +7676,238 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     _refreshTabBarOnPoll() {
         if (!this._tabBarInitialized) return;
         this.fetchInstances();
+    }
+
+    // ============================================
+    // Instances Page (Management view)
+    // ============================================
+
+    initInstancesViewToggle() {
+        this._instancesViewMode = localStorage.getItem('instances_view_mode') || 'card';
+        this._instancesSearchQuery = '';
+        this._instancesCache = null;
+
+        const toggle = document.getElementById('instances-view-toggle');
+        if (toggle) {
+            toggle.querySelectorAll('.toggle-btn').forEach(btn => {
+                if (btn.dataset.mode === this._instancesViewMode) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+                btn.addEventListener('click', () => {
+                    this._instancesViewMode = btn.dataset.mode;
+                    localStorage.setItem('instances_view_mode', this._instancesViewMode);
+                    this._applyInstancesViewMode();
+                    this.refreshInstancesPage();
+                });
+            });
+        }
+
+        const searchInput = document.getElementById('instances-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', () => {
+                this._instancesSearchQuery = searchInput.value.trim().toLowerCase();
+                if (this._instancesCache) {
+                    this._renderFilteredInstances();
+                } else {
+                    this.refreshInstancesPage();
+                }
+            });
+        }
+    }
+
+    _applyInstancesViewMode() {
+        const grid = document.getElementById('vllm-instances-grid');
+        const table = document.getElementById('vllm-instances-table');
+        if (!grid || !table) return;
+
+        if (this._instancesViewMode === 'table') {
+            grid.style.display = 'none';
+            table.style.display = '';
+        } else {
+            grid.style.display = '';
+            table.style.display = 'none';
+        }
+
+        const toggle = document.getElementById('instances-view-toggle');
+        if (toggle) {
+            toggle.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.mode === this._instancesViewMode);
+            });
+        }
+    }
+
+    async refreshInstancesPage() {
+        try {
+            const resp = await fetch('/api/instances');
+            const data = await resp.json();
+            this._renderInstancesPageFromCache(data.instances || []);
+        } catch (e) {
+            // best-effort
+        }
+    }
+
+    _renderInstancesPageFromCache(allInstances) {
+        this._instancesCache = allInstances;
+
+        const allSaved = allInstances.filter(i => i.saved);
+        this._updateInstancesBadge(allSaved.length);
+
+        const countEl = document.getElementById('vllm-instance-count');
+        if (countEl) {
+            const n = allSaved.length;
+            countEl.textContent = `${n} instance${n !== 1 ? 's' : ''}`;
+        }
+
+        this._renderFilteredInstances();
+    }
+
+    _renderFilteredInstances() {
+        if (!this._instancesCache) return;
+        let saved = this._instancesCache.filter(i => i.saved);
+
+        const q = this._instancesSearchQuery || '';
+        if (q) {
+            saved = saved.filter(inst => {
+                const model = (inst.model || inst.name || '').toLowerCase();
+                const url = (inst.url || '').toLowerCase();
+                const mode = (inst.run_mode || '').toLowerCase();
+                const port = String(inst.port || '');
+                const health = this._healthLabel(inst.health || 'unknown').toLowerCase();
+                const name = (inst.name || '').toLowerCase();
+                return model.includes(q) || url.includes(q) || mode.includes(q)
+                    || port.includes(q) || health.includes(q) || name.includes(q);
+            });
+        }
+
+        this._applyInstancesViewMode();
+
+        const grid = document.getElementById('vllm-instances-grid');
+        const tbody = document.getElementById('vllm-instances-tbody');
+        const empty = document.getElementById('vllm-instances-empty');
+
+        if (this._instancesViewMode === 'card' && grid) {
+            grid.innerHTML = '';
+            saved.forEach(inst => grid.appendChild(this._renderInstanceCard(inst)));
+        }
+        if (this._instancesViewMode === 'table' && tbody) {
+            tbody.innerHTML = '';
+            saved.forEach(inst => tbody.appendChild(this._renderInstanceRow(inst)));
+        }
+
+        if (empty) {
+            empty.style.display = saved.length === 0 ? '' : 'none';
+        }
+    }
+
+    _renderInstanceCard(instance) {
+        const card = document.createElement('div');
+        card.className = 'instance-card';
+        card.dataset.instanceId = instance.id;
+
+        const statusClass = instance.health || 'unknown';
+        const runModeLabel = instance.run_mode === 'remote' ? 'Remote'
+            : instance.run_mode === 'container' ? 'Container' : 'Subprocess';
+
+        const healthLabel = this._healthLabel(statusClass);
+
+        card.innerHTML = `
+            <div class="instance-card-header">
+                <span class="instance-card-status ${statusClass}"></span>
+                <span class="instance-card-model">${this._escHtml(instance.model || instance.name)}</span>
+            </div>
+            <div class="instance-card-details">
+                <span class="instance-card-port">:${instance.port}</span>
+                <span class="instance-card-mode">${runModeLabel}</span>
+            </div>
+            <div class="instance-card-meta">
+                <span class="instance-card-health ${statusClass}">${healthLabel}</span>
+                <span class="instance-card-date">${this._relativeTime(instance.created_at)}</span>
+            </div>
+        `;
+
+        card.addEventListener('click', () => {
+            this.switchView('vllm-server');
+            this.activateInstance(instance.id);
+        });
+
+        return card;
+    }
+
+    _renderInstanceRow(instance) {
+        const tr = document.createElement('tr');
+        tr.className = 'instance-row';
+        tr.dataset.instanceId = instance.id;
+
+        const statusClass = instance.health || 'unknown';
+        const healthLabel = this._healthLabel(statusClass);
+        const runModeLabel = instance.run_mode === 'remote' ? 'Remote'
+            : instance.run_mode === 'container' ? 'Container' : 'Subprocess';
+
+        const displayUrl = instance.url || `http://localhost:${instance.port}`;
+
+        tr.innerHTML = `
+            <td class="instance-row-model">${this._escHtml(instance.model || instance.name)}</td>
+            <td class="instance-row-url" title="${this._escHtml(displayUrl)}">${this._escHtml(displayUrl)}</td>
+            <td>:${instance.port}</td>
+            <td><span class="instance-card-mode">${runModeLabel}</span></td>
+            <td><span class="instance-row-health ${statusClass}">${healthLabel}</span></td>
+            <td>${this._relativeTime(instance.created_at)}</td>
+        `;
+
+        tr.addEventListener('click', () => {
+            this.switchView('vllm-server');
+            this.activateInstance(instance.id);
+        });
+
+        return tr;
+    }
+
+    _healthLabel(status) {
+        switch (status) {
+            case 'healthy': return 'Running';
+            case 'starting': return 'Starting';
+            case 'unhealthy': return 'Unhealthy';
+            case 'unreachable': return 'Unreachable';
+            case 'stopped': return 'Stopped';
+            default: return 'Unknown';
+        }
+    }
+
+    _escHtml(str) {
+        const d = document.createElement('div');
+        d.textContent = str || '';
+        return d.innerHTML;
+    }
+
+    _relativeTime(isoString) {
+        if (!isoString) return '';
+        try {
+            const date = new Date(isoString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffSec = Math.floor(diffMs / 1000);
+            if (diffSec < 60) return 'just now';
+            const diffMin = Math.floor(diffSec / 60);
+            if (diffMin < 60) return `${diffMin}m ago`;
+            const diffHr = Math.floor(diffMin / 60);
+            if (diffHr < 24) return `${diffHr}h ago`;
+            const diffDay = Math.floor(diffHr / 24);
+            if (diffDay < 30) return `${diffDay}d ago`;
+            const diffMonth = Math.floor(diffDay / 30);
+            if (diffMonth < 12) return `${diffMonth}mo ago`;
+            return `${Math.floor(diffMonth / 12)}y ago`;
+        } catch {
+            return '';
+        }
+    }
+
+    _updateInstancesBadge(count) {
+        const badge = document.getElementById('instances-badge');
+        if (!badge) return;
+        badge.textContent = count;
+        badge.style.display = count > 0 ? '' : 'none';
     }
 }
 // Add CSS animations for notifications
