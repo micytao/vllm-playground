@@ -1248,6 +1248,7 @@ class BenchmarkConfig(BaseModel):
     prompt_tokens: int = 100
     output_tokens: int = 100
     use_guidellm: bool = False  # Toggle between built-in and GuideLLM
+    instance_id: Optional[str] = None  # Target a specific instance instead of the active one
 
 
 class BenchmarkResults(BaseModel):
@@ -5942,9 +5943,30 @@ async def start_benchmark(config: BenchmarkConfig):
     """Start a benchmark test using either built-in or GuideLLM"""
     global current_config, benchmark_task, benchmark_results, current_run_mode
 
-    # Check server status based on mode
-    if not await check_vllm_server_running():
-        raise HTTPException(status_code=400, detail="vLLM server is not running")
+    # Resolve target URL: specific instance or active instance
+    target_base_url = None
+    target_auth_headers = {}
+
+    if config.instance_id:
+        registry = _ir_mod.instance_registry
+        if registry is None:
+            raise HTTPException(status_code=503, detail="Instance registry not initialized")
+        entry = await registry.get(config.instance_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"Instance {config.instance_id} not found")
+        if entry.health != "healthy":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Instance {entry.name} is not running (health: {entry.health})",
+            )
+        target_base_url = entry.url.rstrip("/") if entry.url else f"http://localhost:{entry.port}"
+        if entry.api_key:
+            target_auth_headers = {"Authorization": f"Bearer {entry.api_key}"}
+    else:
+        if not await check_vllm_server_running():
+            raise HTTPException(status_code=400, detail="vLLM server is not running")
+        target_base_url = get_vllm_base_url()
+        target_auth_headers = get_vllm_auth_headers()
 
     if benchmark_task is not None and not benchmark_task.done():
         raise HTTPException(status_code=400, detail="Benchmark is already running")
@@ -5955,13 +5977,13 @@ async def start_benchmark(config: BenchmarkConfig):
 
         # Choose benchmark method
         if config.use_guidellm:
-            # Start GuideLLM benchmark task
-            benchmark_task = asyncio.create_task(run_guidellm_benchmark(config, current_config))
-            await broadcast_log("[BENCHMARK] Starting GuideLLM benchmark...")
+            benchmark_task = asyncio.create_task(run_guidellm_benchmark(config, current_config, target_base_url))
+            await broadcast_log(f"[BENCHMARK] Starting GuideLLM benchmark against {target_base_url}...")
         else:
-            # Start built-in benchmark task
-            benchmark_task = asyncio.create_task(run_benchmark(config, current_config))
-            await broadcast_log("[BENCHMARK] Starting built-in benchmark...")
+            benchmark_task = asyncio.create_task(
+                run_benchmark(config, current_config, target_base_url, target_auth_headers)
+            )
+            await broadcast_log(f"[BENCHMARK] Starting built-in benchmark against {target_base_url}...")
 
         return {"status": "started", "message": "Benchmark started"}
 
@@ -6006,7 +6028,12 @@ async def stop_benchmark():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
+async def run_benchmark(
+    config: BenchmarkConfig,
+    server_config: VLLMConfig,
+    target_base_url: Optional[str] = None,
+    target_auth_headers: Optional[dict] = None,
+):
     """Run a simple benchmark test"""
     global benchmark_results, current_model_identifier, current_run_mode
 
@@ -6020,8 +6047,7 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
             f"[BENCHMARK] Configuration: {config.total_requests} requests at {config.request_rate} req/s"
         )
 
-        # Use centralized URL construction
-        base_url = get_vllm_base_url()
+        base_url = target_base_url or get_vllm_base_url()
         url = f"{base_url}/v1/chat/completions"
         logger.info(f"Using URL for benchmark: {url}")
 
@@ -6034,7 +6060,7 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
         start_time = time.time()
 
         # Create session
-        auth_headers = get_vllm_auth_headers()
+        auth_headers = target_auth_headers if target_auth_headers is not None else get_vllm_auth_headers()
         async with aiohttp.ClientSession(headers=auth_headers) as session:
             # Send requests
             for i in range(config.total_requests):
@@ -6144,7 +6170,11 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
         benchmark_results = None
 
 
-async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
+async def run_guidellm_benchmark(
+    config: BenchmarkConfig,
+    server_config: VLLMConfig,
+    target_base_url: Optional[str] = None,
+):
     """Run a benchmark using GuideLLM"""
     global benchmark_results
 
@@ -6172,7 +6202,8 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
             return
 
         # Setup target URL
-        target_url = f"{get_vllm_base_url()}/v1"
+        base = target_base_url or get_vllm_base_url()
+        target_url = f"{base}/v1"
         await broadcast_log(f"[GUIDELLM] Target: {target_url}")
 
         # Run GuideLLM benchmark using subprocess (since GuideLLM CLI is simpler)

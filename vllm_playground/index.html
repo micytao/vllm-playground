@@ -1223,6 +1223,17 @@
 
                             <!-- Benchmark Configuration -->
                             <div class="benchmark-config">
+                                <!-- Target Instance Selection -->
+                                <div class="config-row" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #2a3142;">
+                                    <div class="config-item" style="flex: 1;">
+                                        <label for="benchmark-target-instance" style="font-weight: 600; margin-bottom: 8px; display: block;">Target Instance:</label>
+                                        <select id="benchmark-target-instance" class="form-control-sm benchmark-instance-select">
+                                            <option value="">Active Instance</option>
+                                        </select>
+                                        <small class="form-help" style="display: block; margin-top: 5px;">Select which running vLLM instance to benchmark against</small>
+                                    </div>
+                                </div>
+
                                 <!-- Benchmark Method Selection -->
                                 <div class="config-row" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #2a3142;">
                                     <div class="config-item" style="flex: 1;">
@@ -1809,6 +1820,7 @@ claude --model <span class="env-model">your-model-name</span></code></pre>
                                         <th style="width: 100px">Run Mode</th>
                                         <th style="width: 90px">Health</th>
                                         <th style="width: 90px">Created</th>
+                                        <th style="width: 50px"></th>
                                     </tr>
                                 </thead>
                                 <tbody id="vllm-instances-tbody"></tbody>

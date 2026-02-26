@@ -221,6 +221,7 @@ class VLLMWebUI {
             benchmarkOutputTokens: document.getElementById('benchmark-output-tokens'),
             benchmarkMethodBuiltin: document.getElementById('benchmark-method-builtin'),
             benchmarkMethodGuidellm: document.getElementById('benchmark-method-guidellm'),
+            benchmarkTargetInstance: document.getElementById('benchmark-target-instance'),
             benchmarkCommandText: document.getElementById('benchmark-command-text'),
             copyBenchmarkCommandBtn: document.getElementById('copy-benchmark-command-btn'),
             guidellmRawOutput: document.getElementById('guidellm-raw-output'),
@@ -502,8 +503,11 @@ class VLLMWebUI {
                     break;
                 case 'guidellm':
                     viewTitle.innerHTML = '<img src="/assets/guidellm-logo.svg" alt="GuideLLM" class="view-title-logo"> GuideLLM Benchmark';
-                    // Update benchmark server status
+                    // Update benchmark server status and refresh instance dropdown
                     this.updateBenchmarkServerStatus();
+                    if (this.populateBenchmarkInstanceDropdown) {
+                        this.populateBenchmarkInstanceDropdown();
+                    }
                     break;
                 case 'mcp-config':
                     viewTitle.innerHTML = '<span class="view-title-icon icon-mcp-header"></span> MCP Servers';
@@ -7183,7 +7187,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                     ${detail ? `<span class="tab-detail">${this._escapeHtml(detail)}</span>` : ''}
                 </span>
                 ${savedIndicator}
-                ${!isSingle ? '<button class="tab-close" title="Remove instance">&times;</button>' : ''}
+                <button class="tab-close" title="Remove instance">&times;</button>
             `;
 
             tab.addEventListener('click', (e) => {
@@ -7816,6 +7820,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             <div class="instance-card-header">
                 <span class="instance-card-status ${statusClass}"></span>
                 <span class="instance-card-model">${this._escHtml(instance.model || instance.name)}</span>
+                <button class="instance-card-delete" title="Remove instance">Delete</button>
             </div>
             <div class="instance-card-details">
                 <span class="instance-card-port">:${instance.port}</span>
@@ -7826,6 +7831,11 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 <span class="instance-card-date">${this._relativeTime(instance.created_at)}</span>
             </div>
         `;
+
+        card.querySelector('.instance-card-delete').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.removeInstanceTab(instance);
+        });
 
         card.addEventListener('click', () => {
             this.switchView('vllm-server');
@@ -7854,7 +7864,13 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             <td><span class="instance-card-mode">${runModeLabel}</span></td>
             <td><span class="instance-row-health ${statusClass}">${healthLabel}</span></td>
             <td>${this._relativeTime(instance.created_at)}</td>
+            <td><button class="instance-row-delete" title="Remove instance">Delete</button></td>
         `;
+
+        tr.querySelector('.instance-row-delete').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.removeInstanceTab(instance);
+        });
 
         tr.addEventListener('click', () => {
             this.switchView('vllm-server');

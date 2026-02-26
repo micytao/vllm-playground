@@ -43,6 +43,7 @@ function injectMethods(ui) {
 
     // Benchmark server status
     ui.updateBenchmarkServerStatus = GuideLLMModule.updateBenchmarkServerStatus.bind(GuideLLMModule);
+    ui.populateBenchmarkInstanceDropdown = GuideLLMModule.populateBenchmarkInstanceDropdown.bind(GuideLLMModule);
 
     // Command preview and copy methods
     ui.updateBenchmarkCommandPreview = GuideLLMModule.updateBenchmarkCommandPreview.bind(GuideLLMModule);
@@ -172,6 +173,11 @@ export const GuideLLMModule = {
             ui.elements.benchmarkMethodGuidellm.addEventListener('change', () => ui.updateBenchmarkCommandPreview());
         }
 
+        // Target instance dropdown
+        if (ui.elements.benchmarkTargetInstance) {
+            ui.elements.benchmarkTargetInstance.addEventListener('change', () => ui.updateBenchmarkCommandPreview());
+        }
+
         // Copy buttons
         if (ui.elements.copyBenchmarkCommandBtn) {
             ui.elements.copyBenchmarkCommandBtn.addEventListener('click', () => ui.copyBenchmarkCommand());
@@ -233,6 +239,48 @@ export const GuideLLMModule = {
 
         // Refresh command preview so it reflects the current target URL
         this.updateBenchmarkCommandPreview();
+
+        // Refresh instance dropdown
+        this.populateBenchmarkInstanceDropdown();
+    },
+
+    async populateBenchmarkInstanceDropdown() {
+        const ui = this.ui;
+        const select = ui.elements.benchmarkTargetInstance;
+        if (!select) return;
+
+        const prevValue = select.value;
+
+        try {
+            const resp = await fetch('/api/instances');
+            const data = await resp.json();
+            const instances = data.instances || [];
+            const running = instances.filter(i =>
+                i.health === 'healthy' || i.health === 'unknown'
+            );
+
+            select.innerHTML = '<option value="">Active Instance</option>';
+
+            running.forEach(inst => {
+                const model = inst.model || inst.name || 'Unknown';
+                const port = inst.port || '?';
+                const mode = inst.run_mode === 'remote' ? 'Remote'
+                    : inst.run_mode === 'container' ? 'Container' : 'Subprocess';
+                const opt = document.createElement('option');
+                opt.value = inst.id;
+                opt.textContent = `${model}  :${port}  (${mode})`;
+                opt.dataset.url = inst.url || '';
+                opt.dataset.port = inst.port || '';
+                opt.dataset.apiKey = inst.api_key || '';
+                select.appendChild(opt);
+            });
+
+            if (prevValue && [...select.options].some(o => o.value === prevValue)) {
+                select.value = prevValue;
+            }
+        } catch (e) {
+            // best-effort; keep the default "Active Instance" option
+        }
     },
 
     // =========================================================================
@@ -242,7 +290,10 @@ export const GuideLLMModule = {
     async runBenchmark() {
         const ui = this.ui;
 
-        if (!ui.serverRunning) {
+        const selectedInstanceId = ui.elements.benchmarkTargetInstance
+            ? ui.elements.benchmarkTargetInstance.value : '';
+
+        if (!selectedInstanceId && !ui.serverRunning) {
             ui.showNotification('Server must be running to benchmark', 'warning');
             return;
         }
@@ -254,6 +305,10 @@ export const GuideLLMModule = {
             output_tokens: parseInt(ui.elements.benchmarkOutputTokens.value),
             use_guidellm: ui.elements.benchmarkMethodGuidellm.checked
         };
+
+        if (selectedInstanceId) {
+            config.instance_id = selectedInstanceId;
+        }
 
         ui.benchmarkRunning = true;
         ui.benchmarkStartTime = Date.now();
@@ -602,15 +657,29 @@ export const GuideLLMModule = {
         const outputTokens = ui.elements.benchmarkOutputTokens.value || '100';
         const useGuideLLM = ui.elements.benchmarkMethodGuidellm?.checked;
 
-        // In remote mode, use the remote URL; otherwise build from host/port inputs
-        const isRemote = ui.currentConfig && ui.currentConfig.run_mode === 'remote';
+        // Determine target URL: selected instance takes priority over active instance
+        const select = ui.elements.benchmarkTargetInstance;
+        const selectedId = select ? select.value : '';
         let targetUrl;
-        if (isRemote && ui.currentConfig.remote_url) {
-            targetUrl = `${ui.currentConfig.remote_url.replace(/\/+$/, '')}/v1`;
+
+        if (selectedId) {
+            const selectedOpt = select.options[select.selectedIndex];
+            const instUrl = selectedOpt.dataset.url;
+            const instPort = selectedOpt.dataset.port;
+            if (instUrl) {
+                targetUrl = `${instUrl.replace(/\/+$/, '')}/v1`;
+            } else {
+                targetUrl = `http://localhost:${instPort}/v1`;
+            }
         } else {
-            const host = ui.elements.host?.value || 'localhost';
-            const port = ui.elements.port?.value || '8000';
-            targetUrl = `http://${host}:${port}/v1`;
+            const isRemote = ui.currentConfig && ui.currentConfig.run_mode === 'remote';
+            if (isRemote && ui.currentConfig.remote_url) {
+                targetUrl = `${ui.currentConfig.remote_url.replace(/\/+$/, '')}/v1`;
+            } else {
+                const host = ui.elements.host?.value || 'localhost';
+                const port = ui.elements.port?.value || '8000';
+                targetUrl = `http://${host}:${port}/v1`;
+            }
         }
 
         let cmd = '';

@@ -6878,11 +6878,6 @@ code.remote-model-id {
 .instance-tab-bar.single-tab .instance-tab {
     border-color: transparent;
     background: transparent;
-    cursor: default;
-}
-
-.instance-tab-bar.single-tab .instance-tab .tab-close {
-    display: none;
 }
 
 /* Saved indicator */
@@ -7281,6 +7276,7 @@ code.remote-model-id {
     align-items: center;
     gap: 8px;
     margin-bottom: 10px;
+    position: relative;
 }
 
 .instance-card-status {
@@ -7349,6 +7345,32 @@ code.remote-model-id {
 .instance-row-health.stopped { color: var(--text-secondary, #666); }
 .instance-card-health.unknown,
 .instance-row-health.unknown { color: var(--text-secondary, #666); }
+
+/* Delete buttons */
+.instance-card-delete,
+.instance-row-delete {
+    background: none;
+    border: 1px solid var(--border-color, #333);
+    color: var(--text-secondary, #888);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 3px 10px;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.instance-card-delete:hover,
+.instance-row-delete:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.4);
+}
+
+.instance-card-delete {
+    position: absolute;
+    top: -2px;
+    right: -4px;
+}
 
 /* Table view */
 .instances-table-wrap {
