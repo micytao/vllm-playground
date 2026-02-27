@@ -81,6 +81,24 @@ const ObservabilityModule = {
         if (!metricsPoller._timer) {
             metricsPoller.start();
         }
+
+        this._updateActiveInstanceLabel();
+    },
+
+    _updateActiveInstanceLabel() {
+        const el = document.getElementById('obs-active-instance');
+        if (!el) return;
+        const ui = this.ui;
+        const inst = ui._instances?.find(i => i.id === ui._activeInstanceId);
+        if (inst) {
+            const model = inst.model || inst.name || 'Unknown';
+            const port = inst.port || '?';
+            el.textContent = `${model} :${port}`;
+            el.style.display = '';
+        } else {
+            el.textContent = '';
+            el.style.display = 'none';
+        }
     },
 
     onViewDeactivated() {

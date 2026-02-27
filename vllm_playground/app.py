@@ -2712,11 +2712,10 @@ async def start_server(config: VLLMConfig):
             vllm_running = True
             server_start_time = datetime.now()
 
-            # Use discovered model or served_model_name or config.model
-            if config.served_model_name:
-                current_model_identifier = config.served_model_name
-                current_served_model_name = config.served_model_name
-            elif discovered_model:
+            # For remote servers, always use the discovered model name.
+            # served_model_name is a local --served-model-name concept and
+            # should not override what the remote server actually serves.
+            if discovered_model:
                 current_model_identifier = discovered_model
                 current_served_model_name = None
             else:
@@ -3125,7 +3124,14 @@ async def start_server(config: VLLMConfig):
             await broadcast_log(f"[WEBUI] Tool calling disabled")
 
         # Speculative decoding support (uses --speculative-config JSON)
-        if config.speculative_method:
+        # Metal backend doesn't implement take_draft_token_ids, so spec-decode
+        # is skipped entirely.  The UI already disables the dropdown for Metal.
+        if config.compute_mode == "metal":
+            if config.speculative_method:
+                await broadcast_log(
+                    f"[WEBUI] ⚠️ Speculative decoding ({config.speculative_method}) ignored — not supported on Metal backend"
+                )
+        elif config.speculative_method:
             import json as _json
 
             spec_cfg = {"method": config.speculative_method}

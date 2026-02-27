@@ -173,9 +173,12 @@ export const GuideLLMModule = {
             ui.elements.benchmarkMethodGuidellm.addEventListener('change', () => ui.updateBenchmarkCommandPreview());
         }
 
-        // Target instance dropdown
+        // Target instance dropdown — update command preview AND status banner
         if (ui.elements.benchmarkTargetInstance) {
-            ui.elements.benchmarkTargetInstance.addEventListener('change', () => ui.updateBenchmarkCommandPreview());
+            ui.elements.benchmarkTargetInstance.addEventListener('change', () => {
+                ui.updateBenchmarkServerStatus();
+                ui.updateBenchmarkCommandPreview();
+            });
         }
 
         // Copy buttons
@@ -207,18 +210,35 @@ export const GuideLLMModule = {
         const statusBanner = document.getElementById('benchmark-server-status');
         if (!statusBanner) return;
 
-        const isRemote = ui.currentConfig && ui.currentConfig.run_mode === 'remote';
+        // If a specific instance is selected, use its health instead of
+        // the active instance.  This avoids showing "server not running"
+        // when the user picks a healthy non-active instance.
+        const select = ui.elements.benchmarkTargetInstance;
+        const selectedId = select ? select.value : '';
+        let targetReady = false;
+        let targetLabel = '';
 
-        if (ui.serverRunning && ui.serverReady) {
+        if (selectedId) {
+            const opt = select.options[select.selectedIndex];
+            const health = opt?.dataset.health;
+            targetReady = health === 'healthy' || health === 'unknown';
+            targetLabel = opt?.textContent?.trim() || 'Selected instance';
+        } else {
+            targetReady = ui.serverRunning && ui.serverReady;
+            const isRemote = ui.currentConfig && ui.currentConfig.run_mode === 'remote';
+            targetLabel = isRemote ? 'Connected to remote vLLM instance' : 'vLLM server is running';
+        }
+
+        if (targetReady) {
             statusBanner.classList.add('connected');
-            const modeLabel = isRemote ? 'Connected to remote vLLM instance' : 'vLLM server is running';
             statusBanner.innerHTML = `
                 <div class="server-status-content">
                     <span class="status-icon">✅</span>
-                    <span class="status-message">${modeLabel} — ready for benchmarks</span>
+                    <span class="status-message">${targetLabel} — ready for benchmarks</span>
                 </div>
             `;
-        } else if (ui.serverRunning) {
+            if (ui.elements.runBenchmarkBtn) ui.elements.runBenchmarkBtn.disabled = false;
+        } else if (!selectedId && ui.serverRunning) {
             statusBanner.classList.remove('connected');
             statusBanner.innerHTML = `
                 <div class="server-status-content">
@@ -235,13 +255,16 @@ export const GuideLLMModule = {
                     <button class="btn btn-primary btn-sm" onclick="window.vllmUI.switchView('vllm-server')">Go to Server →</button>
                 </div>
             `;
+            if (!selectedId && ui.elements.runBenchmarkBtn) ui.elements.runBenchmarkBtn.disabled = true;
         }
 
         // Refresh command preview so it reflects the current target URL
         this.updateBenchmarkCommandPreview();
 
-        // Refresh instance dropdown
-        this.populateBenchmarkInstanceDropdown();
+        // Refresh instance dropdown (skip if triggered by the dropdown itself)
+        if (!selectedId) {
+            this.populateBenchmarkInstanceDropdown();
+        }
     },
 
     async populateBenchmarkInstanceDropdown() {
@@ -272,6 +295,7 @@ export const GuideLLMModule = {
                 opt.dataset.url = inst.url || '';
                 opt.dataset.port = inst.port || '';
                 opt.dataset.apiKey = inst.api_key || '';
+                opt.dataset.health = inst.health || '';
                 select.appendChild(opt);
             });
 

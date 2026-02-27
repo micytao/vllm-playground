@@ -2171,6 +2171,23 @@ number ::= [0-9]+`
         // Update accelerator row visibility (only shown in container mode + GPU mode)
         this.updateAcceleratorVisibility();
 
+        // Disable speculative decoding for Metal (not supported by Metal worker)
+        const specGroup = document.getElementById('spec-decode-group');
+        const specSelect = document.getElementById('spec-decode-method');
+        if (specGroup && specSelect) {
+            if (isMetalMode) {
+                specSelect.value = '';
+                specSelect.disabled = true;
+                specSelect.dispatchEvent(new Event('change'));
+                specGroup.classList.add('disabled-metal');
+                specGroup.title = 'Speculative decoding is not supported on the Metal backend';
+            } else {
+                specSelect.disabled = false;
+                specGroup.classList.remove('disabled-metal');
+                specGroup.title = '';
+            }
+        }
+
         // Update help text if in GPU mode (reflects run mode change)
         if (this.elements.modeGpu.checked) {
             this.updateAcceleratorHelpText();
@@ -7243,8 +7260,23 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         }
 
         if (buf && buf.length > 0) {
-            for (const msg of buf) {
-                this.addLog(msg);
+            const frag = document.createDocumentFragment();
+            for (const message of buf) {
+                const logEntry = document.createElement('div');
+                let type = 'info';
+                if (message) {
+                    const lm = message.toLowerCase();
+                    if (lm.includes('error') || lm.includes('failed') || lm.includes('exception')) type = 'error';
+                    else if (lm.includes('warning') || lm.includes('warn')) type = 'warning';
+                    else if (lm.includes('success') || lm.includes('started') || lm.includes('complete')) type = 'success';
+                }
+                logEntry.className = `log-entry ${type}`;
+                logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                frag.appendChild(logEntry);
+            }
+            this.elements.logsContainer.appendChild(frag);
+            if (this.autoScroll) {
+                this.elements.logsContainer.scrollTop = this.elements.logsContainer.scrollHeight;
             }
         } else {
             this.addLog('No logs yet for this instance.', 'info');
@@ -7409,24 +7441,22 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             const inst = this._instances.find(i => i.id === instanceId);
             if (inst) this._restoreConfigPanel(inst);
 
-            // Switch log display to the new instance
-            await this._switchLogsToInstance(instanceId);
-
-            // Refresh metrics only for running instances
+            // Fetch logs and metrics in parallel (they are independent)
+            const logsPromise = this._switchLogsToInstance(instanceId);
+            let metricsPromise;
             if (isRunning) {
-                try {
-                    const metricsResp = await fetch('/api/vllm/metrics/all');
-                    if (metricsResp.ok) {
-                        const metricsData = await metricsResp.json();
-                        if (this.updateMetricsUI) {
-                            this.updateMetricsUI(metricsData);
-                        }
-                    }
-                } catch (e) {
-                    // Metrics refresh is best-effort
-                }
+                metricsPromise = fetch('/api/vllm/metrics/all')
+                    .then(r => r.ok ? r.json() : null)
+                    .then(data => { if (data && this.updateMetricsUI) this.updateMetricsUI(data); })
+                    .catch(() => {});
             } else if (this.updateMetricsUI) {
                 this.updateMetricsUI({});
+            }
+            await Promise.all([logsPromise, metricsPromise].filter(Boolean));
+
+            // Re-render the Instances page cache so the Active badge updates
+            if (this._instancesCache) {
+                this._renderFilteredInstances();
             }
         } catch (e) {
             this.showNotification('Failed to switch instance', 'error');
@@ -7651,11 +7681,42 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             container.innerHTML = '<div class="welcome-message"><h2>Start a conversation</h2><p>Switch to a running instance or start a new server.</p></div>';
             return;
         }
-        this.chatHistory.forEach(msg => {
-            if (msg.role === 'user' || msg.role === 'assistant') {
-                this.addChatMessage(msg.role, msg.content);
+        const frag = document.createDocumentFragment();
+        for (const msg of this.chatHistory) {
+            if (msg.role !== 'user' && msg.role !== 'assistant') continue;
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${msg.role}`;
+            if (msg.role !== 'system') {
+                const avatarDiv = document.createElement('div');
+                avatarDiv.className = 'message-avatar';
+                if (msg.role === 'user') {
+                    avatarDiv.textContent = 'U';
+                } else {
+                    const logo = document.createElement('img');
+                    logo.src = '/assets/vllm_only.png';
+                    logo.alt = 'vLLM';
+                    logo.className = 'avatar-logo';
+                    logo.onerror = () => { logo.style.display = 'none'; avatarDiv.textContent = 'vLLM'; };
+                    avatarDiv.appendChild(logo);
+                }
+                messageDiv.appendChild(avatarDiv);
             }
-        });
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            const textSpan = document.createElement('span');
+            textSpan.className = 'message-text';
+            if (msg.role === 'assistant') {
+                textSpan.classList.add('markdown-body');
+                textSpan.innerHTML = this.renderMarkdown(msg.content);
+            } else {
+                textSpan.textContent = msg.content;
+            }
+            contentDiv.appendChild(textSpan);
+            messageDiv.appendChild(contentDiv);
+            frag.appendChild(messageDiv);
+        }
+        container.appendChild(frag);
+        container.scrollTop = container.scrollHeight;
     }
 
     _showDraftPlaceholder() {
@@ -7746,6 +7807,9 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         try {
             const resp = await fetch('/api/instances');
             const data = await resp.json();
+            if (data.active_id !== undefined) {
+                this._activeInstanceId = data.active_id;
+            }
             this._renderInstancesPageFromCache(data.instances || []);
         } catch (e) {
             // best-effort
@@ -7806,8 +7870,9 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     }
 
     _renderInstanceCard(instance) {
+        const isActive = instance.id === this._activeInstanceId;
         const card = document.createElement('div');
-        card.className = 'instance-card';
+        card.className = `instance-card${isActive ? ' active' : ''}`;
         card.dataset.instanceId = instance.id;
 
         const statusClass = instance.health || 'unknown';
@@ -7815,19 +7880,19 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             : instance.run_mode === 'container' ? 'Container' : 'Subprocess';
 
         const healthLabel = this._healthLabel(statusClass);
+        const activeBadge = isActive ? '<span class="instance-active-badge">Active</span>' : '';
 
         card.innerHTML = `
-            <div class="instance-card-header">
+            <div class="instance-card-top-row">
                 <span class="instance-card-status ${statusClass}"></span>
-                <span class="instance-card-model">${this._escHtml(instance.model || instance.name)}</span>
+                <span class="instance-card-health ${statusClass}">${healthLabel}</span>
+                ${activeBadge}
                 <button class="instance-card-delete" title="Remove instance">Delete</button>
             </div>
+            <div class="instance-card-model" title="${this._escHtml(instance.model || instance.name)}">${this._escHtml(instance.model || instance.name)}</div>
             <div class="instance-card-details">
                 <span class="instance-card-port">:${instance.port}</span>
                 <span class="instance-card-mode">${runModeLabel}</span>
-            </div>
-            <div class="instance-card-meta">
-                <span class="instance-card-health ${statusClass}">${healthLabel}</span>
                 <span class="instance-card-date">${this._relativeTime(instance.created_at)}</span>
             </div>
         `;
@@ -7846,8 +7911,9 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
     }
 
     _renderInstanceRow(instance) {
+        const isActive = instance.id === this._activeInstanceId;
         const tr = document.createElement('tr');
-        tr.className = 'instance-row';
+        tr.className = `instance-row${isActive ? ' active' : ''}`;
         tr.dataset.instanceId = instance.id;
 
         const statusClass = instance.health || 'unknown';
@@ -7856,9 +7922,10 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             : instance.run_mode === 'container' ? 'Container' : 'Subprocess';
 
         const displayUrl = instance.url || `http://localhost:${instance.port}`;
+        const activeBadge = isActive ? ' <span class="instance-active-badge">Active</span>' : '';
 
         tr.innerHTML = `
-            <td class="instance-row-model">${this._escHtml(instance.model || instance.name)}</td>
+            <td class="instance-row-model"><div class="instance-row-model-inner"><span class="instance-row-model-name" title="${this._escHtml(instance.model || instance.name)}">${this._escHtml(instance.model || instance.name)}</span>${activeBadge}</div></td>
             <td class="instance-row-url" title="${this._escHtml(displayUrl)}">${this._escHtml(displayUrl)}</td>
             <td>:${instance.port}</td>
             <td><span class="instance-card-mode">${runModeLabel}</span></td>

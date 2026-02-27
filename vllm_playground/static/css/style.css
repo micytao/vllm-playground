@@ -1516,6 +1516,11 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     cursor: not-allowed;
 }
 
+.form-group.disabled-metal {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
 .form-help {
     display: block;
     margin-top: 5px;
@@ -7253,17 +7258,20 @@ code.remote-model-id {
 /* Card grid */
 .instances-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 16px;
 }
 
 .instance-card {
     background: var(--panel-bg, #1e1e2e);
     border: 1px solid var(--border-color, #333);
-    border-radius: 8px;
-    padding: 16px;
+    border-radius: 10px;
+    padding: 18px 20px;
     cursor: pointer;
     transition: border-color 0.15s, box-shadow 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
 .instance-card:hover {
@@ -7271,17 +7279,15 @@ code.remote-model-id {
     box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
 }
 
-.instance-card-header {
+.instance-card-top-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 10px;
-    position: relative;
 }
 
 .instance-card-status {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
     background: #666;
@@ -7296,41 +7302,39 @@ code.remote-model-id {
 
 .instance-card-model {
     font-weight: 600;
-    font-size: 0.95rem;
+    font-size: 1rem;
+    line-height: 1.3;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: var(--text-primary, #e0e0e0);
 }
 
 .instance-card-details {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-    font-size: 0.85rem;
+    gap: 10px;
+    font-size: 0.82rem;
     color: var(--text-secondary, #888);
 }
 
 .instance-card-mode {
     display: inline-block;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     padding: 2px 8px;
     border-radius: 10px;
     background: var(--bg-tertiary, rgba(255,255,255,0.08));
     color: var(--text-secondary, #aaa);
 }
 
-.instance-card-meta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 0.8rem;
-    color: var(--text-secondary, #666);
+.instance-card-date {
+    margin-left: auto;
 }
 
 .instance-card-health,
 .instance-row-health {
     font-weight: 500;
+    font-size: 0.8rem;
 }
 
 .instance-card-health.healthy,
@@ -7346,6 +7350,32 @@ code.remote-model-id {
 .instance-card-health.unknown,
 .instance-row-health.unknown { color: var(--text-secondary, #666); }
 
+/* Active instance indicator */
+.instance-card.active {
+    border-color: var(--accent-color, #6366f1);
+    box-shadow: 0 0 0 1px var(--accent-color, #6366f1), 0 2px 8px rgba(99, 102, 241, 0.15);
+}
+
+.instance-row.active {
+    background: rgba(99, 102, 241, 0.06);
+}
+
+.instance-active-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--accent-color, #6366f1);
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 4px;
+    padding: 1px 6px;
+    line-height: 1.4;
+    flex-shrink: 0;
+    vertical-align: middle;
+}
+
 /* Delete buttons */
 .instance-card-delete,
 .instance-row-delete {
@@ -7353,7 +7383,7 @@ code.remote-model-id {
     border: 1px solid var(--border-color, #333);
     color: var(--text-secondary, #888);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     padding: 3px 10px;
     border-radius: 4px;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
@@ -7367,9 +7397,8 @@ code.remote-model-id {
 }
 
 .instance-card-delete {
-    position: absolute;
-    top: -2px;
-    right: -4px;
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
 /* Table view */
@@ -7385,34 +7414,58 @@ code.remote-model-id {
 
 .instances-table th {
     text-align: left;
-    padding: 10px 12px;
-    border-bottom: 2px solid var(--border-color, #333);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color, #333);
     color: var(--text-secondary, #888);
-    font-weight: 500;
-    font-size: 0.85rem;
+    font-weight: 600;
+    vertical-align: middle;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
     white-space: nowrap;
     overflow: hidden;
-    resize: horizontal;
     position: relative;
 }
 
-.instances-table th:last-child {
-    resize: none;
+.instances-table th:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 25%;
+    height: 50%;
+    width: 1px;
+    background: var(--border-color, #333);
+    transition: background 0.15s, width 0.15s;
+}
+
+.instances-table th:not(:last-child):hover::after {
+    background: var(--primary-color, #6366f1);
+    width: 2px;
 }
 
 .instances-table td {
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border-color, #333);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.06));
     font-size: 0.9rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    vertical-align: middle;
+}
+
+.instances-table td:last-child {
+    overflow: visible;
+    text-align: center;
 }
 
 .instance-row-url {
     font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', monospace;
     font-size: 0.82rem;
     color: var(--text-secondary, #888);
+}
+
+.instances-table thead {
+    background: var(--bg-tertiary, rgba(255,255,255,0.02));
 }
 
 .instance-row {
@@ -7426,6 +7479,19 @@ code.remote-model-id {
 
 .instance-row-model {
     font-weight: 600;
+}
+
+.instance-row-model-inner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.instance-row-model-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
 }
 
 /* Empty state */
