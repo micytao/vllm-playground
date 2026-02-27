@@ -7149,6 +7149,12 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                     }
                     this._renderChatFromHistory();
                     this._restoreTokenCountState(newActiveId);
+
+                    // Restore config panel so model dropdown matches the active instance
+                    if (newActiveId) {
+                        const inst = this._instances.find(i => i.id === newActiveId);
+                        if (inst) this._restoreConfigPanel(inst);
+                    }
                 } else {
                     this._activeInstanceId = newActiveId;
                 }
@@ -7299,11 +7305,46 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             }
         }
 
-        // Model field -- prefer the instance-level model (discovered/actual) over
-        // cfg.model which may still hold the VLLMConfig default.
+        // Restore model source (HuggingFace / ModelScope / Local)
+        if (cfg.local_model_path) {
+            this.elements.modelSourceLocal.checked = true;
+        } else if (cfg.use_modelscope) {
+            this.elements.modelSourceModelscope.checked = true;
+        } else {
+            this.elements.modelSourceHub.checked = true;
+        }
+        this.toggleModelSource();
+
+        // Restore model value into the correct dropdown / custom input
         const actualModel = instance.model || cfg.model;
-        if (actualModel) {
-            if (this.elements.customModel) this.elements.customModel.value = actualModel;
+        if (cfg.local_model_path) {
+            if (this.elements.localModelPath) {
+                this.elements.localModelPath.value = cfg.local_model_path;
+            }
+        } else if (cfg.use_modelscope) {
+            const dropdown = this.elements.modelscopeModelSelect;
+            const customInput = this.elements.customModelscopeModel;
+            if (actualModel && dropdown) {
+                const hasOption = Array.from(dropdown.options).some(o => o.value === actualModel);
+                if (hasOption) {
+                    dropdown.value = actualModel;
+                    if (customInput) customInput.value = '';
+                } else if (customInput) {
+                    customInput.value = actualModel;
+                }
+            }
+        } else {
+            const dropdown = this.elements.modelSelect;
+            const customInput = this.elements.customModel;
+            if (actualModel && dropdown) {
+                const hasOption = Array.from(dropdown.options).some(o => o.value === actualModel);
+                if (hasOption) {
+                    dropdown.value = actualModel;
+                    if (customInput) customInput.value = '';
+                } else if (customInput) {
+                    customInput.value = actualModel;
+                }
+            }
         }
 
         // Remote mode fields
