@@ -23,6 +23,9 @@ A modern web interface for managing and interacting with vLLM servers (www.githu
 *Upload images and chat with vision models like Qwen2.5-VL, LLaVA, and more.*
 
 ### 🆕 What's New in v0.1.6
+![Observability Dashboard](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-observability.png)
+
+*Real-time Observability Dashboard with auto-discovered vLLM metrics, category filtering, and threshold alerts.*
 
 - 📊 **Observability Dashboard** - Full-page metrics dashboard with time-series charts, threshold alerts, and auto-discovery
 - 🔍 **PagedAttention Visualizer** - Real-time KV cache utilization heatmap with eviction alerts
