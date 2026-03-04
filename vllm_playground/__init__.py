@@ -2,7 +2,7 @@
 vLLM Playground - A web interface for managing and interacting with vLLM
 """
 
-__version__ = "0.1.7rc5"
+__version__ = "0.1.7rc6"
 __author__ = "micytao"
 __description__ = "A web interface for managing and interacting with vLLM servers"
 

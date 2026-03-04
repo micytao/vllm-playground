@@ -2562,11 +2562,23 @@ async def start_server(config: VLLMConfig):
         server_start_time, \
         current_model_identifier, \
         current_served_model_name, \
-        current_run_mode
+        current_run_mode, \
+        latest_vllm_metrics, \
+        metrics_timestamp
 
     # Check if server is already running
     if await check_vllm_server_running():
         raise HTTPException(status_code=400, detail="Server is already running")
+
+    # Clear stale metrics from any previous session so the observability
+    # dashboard starts fresh for this server instance.
+    latest_vllm_metrics.clear()
+    metrics_timestamp = None
+    metrics_history.clear()
+    metric_store.latest.clear()
+    metric_store.history.clear()
+    metric_store.last_scrape = None
+    metric_store.last_simulated = None
 
     # =========================================================================
     # Remote mode - connect to an existing vLLM instance
@@ -3247,9 +3259,7 @@ async def stop_server():
         server_start_time, \
         current_model_identifier, \
         current_served_model_name, \
-        current_run_mode, \
-        latest_vllm_metrics, \
-        metrics_timestamp
+        current_run_mode
 
     # Check if server is running
     if not await check_vllm_server_running():
@@ -3294,15 +3304,6 @@ async def stop_server():
         current_model_identifier = None
         current_served_model_name = None
         current_run_mode = None
-
-        # Clear all metrics so observability doesn't show stale data
-        latest_vllm_metrics.clear()
-        metrics_timestamp = None
-        metrics_history.clear()
-        metric_store.latest.clear()
-        metric_store.history.clear()
-        metric_store.last_scrape = None
-        metric_store.last_simulated = None
 
         return {"status": "stopped"}
 
