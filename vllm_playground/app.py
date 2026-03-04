@@ -2608,7 +2608,9 @@ async def start_server(config: VLLMConfig):
         server_start_time, \
         current_model_identifier, \
         current_served_model_name, \
-        current_run_mode
+        current_run_mode, \
+        latest_vllm_metrics, \
+        metrics_timestamp
 
     # If a server is already running, park it (keep process alive, clear globals)
     # so the new server can start on its own port.
@@ -2623,6 +2625,16 @@ async def start_server(config: VLLMConfig):
             old_port = config.port
             config.port = registry.allocate_port()
             logger.info(f"Port {old_port} in use, auto-allocated port {config.port}")
+
+    # Clear stale metrics from any previous session so the observability
+    # dashboard starts fresh for this server instance.
+    latest_vllm_metrics.clear()
+    metrics_timestamp = None
+    metrics_history.clear()
+    metric_store.latest.clear()
+    metric_store.history.clear()
+    metric_store.last_scrape = None
+    metric_store.last_simulated = None
 
     # =========================================================================
     # Remote mode - connect to an existing vLLM instance
@@ -8380,6 +8392,25 @@ def find_claude_command() -> Optional[str]:
         result = shutil.which(cmd)
         if result:
             return result
+
+    # Check well-known per-user install paths (not always in $PATH)
+    home = Path.home()
+    well_known_paths = [
+        home / ".local" / "bin" / "claude",
+        home / ".npm-global" / "bin" / "claude",
+    ]
+    for p in well_known_paths:
+        if p.exists() and os.access(p, os.X_OK):
+            return str(p)
+
+    # When running as root/sudo, also check real user home dirs under /home
+    home_dirs = Path("/home")
+    if home_dirs.is_dir():
+        for user_home in home_dirs.iterdir():
+            for sub in [".local/bin/claude", ".npm-global/bin/claude"]:
+                p = user_home / sub
+                if p.exists() and os.access(p, os.X_OK):
+                    return str(p)
 
     # Check npm global bin
     try:

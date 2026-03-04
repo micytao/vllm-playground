@@ -86,6 +86,10 @@
             </div>
 
             <div class="nav-footer">
+                <button class="nav-item" data-view="tutorials" title="Tutorials" id="nav-tutorials">
+                    <span class="nav-item-icon">📖</span>
+                    <span class="nav-label">Tutorials</span>
+                </button>
                 <div class="nav-status">
                     <span id="nav-status-dot" class="status-dot"></span>
                     <span id="nav-status-text" class="nav-status-text" data-i18n="status.offline">Offline</span>
@@ -1840,6 +1844,24 @@ claude --model <span class="env-model">your-model-name</span></code></pre>
                         <div class="instances-placeholder-message">
                             Multi-instance support for vLLM-Omni is planned for a future release.
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tutorials View -->
+            <div class="view-content" id="tutorials-view" style="display: none;">
+                <div class="tutorials-container">
+                    <iframe id="tutorials-iframe"
+                            title="vLLM Workshop Tutorials"
+                            allowfullscreen>
+                    </iframe>
+                    <div class="tutorials-fallback" id="tutorials-fallback" style="display: none;">
+                        <span class="tutorials-fallback-icon">📖</span>
+                        <h3>Unable to load tutorials</h3>
+                        <p>The embedded tutorial could not be loaded. You can open it directly:</p>
+                        <a href="https://micytao.github.io/vllm-workshop/" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+                            Open vLLM Workshop ↗
+                        </a>
                     </div>
                 </div>
             </div>

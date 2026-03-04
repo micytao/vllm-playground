@@ -6,7 +6,24 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 ---
 
-## [v0.1.6](releases/v0.1.6.md) - 2026-03-02
+## [v0.1.7](releases/v0.1.7.md) - 2026-03-03
+
+**Hotfix & Tutorials**
+
+### Fixed
+- 🐛 **Container mode switching broken** - `getConfig()` was missing the `container` radio branch, causing container mode to silently send `remote` to the backend. Restored default to `container` (matching v0.1.5) and added explicit handling for all three modes.
+- 🐛 **Logprobs tooltip clipped on first line** - Changed `.message-content` from `overflow: hidden` to `overflow: visible` so the probability tooltip is no longer cut off by the message container.
+- 🐛 **Logprobs crash on Metal/CPU** - vLLM Metal/CPU backends crash with `IndexError` in `_create_chat_logprobs` when logprobs are enabled. Force non-streaming on Metal/CPU compute mode, with transparent fallback retry (without logprobs) on 500 errors. GPU and remote modes stream normally.
+- 🐛 **Claude Code not detected on VPS/Linux** - `find_claude_command()` now checks `~/.local/bin/claude` and `~/.npm-global/bin/claude` as fallback paths, covering the official `curl` installer and common npm global setups. Also scans `/home/*/` directories when running as root/sudo (e.g., systemd services).
+- 🐛 **Mode switch config leak** - Switching from container/subprocess to remote mode no longer carries over stale `served_model_name`, `enable_tool_calling`, and `tool_call_parser` values. These local-server fields are auto-cleared on mode switch, and `getConfig()` explicitly excludes them for remote mode as a safety net.
+- 🐛 **Stale observability data after mode switch** - Metrics are now cleared when a new server starts, so the observability dashboard no longer shows data from a previous session after switching modes.
+
+### Added
+- 📖 **Tutorials** - New "Tutorials" nav item at the bottom of the navigation sidebar that embeds the [vLLM Workshop](https://micytao.github.io/vllm-workshop/) directly inside vLLM Playground via iframe, with lazy-loading and a fallback link.
+
+---
+
+## [v0.1.6](releases/v0.1.6.md) - 2026-03-02 (yanked)
 
 **Observability Dashboard & Context Insights**
 

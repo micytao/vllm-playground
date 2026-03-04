@@ -2249,7 +2249,7 @@ code.remote-model-id {
     line-height: 1.6;
     font-size: 0.9rem;
     min-width: 0;
-    overflow: hidden;
+    overflow: visible;
 }
 
 /* Hide bold sender labels (non-markdown context) */
@@ -7515,4 +7515,46 @@ code.remote-model-id {
     font-style: italic;
     font-size: 0.9rem;
     padding: 8px 0;
+}
+
+/* ============ Tutorials View ============ */
+.tutorials-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    position: relative;
+}
+
+#tutorials-iframe {
+    flex: 1;
+    width: 100%;
+    border: none;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+.tutorials-fallback {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    height: 100%;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 40px;
+}
+
+.tutorials-fallback-icon {
+    font-size: 2.5rem;
+}
+
+.tutorials-fallback h3 {
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.tutorials-fallback p {
+    margin: 0;
+    font-size: 0.9rem;
 }
