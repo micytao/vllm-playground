@@ -1454,9 +1454,24 @@ number ::= [0-9]+`
         this.elements.modeGpu.addEventListener('change', () => this.toggleComputeMode());
         this.elements.modeMetal.addEventListener('change', () => this.toggleComputeMode());
 
-        // Accelerator selection change (NVIDIA/AMD)
+        // Accelerator selection change (NVIDIA/AMD/TPU/KunLun)
         if (this.elements.acceleratorSelect) {
             this.elements.acceleratorSelect.addEventListener('change', () => {
+                const accel = this.elements.acceleratorSelect.value;
+                if (accel === 'kunlun') {
+                    this.elements.runModeContainer.checked = true;
+                    this.toggleRunMode();
+                    this.elements.runModeSubprocess.disabled = true;
+                    this.elements.runModeRemote.disabled = true;
+                    if (this.elements.runModeSubprocessLabel) this.elements.runModeSubprocessLabel.classList.add('disabled-metal');
+                    if (this.elements.runModeRemoteLabel) this.elements.runModeRemoteLabel.classList.add('disabled-metal');
+                } else {
+                    this.elements.runModeSubprocess.disabled = false;
+                    this.elements.runModeRemote.disabled = false;
+                    if (this.elements.runModeSubprocessLabel) this.elements.runModeSubprocessLabel.classList.remove('disabled-metal');
+                    if (this.elements.runModeRemoteLabel) this.elements.runModeRemoteLabel.classList.remove('disabled-metal');
+                }
+                this.updateGpuDeviceLabel();
                 this.updateAcceleratorHelpText();
                 this.updateCommandPreview();
             });
@@ -1879,13 +1894,11 @@ number ::= [0-9]+`
                     console.log(`Auto-selected accelerator: ${accelerator}`);
                 }
 
-                // Show GPU status display (only for NVIDIA currently, AMD/TPU use different monitoring)
-                if (accelerator === 'nvidia') {
+                // Show GPU status display for supported accelerators
+                if (accelerator === 'nvidia' || accelerator === 'kunlun') {
                     document.getElementById('gpu-status-display').style.display = 'block';
-                    // Start GPU status polling
                     this.startGpuStatusPolling();
                 } else {
-                    // AMD/TPU detected - status polling not yet supported
                     document.getElementById('gpu-status-display').style.display = 'none';
                     if (accelerator === 'tpu') {
                         this.addLog('[SYSTEM] Google TPU status monitoring not yet supported', 'info');
@@ -2173,8 +2186,27 @@ number ::= [0-9]+`
             this.elements.modeHelpText.textContent = 'GPU mode for AMD ROCm-enabled systems';
         } else if (accelerator === 'tpu') {
             this.elements.modeHelpText.textContent = 'TPU mode for Google Cloud TPU VMs (requires privileged container)';
+        } else if (accelerator === 'kunlun') {
+            this.elements.modeHelpText.textContent = 'GPU mode for Baidu KunLun XPU devices (container mode required)';
         } else {
             this.elements.modeHelpText.textContent = 'GPU mode for NVIDIA CUDA-enabled systems';
+        }
+    }
+
+    updateGpuDeviceLabel() {
+        const gpuDeviceInput = this.elements.gpuDevice;
+        if (!gpuDeviceInput) return;
+        const label = gpuDeviceInput.previousElementSibling || gpuDeviceInput.closest('.form-group')?.querySelector('label');
+        const help = gpuDeviceInput.nextElementSibling;
+        const isKunlun = this.elements.acceleratorSelect && this.elements.acceleratorSelect.value === 'kunlun';
+        if (isKunlun) {
+            if (label) label.textContent = 'XPU Device (optional)';
+            gpuDeviceInput.placeholder = '4,5 (leave empty for all XPU devices)';
+            if (help) help.textContent = 'Specify XPU device ID(s) for XPU_VISIBLE_DEVICES: 0,1 or 4,5 etc.';
+        } else {
+            if (label) label.textContent = 'GPU Device (optional)';
+            gpuDeviceInput.placeholder = '0, 1, 0,1 (leave empty for auto)';
+            if (help) help.textContent = 'Specify GPU device ID(s): 0, 1, 0,1, etc. Leave empty for auto-selection.';
         }
     }
 

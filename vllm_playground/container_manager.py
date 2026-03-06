@@ -52,6 +52,7 @@ class VLLMContainerManager:
     DEFAULT_IMAGE_GPU_NVIDIA = "docker.io/vllm/vllm-openai:v0.12.0"  # Official vLLM CUDA image (linux/amd64)
     DEFAULT_IMAGE_GPU_AMD = "docker.io/rocm/vllm:latest"  # Official vLLM ROCm image from AMD
     DEFAULT_IMAGE_GPU_TPU = "docker.io/vllm/vllm-tpu:latest"  # Official vLLM TPU image for Google Cloud TPU
+    DEFAULT_IMAGE_GPU_KUNLUN = "ccr-2nf6531g-pub.cnc.bj.baidubce.com/hac-aiacc/aiak-inference-llm:xpu_dev_v_qiaoyijin_20260305_144755"  # Baidu KunLun XPU image
     # CPU images by platform
     DEFAULT_IMAGE_CPU_MACOS = "quay.io/rh_ee_micyang/vllm-mac:v0.11.0"  # CPU image for macOS (linux/arm64)
     DEFAULT_IMAGE_CPU_X86 = "quay.io/rh_ee_micyang/vllm-cpu:v0.11.0"  # CPU image for x86_64 Linux
@@ -136,6 +137,9 @@ class VLLMContainerManager:
         elif accelerator == "tpu":
             logger.info("Using Google Cloud TPU image")
             return self.DEFAULT_IMAGE_GPU_TPU
+        elif accelerator == "kunlun":
+            logger.info("Using Baidu KunLun XPU image")
+            return self.DEFAULT_IMAGE_GPU_KUNLUN
         else:
             # Default to NVIDIA
             logger.info("Using NVIDIA CUDA GPU image")
@@ -217,10 +221,17 @@ class VLLMContainerManager:
         # Prepare environment variables for the container's start_vllm.sh script
         env = []
 
+        accelerator = vllm_config.get("accelerator", "nvidia")
+
         # Core vLLM parameters (read by start_vllm.sh)
         env.extend(["-e", f"VLLM_MODEL={vllm_config.get('model_source', vllm_config.get('model'))}"])
         env.extend(["-e", "VLLM_HOST=0.0.0.0"])  # Must be 0.0.0.0 inside container
-        env.extend(["-e", f"VLLM_PORT=8000"])  # Internal port (mapped to host)
+        if accelerator == "kunlun":
+            # KunLun uses --net=host, so vLLM listens on the user's port directly
+            host_port = vllm_config.get("port", 8000)
+            env.extend(["-e", f"VLLM_PORT={host_port}"])
+        else:
+            env.extend(["-e", "VLLM_PORT=8000"])  # Internal port (mapped to host)
 
         # Dtype
         if vllm_config.get("use_cpu", False) and vllm_config.get("dtype", "auto") == "auto":
@@ -270,6 +281,30 @@ class VLLMContainerManager:
             env.extend(["-e", f"VLLM_GPU_MEMORY_UTILIZATION={vllm_config.get('gpu_memory_utilization', 0.9)}"])
             env.extend(["-e", f"VLLM_LOAD_FORMAT={vllm_config.get('load_format', 'auto')}"])
 
+        # KunLun XPU-specific environment variables
+        if accelerator == "kunlun":
+            env.extend(["-e", "VLLM_TARGET_DEVICE=kunlun"])
+            gpu_device = vllm_config.get("gpu_device")
+            if gpu_device:
+                env.extend(["-e", f"XPU_VISIBLE_DEVICES={gpu_device}"])
+            env.extend(["-e", "XPU_USE_MOE_SORTED_THRES=1"])
+            env.extend(["-e", "XFT_USE_FAST_SWIGLU=1"])
+            env.extend(["-e", "XMLIR_CUDNN_ENABLED=1"])
+            env.extend(["-e", "XPU_USE_DEFAULT_CTX=1"])
+            env.extend(["-e", "XMLIR_FORCE_USE_XPU_GRAPH=1"])
+            env.extend(["-e", "XPU_FLASH_ATTENTION_DECODER_USE_NEW_IMPL=1"])
+            env.extend(["-e", "XPU_SET_RECURRENT_GATED_DELTA_RULE_FWDV2_FP16_FAST_OPT=3"])
+            env.extend(["-e", "XMLIR_ENABLE_MOCK_TORCH_COMPILE=false"])
+            env.extend(["-e", "XPU_ENABLE_PROFILER_TRACING=1"])
+            import socket
+
+            try:
+                host_ip = socket.gethostbyname(socket.gethostname())
+                env.extend(["-e", f"VLLM_HOST_IP={host_ip}"])
+            except socket.gaierror:
+                logger.warning("Could not resolve VLLM_HOST_IP, skipping")
+            logger.info("KunLun XPU environment variables configured")
+
         # Tool calling support - add environment variables for custom images
         if vllm_config.get("enable_tool_calling", False):
             tool_parser = vllm_config.get("tool_call_parser")
@@ -296,18 +331,26 @@ class VLLMContainerManager:
         # If using local model, mount the model directory
         if vllm_config.get("local_model_path"):
             local_path = os.path.abspath(os.path.expanduser(vllm_config["local_model_path"]))
-            # Mount parent directory to avoid permission issues
             parent_dir = os.path.dirname(local_path)
-            volumes.extend(["-v", f"{parent_dir}:/models:ro"])
+            if accelerator == "kunlun":
+                # KunLun: mount to same path so model paths work inside container
+                volumes.extend(["-v", f"{parent_dir}:{parent_dir}:ro"])
+            else:
+                # Mount parent directory to /models for other accelerators
+                volumes.extend(["-v", f"{parent_dir}:/models:ro"])
 
         # If download_dir specified, mount it
         if vllm_config.get("download_dir"):
             download_dir = os.path.abspath(os.path.expanduser(vllm_config["download_dir"]))
             volumes.extend(["-v", f"{download_dir}:/models/downloads:rw"])
 
-        # Port mapping - map host port to container port 8000
+        # Port mapping
         host_port = vllm_config.get("port", 8000)
-        ports = ["-p", f"{host_port}:8000"]
+        if accelerator == "kunlun":
+            # KunLun uses --net=host, so no port mapping needed
+            ports = []
+        else:
+            ports = ["-p", f"{host_port}:8000"]
 
         # Build vLLM command-line arguments (for official vllm-openai image)
         # These are passed after the image name
@@ -325,7 +368,11 @@ class VLLMContainerManager:
 
         # Host and port (inside container)
         vllm_args.extend(["--host", "0.0.0.0"])
-        vllm_args.extend(["--port", "8000"])
+        if accelerator == "kunlun":
+            # KunLun uses --net=host, vLLM listens on user's port directly
+            vllm_args.extend(["--port", str(vllm_config.get("port", 8000))])
+        else:
+            vllm_args.extend(["--port", "8000"])
 
         # Dtype
         if vllm_config.get("use_cpu", False) and vllm_config.get("dtype", "auto") == "auto":
@@ -633,24 +680,28 @@ class VLLMContainerManager:
             logger.info(f"Using container's default entrypoint (start_vllm.sh)")
 
             # Build podman run command
+            use_cpu = vllm_config.get("use_cpu", False)
+            accelerator = vllm_config.get("accelerator", "nvidia")
+
             podman_cmd = [
                 "run",
                 "-d",  # Detached
                 "--name",
                 self.CONTAINER_NAME,
-                # Use host IPC namespace for vLLM shared memory (inter-process communication)
-                "--ipc=host",
-                # NOTE: Removed --rm flag to keep container for reuse
-                # Add labels to track configuration and image for change detection
-                "--label",
-                f"vllm.config.hash={config_hash}",
-                "--label",
-                f"vllm.image={image}",
             ]
 
-            # Add GPU passthrough if not in CPU mode
-            use_cpu = vllm_config.get("use_cpu", False)
-            accelerator = vllm_config.get("accelerator", "nvidia")
+            # KunLun uses --tmpfs for shared memory instead of --ipc=host
+            if accelerator != "kunlun":
+                podman_cmd.append("--ipc=host")
+
+            podman_cmd.extend(
+                [
+                    "--label",
+                    f"vllm.config.hash={config_hash}",
+                    "--label",
+                    f"vllm.image={image}",
+                ]
+            )
             if not use_cpu:
                 if accelerator == "amd":
                     # AMD ROCm GPU support
@@ -682,6 +733,26 @@ class VLLMContainerManager:
                         ]
                     )
                     logger.info("Google Cloud TPU passthrough enabled for container (privileged mode)")
+                elif accelerator == "kunlun":
+                    # Baidu KunLun XPU support
+                    podman_cmd.extend(
+                        [
+                            "--net=host",
+                            "--cap-add=SYS_PTRACE",
+                            "--security-opt",
+                            "seccomp=unconfined",
+                            "--tmpfs",
+                            "/dev/shm:rw,nosuid,nodev,exec,size=32g",
+                            "-w",
+                            "/workspace",
+                        ]
+                    )
+                    # Passthrough XPU devices: /dev/xpu0..(N-1) + /dev/xpuctrl
+                    xpu_num = 8
+                    for idx in range(xpu_num):
+                        podman_cmd.extend(["--device", f"/dev/xpu{idx}:/dev/xpu{idx}"])
+                    podman_cmd.extend(["--device", "/dev/xpuctrl:/dev/xpuctrl"])
+                    logger.info(f"Baidu KunLun XPU passthrough enabled ({xpu_num} devices + xpuctrl)")
                 else:
                     # NVIDIA CUDA GPU support (default)
                     if self.runtime == "docker":
@@ -712,12 +783,14 @@ class VLLMContainerManager:
             podman_cmd.append(image)
 
             # Add vLLM command-line arguments
-            # NVIDIA vllm-openai image has entrypoint, but AMD/TPU images need explicit command
+            # NVIDIA vllm-openai image has entrypoint, but AMD/TPU/KunLun images need explicit command
             if config.get("vllm_args"):
-                # AMD ROCm and TPU images don't have automatic entrypoint - need to call vllm serve
                 if accelerator in ("amd", "tpu"):
                     podman_cmd.extend(["vllm", "serve"])
                     logger.info(f"Using 'vllm serve' command for {accelerator.upper()} container")
+                elif accelerator == "kunlun":
+                    podman_cmd.extend(["python", "-m", "vllm.entrypoints.openai.api_server"])
+                    logger.info("Using 'python -m vllm.entrypoints.openai.api_server' for KunLun container")
                 podman_cmd.extend(config["vllm_args"])
                 logger.info(f"vLLM arguments: {' '.join(config['vllm_args'])}")
 

@@ -737,8 +737,8 @@ class VLLMConfig(BaseModel):
     # GPU device selection for subprocess mode (e.g., "0", "1", "0,1" for multi-GPU)
     gpu_device: Optional[str] = None
     # GPU accelerator type for container mode - determines which image and device flags to use
-    # Options: nvidia (CUDA), amd (ROCm), tpu (Google Cloud TPU)
-    accelerator: Literal["nvidia", "amd", "tpu"] = "nvidia"
+    # Options: nvidia (CUDA), amd (ROCm), tpu (Google Cloud TPU), kunlun (Baidu KunLun XPU)
+    accelerator: Literal["nvidia", "amd", "tpu", "kunlun"] = "nvidia"
     # Tool calling support - enables function calling with compatible models
     # Requires vLLM server to be started with --enable-auto-tool-choice and --tool-call-parser
     enable_tool_calling: bool = False  # Disabled by default (can cause issues with some models)
@@ -2268,11 +2268,29 @@ async def get_hardware_capabilities():
         except Exception as e:
             logger.warning(f"Error checking TPU via tpu-info: {e}")
 
+    # Fallback: Try xpu_smi for Baidu KunLun XPU
+    if not gpu_available and not os.getenv("KUBERNETES_NAMESPACE"):
+        for xpu_cmd in ["xpu_smi", "xpu-smi"]:
+            try:
+                result = subprocess.run([xpu_cmd], capture_output=True, text=True, timeout=2)
+                if result.returncode == 0 and "XPU-SMI" in result.stdout:
+                    gpu_available = True
+                    detection_method = xpu_cmd
+                    accelerator = "kunlun"
+                    logger.info(f"KunLun XPU detected via {xpu_cmd}")
+                    break
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                logger.warning(f"{xpu_cmd} timeout")
+            except Exception as e:
+                logger.warning(f"Error checking KunLun XPU via {xpu_cmd}: {e}")
+
     logger.info(f"Final GPU availability: {gpu_available} (method: {detection_method}, accelerator: {accelerator})")
     return {
         "gpu_available": gpu_available,
         "detection_method": detection_method,
-        "accelerator": accelerator,  # "nvidia", "amd", "tpu", or None
+        "accelerator": accelerator,  # "nvidia", "amd", "tpu", "kunlun", or None
     }
 
 
@@ -2542,6 +2560,79 @@ async def get_gpu_status():
             logger.warning("amd-smi timeout")
         except Exception as e:
             logger.warning(f"Error getting AMD GPU status: {e}")
+
+    # If no NVIDIA or AMD GPUs found, try xpu_smi for Baidu KunLun XPU
+    if not nvidia_found and not gpu_info:
+        for xpu_cmd in ["xpu_smi", "xpu-smi"]:
+            try:
+                result = subprocess.run([xpu_cmd], capture_output=True, text=True, timeout=5)
+                if result.returncode == 0 and "XPU-SMI" in result.stdout:
+                    accelerator_type = "kunlun"
+                    lines = result.stdout.split("\n")
+                    device_rows = []
+                    for line in lines:
+                        if (
+                            line.startswith("|")
+                            and "XPU-SMI" not in line
+                            and "XPU  Name" not in line
+                            and "Fan  Temp" not in line
+                            and "L3-Usage" not in line
+                            and "Processes" not in line
+                            and "XPU   GI" not in line
+                            and "ID   ID" not in line
+                        ):
+                            device_rows.append(line)
+                        elif line.startswith("+") and device_rows:
+                            if len(device_rows) >= 2:
+                                row1, row2 = device_rows[0], device_rows[1]
+                                r1_parts = [p.strip() for p in row1.split("|") if p.strip()]
+                                r1_tokens = r1_parts[0].split()
+                                dev_index = safe_int(r1_tokens[0], 0)
+                                dev_name = (
+                                    " ".join(r1_tokens[1:-1])
+                                    if len(r1_tokens) > 2
+                                    else (r1_tokens[1] if len(r1_tokens) > 1 else "XPU")
+                                )
+                                r2_parts = [p.strip() for p in row2.split("|") if p.strip()]
+                                temp = 0
+                                for token in r2_parts[0].split():
+                                    if token.endswith("C") and token[:-1].isdigit():
+                                        temp = int(token[:-1])
+                                        break
+                                mem_parts = (
+                                    r2_parts[1].replace("MiB", "").split("/") if len(r2_parts) > 1 else ["0", "0"]
+                                )
+                                mem_used = safe_int(mem_parts[0].strip(), 0)
+                                mem_total = safe_int(mem_parts[1].strip(), 0) if len(mem_parts) > 1 else 0
+                                util = 0
+                                if len(r2_parts) > 2:
+                                    for token in r2_parts[2].split():
+                                        if token.endswith("%"):
+                                            util = safe_int(token[:-1], 0)
+                                            break
+                                gpu_info.append(
+                                    {
+                                        "index": dev_index,
+                                        "name": f"KunLun {dev_name}",
+                                        "memory_used": mem_used,
+                                        "memory_total": mem_total,
+                                        "memory_free": mem_total - mem_used,
+                                        "utilization": util,
+                                        "temperature": temp,
+                                        "is_jetson": False,
+                                        "unified_memory": False,
+                                        "accelerator": "kunlun",
+                                    }
+                                )
+                            device_rows = []
+                    logger.info(f"KunLun XPU status retrieved via {xpu_cmd}: {len(gpu_info)} devices found")
+                    break
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                logger.warning(f"{xpu_cmd} timeout")
+            except Exception as e:
+                logger.warning(f"Error getting KunLun XPU status via {xpu_cmd}: {e}")
 
     return {
         "gpu_available": len(gpu_info) > 0,
@@ -3119,7 +3210,8 @@ async def start_server(config: VLLMConfig):
                 "local_model_path": config.local_model_path,
                 "enable_tool_calling": config.enable_tool_calling,
                 "tool_call_parser": config.tool_call_parser,
-                "accelerator": config.accelerator,  # GPU accelerator type (nvidia/amd)
+                "accelerator": config.accelerator,  # GPU accelerator type (nvidia/amd/tpu/kunlun)
+                "gpu_device": config.gpu_device,  # GPU/XPU device selection
                 "served_model_name": config.served_model_name,  # Model alias (for Claude Code)
                 "speculative_method": config.speculative_method,
                 "speculative_model": config.speculative_model,
