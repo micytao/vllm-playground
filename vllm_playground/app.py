@@ -2570,16 +2570,19 @@ async def get_gpu_status():
                     accelerator_type = "kunlun"
                     lines = result.stdout.split("\n")
                     device_rows = []
+                    in_processes = False
                     for line in lines:
+                        if "Processes:" in line:
+                            in_processes = True
+                            continue
+                        if in_processes:
+                            continue
                         if (
                             line.startswith("|")
                             and "XPU-SMI" not in line
                             and "XPU  Name" not in line
                             and "Fan  Temp" not in line
                             and "L3-Usage" not in line
-                            and "Processes" not in line
-                            and "XPU   GI" not in line
-                            and "ID   ID" not in line
                         ):
                             device_rows.append(line)
                         elif line.startswith("+") and device_rows:
