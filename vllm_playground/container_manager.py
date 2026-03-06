@@ -787,11 +787,15 @@ class VLLMContainerManager:
             if config.get("vllm_args"):
                 if accelerator in ("amd", "tpu"):
                     podman_cmd.extend(["vllm", "serve"])
+                    podman_cmd.extend(config["vllm_args"])
                     logger.info(f"Using 'vllm serve' command for {accelerator.upper()} container")
                 elif accelerator == "kunlun":
-                    podman_cmd.extend(["python", "-m", "vllm.entrypoints.openai.api_server"])
-                    logger.info("Using 'python -m vllm.entrypoints.openai.api_server' for KunLun container")
-                podman_cmd.extend(config["vllm_args"])
+                    # Wrap in login shell so .bashrc activates the conda env that has vLLM
+                    vllm_cmd = "python -m vllm.entrypoints.openai.api_server " + " ".join(config["vllm_args"])
+                    podman_cmd.extend(["bash", "-lc", vllm_cmd])
+                    logger.info("Using 'bash -lc python -m vllm.entrypoints.openai.api_server' for KunLun container")
+                else:
+                    podman_cmd.extend(config["vllm_args"])
                 logger.info(f"vLLM arguments: {' '.join(config['vllm_args'])}")
 
             # Run container
