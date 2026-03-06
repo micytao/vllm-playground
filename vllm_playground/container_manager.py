@@ -223,6 +223,14 @@ class VLLMContainerManager:
 
         accelerator = vllm_config.get("accelerator", "nvidia")
 
+        # For KunLun, auto-adjust tensor_parallel_size to match the device selection
+        if accelerator == "kunlun":
+            gpu_device = vllm_config.get("gpu_device")
+            if gpu_device:
+                device_count = len([d.strip() for d in gpu_device.split(",") if d.strip()])
+                vllm_config["tensor_parallel_size"] = device_count
+                logger.info(f"KunLun: auto-set tensor_parallel_size={device_count} to match XPU device selection")
+
         # Core vLLM parameters (read by start_vllm.sh)
         env.extend(["-e", f"VLLM_MODEL={vllm_config.get('model_source', vllm_config.get('model'))}"])
         env.extend(["-e", "VLLM_HOST=0.0.0.0"])  # Must be 0.0.0.0 inside container
@@ -754,12 +762,18 @@ class VLLMContainerManager:
                             "/workspace",
                         ]
                     )
-                    # Passthrough XPU devices: /dev/xpu0..(N-1) + /dev/xpuctrl
-                    xpu_num = 8
-                    for idx in range(xpu_num):
-                        podman_cmd.extend(["--device", f"/dev/xpu{idx}:/dev/xpu{idx}"])
+                    # Passthrough XPU devices + /dev/xpuctrl
+                    gpu_device = vllm_config.get("gpu_device")
+                    if gpu_device:
+                        xpu_ids = [d.strip() for d in gpu_device.split(",")]
+                        for xid in xpu_ids:
+                            podman_cmd.extend(["--device", f"/dev/xpu{xid}:/dev/xpu{xid}"])
+                    else:
+                        xpu_ids = list(range(8))
+                        for idx in xpu_ids:
+                            podman_cmd.extend(["--device", f"/dev/xpu{idx}:/dev/xpu{idx}"])
                     podman_cmd.extend(["--device", "/dev/xpuctrl:/dev/xpuctrl"])
-                    logger.info(f"Baidu KunLun XPU passthrough enabled ({xpu_num} devices + xpuctrl)")
+                    logger.info(f"Baidu KunLun XPU passthrough enabled ({len(xpu_ids)} devices + xpuctrl)")
                 else:
                     # NVIDIA CUDA GPU support (default)
                     if self.runtime == "docker":
