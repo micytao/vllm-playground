@@ -234,10 +234,14 @@ class VLLMContainerManager:
             env.extend(["-e", "VLLM_PORT=8000"])  # Internal port (mapped to host)
 
         # Dtype
-        if vllm_config.get("use_cpu", False) and vllm_config.get("dtype", "auto") == "auto":
+        dtype = vllm_config.get("dtype", "auto")
+        if vllm_config.get("use_cpu", False) and dtype == "auto":
             env.extend(["-e", "VLLM_DTYPE=bfloat16"])
+        elif accelerator == "kunlun" and dtype == "auto":
+            # KunLun XPU kernels (e.g. mrotary_embedding_fwd_v0) don't support bfloat16
+            env.extend(["-e", "VLLM_DTYPE=float16"])
         else:
-            env.extend(["-e", f"VLLM_DTYPE={vllm_config.get('dtype', 'auto')}"])
+            env.extend(["-e", f"VLLM_DTYPE={dtype}"])
 
         # Max model length - set default for CPU mode to avoid memory issues
         max_model_len = vllm_config.get("max_model_len")
@@ -375,10 +379,13 @@ class VLLMContainerManager:
             vllm_args.extend(["--port", "8000"])
 
         # Dtype
-        if vllm_config.get("use_cpu", False) and vllm_config.get("dtype", "auto") == "auto":
+        dtype = vllm_config.get("dtype", "auto")
+        if vllm_config.get("use_cpu", False) and dtype == "auto":
             vllm_args.extend(["--dtype", "bfloat16"])
+        elif accelerator == "kunlun" and dtype == "auto":
+            vllm_args.extend(["--dtype", "float16"])
         else:
-            vllm_args.extend(["--dtype", vllm_config.get("dtype", "auto")])
+            vllm_args.extend(["--dtype", dtype])
 
         # Max model length and max_num_batched_tokens
         # These must be consistent: max_num_batched_tokens >= max_model_len
