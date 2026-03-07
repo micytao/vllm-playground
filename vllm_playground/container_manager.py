@@ -303,7 +303,8 @@ class VLLMContainerManager:
             gpu_device = vllm_config.get("gpu_device")
             if gpu_device:
                 stripped_gpu_device = gpu_device.replace(" ", "")
-                env.extend(["-e", f"XPU_VISIBLE_DEVICES={stripped_gpu_device}"])
+                # Only export inside bash -lc, NOT via -e flag.
+                # The -e flag sets it before .bashrc, breaking XPU runtime init.
                 kunlun_exports.append(f"export XPU_VISIBLE_DEVICES={stripped_gpu_device}")
 
             env.extend(["-e", "XPU_USE_MOE_SORTED_THRES=1"])
