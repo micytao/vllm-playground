@@ -221,6 +221,7 @@ class VLLMContainerManager:
         """
         # Prepare environment variables for the container's start_vllm.sh script
         env = []
+        kunlun_exports = []
 
         accelerator = vllm_config.get("accelerator", "nvidia")
 
@@ -296,8 +297,6 @@ class VLLMContainerManager:
 
         # KunLun XPU-specific environment variables
         if accelerator == "kunlun":
-            kunlun_exports = []
-
             env.extend(["-e", "VLLM_TARGET_DEVICE=kunlun"])
             kunlun_exports.append("export VLLM_TARGET_DEVICE=kunlun")
 
@@ -335,7 +334,6 @@ class VLLMContainerManager:
             except socket.gaierror:
                 logger.warning("Could not resolve VLLM_HOST_IP, skipping")
 
-            config["kunlun_exports"] = kunlun_exports
             logger.info("KunLun XPU environment variables configured")
 
         # Tool calling support - add environment variables for custom images
@@ -468,7 +466,13 @@ class VLLMContainerManager:
         else:
             logger.info("Tool calling disabled in config")
 
-        return {"environment": env, "volumes": volumes, "ports": ports, "vllm_args": vllm_args}
+        return {
+            "environment": env,
+            "volumes": volumes,
+            "ports": ports,
+            "vllm_args": vllm_args,
+            "kunlun_exports": kunlun_exports,
+        }
 
     async def _get_container_config_hash(self, vllm_config: Dict[str, Any]) -> str:
         """
