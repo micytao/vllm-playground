@@ -787,18 +787,12 @@ class VLLMContainerManager:
                             "/workspace",
                         ]
                     )
-                    # Passthrough XPU devices + /dev/xpuctrl
-                    gpu_device = vllm_config.get("gpu_device")
-                    if gpu_device:
-                        xpu_ids = [d.strip() for d in gpu_device.split(",")]
-                        for xid in xpu_ids:
-                            podman_cmd.extend(["--device", f"/dev/xpu{xid}:/dev/xpu{xid}"])
-                    else:
-                        xpu_ids = list(range(8))
-                        for idx in xpu_ids:
-                            podman_cmd.extend(["--device", f"/dev/xpu{idx}:/dev/xpu{idx}"])
+                    # Always pass through ALL XPU devices; XPU_VISIBLE_DEVICES
+                    # handles software-level filtering (like CUDA_VISIBLE_DEVICES).
+                    for idx in range(8):
+                        podman_cmd.extend(["--device", f"/dev/xpu{idx}:/dev/xpu{idx}"])
                     podman_cmd.extend(["--device", "/dev/xpuctrl:/dev/xpuctrl"])
-                    logger.info(f"Baidu KunLun XPU passthrough enabled ({len(xpu_ids)} devices + xpuctrl)")
+                    logger.info("Baidu KunLun XPU passthrough enabled (8 devices + xpuctrl)")
                 else:
                     # NVIDIA CUDA GPU support (default)
                     if self.runtime == "docker":
