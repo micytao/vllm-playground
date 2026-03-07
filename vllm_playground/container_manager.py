@@ -9,6 +9,7 @@ import logging
 import os
 import json
 import platform
+import shlex
 import shutil
 import subprocess
 import time
@@ -295,26 +296,46 @@ class VLLMContainerManager:
 
         # KunLun XPU-specific environment variables
         if accelerator == "kunlun":
+            kunlun_exports = []
+
             env.extend(["-e", "VLLM_TARGET_DEVICE=kunlun"])
+            kunlun_exports.append("export VLLM_TARGET_DEVICE=kunlun")
+
             gpu_device = vllm_config.get("gpu_device")
             if gpu_device:
-                env.extend(["-e", f"XPU_VISIBLE_DEVICES={gpu_device}"])
+                stripped_gpu_device = gpu_device.replace(" ", "")
+                env.extend(["-e", f"XPU_VISIBLE_DEVICES={stripped_gpu_device}"])
+                kunlun_exports.append(f"export XPU_VISIBLE_DEVICES={stripped_gpu_device}")
+
             env.extend(["-e", "XPU_USE_MOE_SORTED_THRES=1"])
+            kunlun_exports.append("export XPU_USE_MOE_SORTED_THRES=1")
             env.extend(["-e", "XFT_USE_FAST_SWIGLU=1"])
+            kunlun_exports.append("export XFT_USE_FAST_SWIGLU=1")
             env.extend(["-e", "XMLIR_CUDNN_ENABLED=1"])
+            kunlun_exports.append("export XMLIR_CUDNN_ENABLED=1")
             env.extend(["-e", "XPU_USE_DEFAULT_CTX=1"])
+            kunlun_exports.append("export XPU_USE_DEFAULT_CTX=1")
             env.extend(["-e", "XMLIR_FORCE_USE_XPU_GRAPH=1"])
+            kunlun_exports.append("export XMLIR_FORCE_USE_XPU_GRAPH=1")
             env.extend(["-e", "XPU_FLASH_ATTENTION_DECODER_USE_NEW_IMPL=1"])
+            kunlun_exports.append("export XPU_FLASH_ATTENTION_DECODER_USE_NEW_IMPL=1")
             env.extend(["-e", "XPU_SET_RECURRENT_GATED_DELTA_RULE_FWDV2_FP16_FAST_OPT=3"])
+            kunlun_exports.append("export XPU_SET_RECURRENT_GATED_DELTA_RULE_FWDV2_FP16_FAST_OPT=3")
             env.extend(["-e", "XMLIR_ENABLE_MOCK_TORCH_COMPILE=false"])
+            kunlun_exports.append("export XMLIR_ENABLE_MOCK_TORCH_COMPILE=false")
             env.extend(["-e", "XPU_ENABLE_PROFILER_TRACING=1"])
+            kunlun_exports.append("export XPU_ENABLE_PROFILER_TRACING=1")
+
             import socket
 
             try:
                 host_ip = socket.gethostbyname(socket.gethostname())
                 env.extend(["-e", f"VLLM_HOST_IP={host_ip}"])
+                kunlun_exports.append(f"export VLLM_HOST_IP={host_ip}")
             except socket.gaierror:
                 logger.warning("Could not resolve VLLM_HOST_IP, skipping")
+
+            config["kunlun_exports"] = kunlun_exports
             logger.info("KunLun XPU environment variables configured")
 
         # Tool calling support - add environment variables for custom images
@@ -811,8 +832,13 @@ class VLLMContainerManager:
                     podman_cmd.extend(config["vllm_args"])
                     logger.info(f"Using 'vllm serve' command for {accelerator.upper()} container")
                 elif accelerator == "kunlun":
-                    # Wrap in login shell so .bashrc activates the conda env that has vLLM
-                    vllm_cmd = "python -m vllm.entrypoints.openai.api_server " + " ".join(config["vllm_args"])
+                    kunlun_exports = config.get("kunlun_exports", [])
+                    exports_str = " && ".join(kunlun_exports)
+                    vllm_args_str = shlex.join(config["vllm_args"])
+                    if exports_str:
+                        vllm_cmd = f"{exports_str} && python -m vllm.entrypoints.openai.api_server {vllm_args_str}"
+                    else:
+                        vllm_cmd = f"python -m vllm.entrypoints.openai.api_server {vllm_args_str}"
                     podman_cmd.extend(["bash", "-lc", vllm_cmd])
                     logger.info("Using 'bash -lc python -m vllm.entrypoints.openai.api_server' for KunLun container")
                 else:

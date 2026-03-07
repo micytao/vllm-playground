@@ -2584,6 +2584,7 @@ async def get_gpu_status():
                             and "Fan  Temp" not in line
                             and "L3-Usage" not in line
                             and "===" not in line
+                            and "---" not in line
                         ):
                             device_rows.append(line)
                         elif line.startswith("+") and device_rows:
