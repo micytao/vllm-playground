@@ -762,10 +762,19 @@ class ElasticSink:
         """Index a single metric snapshot into a date-based index."""
         if not self._client:
             return
+        doc = {}
+        for k, v in snapshot.items():
+            if k == "timestamp":
+                doc[k] = v
+            elif isinstance(v, (int, float)) and not (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
+                doc[k] = v
+            # Skip None, strings, dicts, NaN, Inf -- these cause mapping conflicts
+        if len(doc) <= 1:
+            return
         today = datetime.now().strftime("%Y.%m.%d")
         index_name = f"{self.config.index_prefix}-{today}"
         try:
-            await self._client.index(index=index_name, document=snapshot)
+            await self._client.index(index=index_name, document=doc)
         except Exception as exc:
             logger.debug("ElasticSink: index failed: %s", exc)
 
