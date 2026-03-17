@@ -18,6 +18,45 @@
         </div>
     </div>
 
+    <!-- Elasticsearch Integration -->
+    <details class="obs-elastic-section" id="obs-elastic-section">
+        <summary class="obs-elastic-header">
+            <span class="obs-elastic-title">Elasticsearch Export</span>
+            <span class="obs-elastic-status" id="elastic-status-dot" title="Disconnected"></span>
+        </summary>
+        <div class="obs-elastic-body">
+            <div class="obs-elastic-row">
+                <label class="obs-elastic-toggle-label">
+                    <span>Enable</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="elastic-enabled">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </label>
+            </div>
+            <div class="obs-elastic-fields">
+                <div class="obs-elastic-field">
+                    <label for="elastic-url">Elasticsearch URL</label>
+                    <input type="text" id="elastic-url" class="obs-elastic-input" placeholder="https://my-deploy.es.us-east-1.aws.elastic.cloud:443">
+                </div>
+                <div class="obs-elastic-field">
+                    <label for="elastic-api-key">API Key</label>
+                    <input type="password" id="elastic-api-key" class="obs-elastic-input" placeholder="Encoded API key from Elastic Cloud">
+                </div>
+                <div class="obs-elastic-field">
+                    <label for="elastic-index-prefix">Index Prefix</label>
+                    <input type="text" id="elastic-index-prefix" class="obs-elastic-input" placeholder="vllm-metrics" value="vllm-metrics">
+                </div>
+            </div>
+            <div class="obs-elastic-actions">
+                <button class="obs-btn" id="elastic-test-btn">Test Connection</button>
+                <button class="obs-btn obs-btn-primary" id="elastic-save-btn">Save & Connect</button>
+            </div>
+            <div class="obs-elastic-result" id="elastic-test-result" style="display:none;"></div>
+            <p class="obs-elastic-help">Streams all metrics to Elasticsearch every 5 seconds. <a href="https://cloud.elastic.co" target="_blank">Get Elastic Cloud</a></p>
+        </div>
+    </details>
+
     <!-- Tabs -->
     <div class="obs-tabs" id="obs-tabs">
         <button class="obs-tab active" data-obs-tab="overview">Overview</button>

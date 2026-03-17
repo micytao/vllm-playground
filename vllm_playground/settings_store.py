@@ -25,6 +25,11 @@ DEFAULTS: Dict[str, Any] = {
     "omni_run_mode": "remote",
     "omni_remote_url": "",
     "omni_remote_api_key": "",
+    "elastic_enabled": False,
+    "elastic_url": "",
+    "elastic_api_key": "",
+    "elastic_index_prefix": "vllm-metrics",
+    "elastic_verify_certs": True,
 }
 
 # Keys that are allowed to be stored (acts as a simple schema guard)

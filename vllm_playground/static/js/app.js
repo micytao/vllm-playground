@@ -763,6 +763,7 @@ class VLLMWebUI {
         this.showNotification('Saved connection settings cleared', 'info');
     }
 
+
     // ============ i18n (Internationalization) ============
     initI18n() {
         // Initialize i18n system

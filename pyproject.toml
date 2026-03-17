@@ -57,6 +57,9 @@ benchmark = [
 mcp = [
     "mcp>=1.0.0",
 ]
+elastic = [
+    "elasticsearch[async]>=8.0.0,<9.0.0",
+]
 # claudecode extra removed - ttyd is a system package, not a pip package
 # Install ttyd with: brew install ttyd (macOS) or apt install ttyd (Ubuntu)
 dev = [
@@ -66,7 +69,7 @@ dev = [
     "ruff>=0.14.0",
 ]
 all = [
-    "vllm-playground[benchmark,mcp,dev]",
+    "vllm-playground[benchmark,mcp,elastic,dev]",
 ]
 
 [project.scripts]

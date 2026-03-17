@@ -57,12 +57,23 @@ async def startup_event():
     await metric_store.start_scrape_loop()
     logger.info("MetricStore background scrape loop started")
 
+    global elastic_sink
+    try:
+        ecfg = _load_elastic_config()
+        if ecfg.enabled and ecfg.url:
+            elastic_sink = ElasticSink(ecfg)
+            await elastic_sink.connect()
+    except Exception as exc:
+        logger.warning("ElasticSink: failed to initialise on startup: %s", exc)
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Clean up MCP connections and background tasks on shutdown"""
     await metric_store.stop_scrape_loop()
     metric_store.close_history_file()
+    if elastic_sink:
+        await elastic_sink.close()
     logger.info("Shutting down - cleaning up MCP connections...")
     try:
         # Check if MCP is available (these are defined later in the file)
@@ -525,6 +536,8 @@ class MetricStore:
                 snapshot[k] = v
         self.history.append(snapshot)
         self._append_to_disk(snapshot)
+        if elastic_sink and elastic_sink._client:
+            asyncio.ensure_future(elastic_sink.index_snapshot(snapshot))
         self._dirty = False
 
     # -- Background scrape ---------------------------------------------------
@@ -631,6 +644,8 @@ class MetricStore:
                 snapshot[k] = v
         self.history.append(snapshot)
         self._append_to_disk(snapshot)
+        if elastic_sink and elastic_sink._client:
+            asyncio.ensure_future(elastic_sink.index_snapshot(snapshot))
 
     def get_history(self, minutes: Optional[int] = None, seconds: Optional[int] = None) -> list:
         """Return history snapshots, optionally filtered by time window.
@@ -657,6 +672,119 @@ class MetricStore:
 
 
 metric_store = MetricStore(history_maxlen=8640, scrape_interval=5.0)
+
+
+# ---------------------------------------------------------------------------
+# ElasticSink: optional async Elasticsearch sink for MetricStore snapshots
+# ---------------------------------------------------------------------------
+
+
+class ElasticConfig(BaseModel):
+    """Configuration for the optional Elasticsearch integration."""
+
+    enabled: bool = False
+    url: str = ""
+    api_key: str = ""
+    index_prefix: str = "vllm-metrics"
+    verify_certs: bool = True
+
+
+class ElasticSink:
+    """Async Elasticsearch sink that indexes MetricStore snapshots.
+
+    Connects to an Elasticsearch 8.x cluster (Elastic Cloud or self-hosted)
+    and writes each metrics snapshot into a date-partitioned index.
+    """
+
+    def __init__(self, config: ElasticConfig):
+        self.config = config
+        self._client = None  # AsyncElasticsearch instance
+        self._template_created = False
+
+    async def connect(self):
+        """Create the async ES client and ensure the index template exists."""
+        try:
+            from elasticsearch import AsyncElasticsearch
+        except ImportError:
+            logger.warning(
+                "ElasticSink: elasticsearch package not installed. Install with: pip install 'vllm-playground[elastic]'"
+            )
+            return
+
+        kwargs = {
+            "hosts": [self.config.url],
+            "verify_certs": self.config.verify_certs,
+        }
+        if self.config.api_key:
+            kwargs["api_key"] = self.config.api_key
+        self._client = AsyncElasticsearch(**kwargs)
+        await self._ensure_index_template()
+        logger.info("ElasticSink: connected to %s", self.config.url)
+
+    async def close(self):
+        if self._client:
+            await self._client.close()
+            self._client = None
+            logger.info("ElasticSink: connection closed")
+
+    async def _ensure_index_template(self):
+        """Create an index template with proper mappings on first connect."""
+        if self._template_created or not self._client:
+            return
+        template_name = f"{self.config.index_prefix}-template"
+        body = {
+            "index_patterns": [f"{self.config.index_prefix}-*"],
+            "template": {
+                "settings": {"number_of_shards": 1, "number_of_replicas": 1},
+                "mappings": {
+                    "properties": {
+                        "timestamp": {"type": "date"},
+                    },
+                    "dynamic_templates": [
+                        {
+                            "metrics_as_float": {
+                                "match": "vllm:*",
+                                "mapping": {"type": "float"},
+                            }
+                        }
+                    ],
+                },
+            },
+        }
+        try:
+            await self._client.indices.put_index_template(name=template_name, body=body)
+            self._template_created = True
+            logger.info("ElasticSink: index template '%s' created", template_name)
+        except Exception as exc:
+            logger.warning("ElasticSink: template creation failed: %s", exc)
+
+    async def index_snapshot(self, snapshot: dict):
+        """Index a single metric snapshot into a date-based index."""
+        if not self._client:
+            return
+        today = datetime.now().strftime("%Y.%m.%d")
+        index_name = f"{self.config.index_prefix}-{today}"
+        try:
+            await self._client.index(index=index_name, document=snapshot)
+        except Exception as exc:
+            logger.debug("ElasticSink: index failed: %s", exc)
+
+
+elastic_sink: Optional[ElasticSink] = None
+
+
+def _load_elastic_config() -> ElasticConfig:
+    """Build an ElasticConfig from the persisted user settings."""
+    s = settings_store.get()
+    return ElasticConfig(
+        enabled=s.get("elastic_enabled", False),
+        url=s.get("elastic_url", ""),
+        api_key=s.get("elastic_api_key", ""),
+        index_prefix=s.get("elastic_index_prefix", "vllm-metrics"),
+        verify_certs=s.get("elastic_verify_certs", True),
+    )
+
+
 current_model_identifier: Optional[str] = None  # Track the actual model identifier passed to vLLM
 current_served_model_name: Optional[str] = None  # Track the served model name alias (for API calls)
 
@@ -5336,6 +5464,8 @@ async def simulate_vllm_metrics(req: SimulateMetricsRequest):
         _derive_history_metrics(snap)
         metric_store.history.append(snap)
         metric_store._append_to_disk(snap)
+        if elastic_sink and elastic_sink._client:
+            asyncio.ensure_future(elastic_sink.index_snapshot(snap))
 
     metric_store._dirty = False
 
@@ -5379,6 +5509,92 @@ async def simulate_reset_metrics():
     metric_store.last_simulated = None
 
     return {"status": "ok", "message": "Metrics reset"}
+
+
+# ---------------------------------------------------------------------------
+# Elasticsearch integration endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/elastic/status")
+async def elastic_status():
+    """Return current Elastic connection status."""
+    if not elastic_sink or not elastic_sink._client:
+        ecfg = _load_elastic_config()
+        return {"connected": False, "enabled": ecfg.enabled}
+    try:
+        info = await elastic_sink._client.info()
+        return {
+            "connected": True,
+            "enabled": True,
+            "version": info["version"]["number"],
+            "cluster": info["cluster_name"],
+        }
+    except Exception as exc:
+        return {"connected": False, "enabled": True, "error": str(exc)}
+
+
+class ElasticTestRequest(BaseModel):
+    url: str
+    api_key: str = ""
+
+
+@app.post("/api/elastic/test")
+async def elastic_test(req: ElasticTestRequest):
+    """Test connectivity to an Elasticsearch endpoint without persisting."""
+    try:
+        from elasticsearch import AsyncElasticsearch
+    except ImportError:
+        return {"success": False, "error": "elasticsearch package not installed"}
+
+    kwargs = {"hosts": [req.url], "verify_certs": True}
+    if req.api_key:
+        kwargs["api_key"] = req.api_key
+    client = AsyncElasticsearch(**kwargs)
+    try:
+        info = await client.info()
+        return {
+            "success": True,
+            "version": info["version"]["number"],
+            "cluster": info["cluster_name"],
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+    finally:
+        await client.close()
+
+
+@app.post("/api/elastic/configure")
+async def elastic_configure(request: Request):
+    """Update Elastic settings at runtime and reconnect the sink."""
+    global elastic_sink
+    data = await request.json()
+
+    settings_store.update(
+        {
+            "elastic_enabled": data.get("enabled", False),
+            "elastic_url": data.get("url", ""),
+            "elastic_api_key": data.get("api_key", ""),
+            "elastic_index_prefix": data.get("index_prefix", "vllm-metrics"),
+            "elastic_verify_certs": data.get("verify_certs", True),
+        }
+    )
+
+    if elastic_sink:
+        await elastic_sink.close()
+        elastic_sink = None
+
+    ecfg = _load_elastic_config()
+    if ecfg.enabled and ecfg.url:
+        elastic_sink = ElasticSink(ecfg)
+        try:
+            await elastic_sink.connect()
+            return {"status": "ok", "connected": True}
+        except Exception as exc:
+            logger.warning("ElasticSink: reconnect failed: %s", exc)
+            return {"status": "ok", "connected": False, "error": str(exc)}
+
+    return {"status": "ok", "connected": False}
 
 
 @app.post("/api/benchmark/start")

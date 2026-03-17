@@ -185,6 +185,14 @@ const ObservabilityModule = {
         // Alert settings
         const alertSettingsBtn = document.getElementById('obs-alerts-settings-btn');
         if (alertSettingsBtn) alertSettingsBtn.addEventListener('click', () => this._showAlertSettings());
+
+        // Elasticsearch integration
+        const elasticTestBtn = document.getElementById('elastic-test-btn');
+        if (elasticTestBtn) elasticTestBtn.addEventListener('click', () => this._elasticTest());
+        const elasticSaveBtn = document.getElementById('elastic-save-btn');
+        if (elasticSaveBtn) elasticSaveBtn.addEventListener('click', () => this._elasticSave());
+        this._elasticLoadSettings();
+        this._elasticPollStatus();
     },
 
     _switchTab(tabId) {
@@ -1053,6 +1061,123 @@ const ObservabilityModule = {
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;');
+    },
+
+    // ============ Elasticsearch Integration ============
+
+    _elasticGetFormValues() {
+        return {
+            enabled: document.getElementById('elastic-enabled')?.checked || false,
+            url: document.getElementById('elastic-url')?.value?.trim() || '',
+            api_key: document.getElementById('elastic-api-key')?.value?.trim() || '',
+            index_prefix: document.getElementById('elastic-index-prefix')?.value?.trim() || 'vllm-metrics',
+            verify_certs: true,
+        };
+    },
+
+    async _elasticLoadSettings() {
+        try {
+            const resp = await fetch('/api/settings');
+            if (!resp.ok) return;
+            const s = await resp.json();
+            const toggle = document.getElementById('elastic-enabled');
+            const urlInput = document.getElementById('elastic-url');
+            const keyInput = document.getElementById('elastic-api-key');
+            const prefixInput = document.getElementById('elastic-index-prefix');
+            if (toggle) toggle.checked = !!s.elastic_enabled;
+            if (urlInput && s.elastic_url) urlInput.value = s.elastic_url;
+            if (keyInput && s.elastic_api_key) keyInput.value = s.elastic_api_key;
+            if (prefixInput && s.elastic_index_prefix) prefixInput.value = s.elastic_index_prefix;
+        } catch (_) { /* ignore */ }
+    },
+
+    async _elasticTest() {
+        const vals = this._elasticGetFormValues();
+        const resultEl = document.getElementById('elastic-test-result');
+        if (!vals.url) {
+            if (resultEl) {
+                resultEl.style.display = 'block';
+                resultEl.className = 'obs-elastic-result error';
+                resultEl.textContent = 'Please enter an Elasticsearch URL';
+            }
+            return;
+        }
+        const btn = document.getElementById('elastic-test-btn');
+        if (btn) btn.disabled = true;
+        try {
+            const resp = await fetch('/api/elastic/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: vals.url, api_key: vals.api_key }),
+            });
+            const data = await resp.json();
+            if (resultEl) {
+                resultEl.style.display = 'block';
+                if (data.success) {
+                    resultEl.className = 'obs-elastic-result success';
+                    resultEl.textContent = `Connected — Elasticsearch ${data.version} (${data.cluster})`;
+                } else {
+                    resultEl.className = 'obs-elastic-result error';
+                    resultEl.textContent = `Failed: ${data.error}`;
+                }
+            }
+        } catch (e) {
+            if (resultEl) {
+                resultEl.style.display = 'block';
+                resultEl.className = 'obs-elastic-result error';
+                resultEl.textContent = `Error: ${e.message}`;
+            }
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    },
+
+    async _elasticSave() {
+        const vals = this._elasticGetFormValues();
+        const btn = document.getElementById('elastic-save-btn');
+        if (btn) btn.disabled = true;
+        try {
+            const resp = await fetch('/api/elastic/configure', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(vals),
+            });
+            const data = await resp.json();
+            this._elasticUpdateDot(data.connected);
+            const ui = this.ui;
+            if (ui && ui.showNotification) {
+                if (data.connected) {
+                    ui.showNotification('Elasticsearch connected', 'success');
+                } else if (vals.enabled) {
+                    ui.showNotification(data.error ? `Elastic: ${data.error}` : 'Elasticsearch not reachable', 'warning');
+                } else {
+                    ui.showNotification('Elasticsearch integration disabled', 'info');
+                }
+            }
+        } catch (e) {
+            if (this.ui && this.ui.showNotification) {
+                this.ui.showNotification(`Failed to save: ${e.message}`, 'error');
+            }
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    },
+
+    _elasticUpdateDot(connected) {
+        const dot = document.getElementById('elastic-status-dot');
+        if (!dot) return;
+        dot.className = 'obs-elastic-status' + (connected ? ' connected' : '');
+        dot.title = connected ? 'Connected' : 'Disconnected';
+    },
+
+    async _elasticPollStatus() {
+        try {
+            const resp = await fetch('/api/elastic/status');
+            if (resp.ok) {
+                const data = await resp.json();
+                this._elasticUpdateDot(data.connected);
+            }
+        } catch (_) { /* ignore */ }
     },
 };
 
