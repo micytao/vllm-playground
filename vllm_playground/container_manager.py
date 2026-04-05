@@ -534,7 +534,11 @@ class VLLMContainerManager:
             return False
 
     async def start_container(
-        self, vllm_config: Dict[str, Any], image: Optional[str] = None, wait_ready: bool = False
+        self,
+        vllm_config: Dict[str, Any],
+        image: Optional[str] = None,
+        wait_ready: bool = False,
+        container_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Start vLLM container with given configuration
@@ -551,14 +555,17 @@ class VLLMContainerManager:
             vllm_config: vLLM configuration dictionary
             image: Container image to use (default: auto-selected based on CPU/GPU mode)
             wait_ready: If True, wait for vLLM to be ready before returning (default: False)
+            container_name: Custom container name (default: CONTAINER_NAME)
 
         Returns:
             Dictionary with container info (id, name, status, ready, etc.)
         """
+        target_name = container_name or self.CONTAINER_NAME
+
         use_cpu = vllm_config.get("use_cpu", False)
         accelerator = vllm_config.get("accelerator", "nvidia")
         mode_name = "CPU" if use_cpu else f"GPU ({accelerator.upper()})"
-        logger.info(f"Starting vLLM in {mode_name} mode")
+        logger.info(f"Starting vLLM in {mode_name} mode (container: {target_name})")
 
         if image is None:
             # Auto-select appropriate image based on CPU/GPU mode and accelerator
@@ -572,11 +579,11 @@ class VLLMContainerManager:
 
             if not should_recreate:
                 # Container exists with same config - just restart it
-                logger.info(f"Restarting existing container: {self.CONTAINER_NAME}")
+                logger.info(f"Restarting existing container: {target_name}")
 
                 # Check current state
                 status_result = await self._run_podman_cmd_async(
-                    "inspect", self.CONTAINER_NAME, "--format", "{{.State.Status}}", check=False
+                    "inspect", target_name, "--format", "{{.State.Status}}", check=False
                 )
 
                 current_status = status_result.stdout.strip()
@@ -584,20 +591,20 @@ class VLLMContainerManager:
                 if current_status == "running":
                     logger.info("Container already running")
                     # Get container ID
-                    id_result = await self._run_podman_cmd_async("inspect", self.CONTAINER_NAME, "--format", "{{.Id}}")
+                    id_result = await self._run_podman_cmd_async("inspect", target_name, "--format", "{{.Id}}")
                     container_id = id_result.stdout.strip()
                 else:
                     # Start the stopped container
-                    await self._run_podman_cmd_async("start", self.CONTAINER_NAME)
-                    logger.info(f"Container restarted: {self.CONTAINER_NAME}")
+                    await self._run_podman_cmd_async("start", target_name)
+                    logger.info(f"Container restarted: {target_name}")
 
                     # Get container ID
-                    id_result = await self._run_podman_cmd_async("inspect", self.CONTAINER_NAME, "--format", "{{.Id}}")
+                    id_result = await self._run_podman_cmd_async("inspect", target_name, "--format", "{{.Id}}")
                     container_id = id_result.stdout.strip()
 
                 result = {
                     "id": container_id,
-                    "name": self.CONTAINER_NAME,
+                    "name": target_name,
                     "status": "running",
                     "image": image,
                     "reused": True,
@@ -615,7 +622,7 @@ class VLLMContainerManager:
             logger.info("Configuration changed or no container - creating new container")
 
             # Stop and remove existing container if it exists
-            await self.stop_container(remove=True)
+            await self.stop_container(remove=True, container_name=container_name)
 
             # Pull image first (with progress streaming)
             await self._pull_image_with_progress(image)
@@ -637,7 +644,7 @@ class VLLMContainerManager:
                 "run",
                 "-d",  # Detached
                 "--name",
-                self.CONTAINER_NAME,
+                target_name,
                 # Use host IPC namespace for vLLM shared memory (inter-process communication)
                 "--ipc=host",
                 # NOTE: Removed --rm flag to keep container for reuse
@@ -684,20 +691,22 @@ class VLLMContainerManager:
                     logger.info("Google Cloud TPU passthrough enabled for container (privileged mode)")
                 else:
                     # NVIDIA CUDA GPU support (default)
+                    gpu_device = vllm_config.get("gpu_device")
                     if self.runtime == "docker":
-                        # Docker uses --gpus flag
-                        podman_cmd.extend(["--gpus", "all"])
+                        gpu_spec = f'"device={gpu_device}"' if gpu_device else "all"
+                        podman_cmd.extend(["--gpus", gpu_spec])
                     else:
                         # Podman uses --device with CDI
-                        # Also add security options needed for GPU access
+                        device_spec = f"nvidia.com/gpu={gpu_device}" if gpu_device else "nvidia.com/gpu=all"
                         podman_cmd.extend(
                             [
                                 "--device",
-                                "nvidia.com/gpu=all",
+                                device_spec,
                                 "--security-opt=label=disable",
                             ]
                         )
-                    logger.info("NVIDIA CUDA GPU passthrough enabled for container")
+                    gpu_info = f"device={gpu_device}" if gpu_device else "all"
+                    logger.info(f"NVIDIA CUDA GPU passthrough enabled for container ({gpu_info})")
 
             # Add environment variables
             podman_cmd.extend(config["environment"])
@@ -729,7 +738,7 @@ class VLLMContainerManager:
 
             result = {
                 "id": container_id,
-                "name": self.CONTAINER_NAME,
+                "name": target_name,
                 "status": "started",
                 "image": image,
                 "reused": False,
@@ -816,56 +825,62 @@ class VLLMContainerManager:
         logger.warning(f"❌ Timeout waiting for vLLM to be ready ({elapsed:.1f}s)")
         return {"ready": False, "error": "timeout", "elapsed_time": round(elapsed, 1), "last_error": last_error}
 
-    async def stop_container(self, remove: bool = False) -> Dict[str, str]:
+    async def stop_container(self, remove: bool = False, container_name: Optional[str] = None) -> Dict[str, str]:
         """
         Stop vLLM container (optionally remove it)
 
         Args:
             remove: If True, remove container after stopping (default: False)
                    If False, container is kept for faster restarts
+            container_name: Custom container name (default: CONTAINER_NAME)
 
         Returns:
             Dictionary with status
         """
+        target_name = container_name or self.CONTAINER_NAME
         try:
             # Check if container exists
             result = await self._run_podman_cmd_async(
-                "ps", "-a", "--filter", f"name={self.CONTAINER_NAME}", "--format", "{{.Names}}", check=False
+                "ps", "-a", "--filter", f"name={target_name}", "--format", "{{.Names}}", check=False
             )
 
-            if self.CONTAINER_NAME in result.stdout:
-                logger.info(f"Stopping container: {self.CONTAINER_NAME}")
+            if target_name in result.stdout:
+                logger.info(f"Stopping container: {target_name}")
 
                 # Stop container
-                await self._run_podman_cmd_async("stop", self.CONTAINER_NAME, check=False)
+                await self._run_podman_cmd_async("stop", target_name, check=False)
 
                 if remove:
                     # Remove container
-                    await self._run_podman_cmd_async("rm", "-f", self.CONTAINER_NAME, check=False)
-                    logger.info(f"Container stopped and removed: {self.CONTAINER_NAME}")
+                    await self._run_podman_cmd_async("rm", "-f", target_name, check=False)
+                    logger.info(f"Container stopped and removed: {target_name}")
                     return {"status": "stopped_and_removed"}
                 else:
-                    logger.info(f"Container stopped (kept for reuse): {self.CONTAINER_NAME}")
+                    logger.info(f"Container stopped (kept for reuse): {target_name}")
                     return {"status": "stopped"}
             else:
-                logger.info(f"Container {self.CONTAINER_NAME} not found (already stopped)")
+                logger.info(f"Container {target_name} not found (already stopped)")
                 return {"status": "not_running"}
 
         except Exception as e:
             logger.error(f"Error stopping container: {e}")
             return {"status": "error", "error": str(e)}
 
-    async def get_container_status(self) -> Dict[str, Any]:
+    async def get_container_status(self, container_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Get current container status
+
+        Args:
+            container_name: Custom container name (default: CONTAINER_NAME)
 
         Returns:
             Dictionary with container status info
         """
+        target_name = container_name or self.CONTAINER_NAME
         try:
             # Check if container is running
             result = await self._run_podman_cmd_async(
-                "ps", "--filter", f"name={self.CONTAINER_NAME}", "--format", "json", check=False
+                "ps", "--filter", f"name={target_name}", "--format", "json", check=False
             )
 
             if result.returncode == 0 and result.stdout.strip():
@@ -894,9 +909,9 @@ class VLLMContainerManager:
                     if container_id:
                         container_id = container_id[:12]
                     # Docker uses 'Names' as a string or list
-                    names = container.get("Names", self.CONTAINER_NAME)
+                    names = container.get("Names", target_name)
                     if isinstance(names, list):
-                        name = names[0] if names else self.CONTAINER_NAME
+                        name = names[0] if names else target_name
                     else:
                         name = names
                     # Remove leading slash if present (Docker convention)

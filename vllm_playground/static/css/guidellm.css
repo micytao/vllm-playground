@@ -233,6 +233,32 @@
     color: var(--text-secondary);
 }
 
+/* Target Instance Dropdown */
+.benchmark-instance-select {
+    width: 100%;
+    max-width: 420px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    appearance: auto;
+    transition: border-color 0.2s;
+}
+
+.benchmark-instance-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.benchmark-instance-select option {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
 /* =============================================================================
    Metrics Display
    ============================================================================= */

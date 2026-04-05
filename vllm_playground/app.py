@@ -46,6 +46,10 @@ except ImportError:
     CONTAINER_MODE_AVAILABLE = False
     logger.warning("container_manager not available - container mode will be disabled")
 
+# Instance registry for multi-instance support
+from .backend_registry import InstanceRegistry, InstanceEntry, BackendEntry
+import vllm_playground.backend_registry as _ir_mod
+
 app = FastAPI(title="vLLM Playground", version="1.0.0")
 
 
@@ -57,12 +61,24 @@ async def startup_event():
     await metric_store.start_scrape_loop()
     logger.info("MetricStore background scrape loop started")
 
+    # Initialize instance registry
+    registry = InstanceRegistry()
+    registry.load()
+    _ir_mod.instance_registry = registry
+    _ir_mod.instance_registry = registry
+    asyncio.create_task(registry.recover_on_startup())
+    logger.info("InstanceRegistry initialized")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Clean up MCP connections and background tasks on shutdown"""
     await metric_store.stop_scrape_loop()
     metric_store.close_history_file()
+
+    # Shutdown instance registry (stop health loops, persist state)
+    if _ir_mod.instance_registry:
+        await _ir_mod.instance_registry.shutdown()
     logger.info("Shutting down - cleaning up MCP connections...")
     try:
         # Check if MCP is available (these are defined later in the file)
@@ -96,6 +112,30 @@ websocket_connections: List[WebSocket] = []
 latest_vllm_metrics: Dict[str, Any] = {}  # Store latest metrics from logs
 metrics_timestamp: Optional[datetime] = None  # Track when metrics were last updated
 metrics_history: deque = deque(maxlen=120)  # ~6 min of history at 3s intervals (legacy)
+
+# Multi-instance support globals
+_log_reader_tasks: Dict[str, asyncio.Task] = {}
+_log_buffers: Dict[str, deque] = {}
+_LOG_BUFFER_MAX = 2000
+_globals_version: int = 0
+
+
+def _flush_global_logs_to_instance(inst_id: Optional[str]) -> None:
+    """Move pending ``__global__`` log buffer entries into a specific instance buffer.
+
+    Called right after ``_auto_register_instance()`` so that pre-registration
+    log messages (broadcast without an instance_id) are attributed to the
+    newly created instance and survive tab switches.
+    """
+    if not inst_id:
+        return
+    global_buf = _log_buffers.get("__global__")
+    if not global_buf:
+        return
+    if inst_id not in _log_buffers:
+        _log_buffers[inst_id] = deque(maxlen=_LOG_BUFFER_MAX)
+    _log_buffers[inst_id].extend(global_buf)
+    global_buf.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -1208,6 +1248,7 @@ class BenchmarkConfig(BaseModel):
     prompt_tokens: int = 100
     output_tokens: int = 100
     use_guidellm: bool = False  # Toggle between built-in and GuideLLM
+    instance_id: Optional[str] = None  # Target a specific instance instead of the active one
 
 
 class BenchmarkResults(BaseModel):
@@ -1601,6 +1642,9 @@ async def get_status():
     """
     global vllm_running, current_config, server_start_time, current_run_mode, container_id, vllm_process
 
+    # Snapshot version to detect concurrent activate calls (Safety Audit Risk 2)
+    version_before = _globals_version
+
     # Check status based on run mode
     running = await check_vllm_server_running()
 
@@ -1623,7 +1667,9 @@ async def get_status():
                     )
                 logger.info("Reconnected to existing vLLM container after restart")
 
-    vllm_running = running  # Update global state
+    # Only update globals if no activate happened during this poll
+    if _globals_version == version_before:
+        vllm_running = running
 
     uptime = None
     if running and server_start_time:
@@ -2566,9 +2612,19 @@ async def start_server(config: VLLMConfig):
         latest_vllm_metrics, \
         metrics_timestamp
 
-    # Check if server is already running
+    # If a server is already running, park it (keep process alive, clear globals)
+    # so the new server can start on its own port.
     if await check_vllm_server_running():
-        raise HTTPException(status_code=400, detail="Server is already running")
+        await _park_active_instance()
+
+    # Safety net: if the requested port is in use (e.g. by a parked instance),
+    # auto-allocate the next free port.
+    if config.run_mode != "remote":
+        registry = _ir_mod.instance_registry
+        if registry and not registry._is_port_free(config.port):
+            old_port = config.port
+            config.port = registry.allocate_port()
+            logger.info(f"Port {old_port} in use, auto-allocated port {config.port}")
 
     # Clear stale metrics from any previous session so the observability
     # dashboard starts fresh for this server instance.
@@ -2668,11 +2724,10 @@ async def start_server(config: VLLMConfig):
             vllm_running = True
             server_start_time = datetime.now()
 
-            # Use discovered model or served_model_name or config.model
-            if config.served_model_name:
-                current_model_identifier = config.served_model_name
-                current_served_model_name = config.served_model_name
-            elif discovered_model:
+            # For remote servers, always use the discovered model name.
+            # served_model_name is a local --served-model-name concept and
+            # should not override what the remote server actually serves.
+            if discovered_model:
                 current_model_identifier = discovered_model
                 current_served_model_name = None
             else:
@@ -2682,6 +2737,10 @@ async def start_server(config: VLLMConfig):
             await broadcast_log(f"[WEBUI] ✓ Connected to remote vLLM instance")
             await broadcast_log(f"[WEBUI] Model: {current_model_identifier}")
             await broadcast_log(f"[WEBUI] URL: {remote_url}")
+
+            # Auto-register in backend registry
+            inst_id = await _auto_register_instance(config, current_model_identifier)
+            _flush_global_logs_to_instance(inst_id)
 
             return {
                 "status": "connected",
@@ -3077,7 +3136,14 @@ async def start_server(config: VLLMConfig):
             await broadcast_log(f"[WEBUI] Tool calling disabled")
 
         # Speculative decoding support (uses --speculative-config JSON)
-        if config.speculative_method:
+        # Metal backend doesn't implement take_draft_token_ids, so spec-decode
+        # is skipped entirely.  The UI already disables the dropdown for Metal.
+        if config.compute_mode == "metal":
+            if config.speculative_method:
+                await broadcast_log(
+                    f"[WEBUI] ⚠️ Speculative decoding ({config.speculative_method}) ignored — not supported on Metal backend"
+                )
+        elif config.speculative_method:
             import json as _json
 
             spec_cfg = {"method": config.speculative_method}
@@ -3144,9 +3210,6 @@ async def start_server(config: VLLMConfig):
             current_model_identifier = model_source
             current_served_model_name = config.served_model_name  # May be None
 
-            # Start log reader task
-            asyncio.create_task(read_logs_container())
-
             # Show if container was reused or created new
             if container_info.get("reused", False):
                 await broadcast_log(f"[WEBUI] ⚡ Restarted existing container: {container_id[:12]} (fast!)")
@@ -3167,14 +3230,22 @@ async def start_server(config: VLLMConfig):
             else:
                 await broadcast_log(f"[WEBUI] Mode: GPU (Memory: {int(config.gpu_memory_utilization * 100)}%)")
 
+            # Register first so log reader has an instance_id
+            inst_id = await _auto_register_instance(config, model_source)
+            _flush_global_logs_to_instance(inst_id)
+
+            # Start per-instance log reader
+            if inst_id:
+                _log_reader_tasks[inst_id] = asyncio.create_task(read_logs_container(inst_id))
+
             # Wait for vLLM to be ready
-            await broadcast_log(f"[WEBUI] ⏳ Waiting for vLLM to initialize and become ready...")
-            await broadcast_log(f"[WEBUI] This may take 30-120 seconds depending on model size...")
+            await broadcast_log(f"[WEBUI] ⏳ Waiting for vLLM to initialize and become ready...", inst_id)
+            await broadcast_log(f"[WEBUI] This may take 30-120 seconds depending on model size...", inst_id)
 
             readiness = await container_manager.wait_for_ready(port=config.port, timeout=180)
 
             if readiness.get("ready"):
-                await broadcast_log(f"[WEBUI] ✅ vLLM is ready! (took {readiness['elapsed_time']}s)")
+                await broadcast_log(f"[WEBUI] ✅ vLLM is ready! (took {readiness['elapsed_time']}s)", inst_id)
                 return {
                     "status": "ready",
                     "container_id": container_id[:12],
@@ -3187,19 +3258,20 @@ async def start_server(config: VLLMConfig):
                 elapsed = readiness.get("elapsed_time", 0)
 
                 if error_msg == "timeout":
-                    await broadcast_log(f"[WEBUI] ⚠️ Warning: vLLM did not become ready within {elapsed}s")
-                    await broadcast_log(f"[WEBUI] Container is running but may still be initializing...")
-                    await broadcast_log(f"[WEBUI] Check the logs above for model download/loading progress")
+                    await broadcast_log(f"[WEBUI] ⚠️ Warning: vLLM did not become ready within {elapsed}s", inst_id)
+                    await broadcast_log(f"[WEBUI] Container is running but may still be initializing...", inst_id)
+                    await broadcast_log(f"[WEBUI] Check the logs above for model download/loading progress", inst_id)
                     await broadcast_log(
-                        f"[WEBUI] You can try sending requests - they may work once initialization completes"
+                        f"[WEBUI] You can try sending requests - they may work once initialization completes",
+                        inst_id,
                     )
                 elif error_msg == "container_stopped":
-                    await broadcast_log(f"[WEBUI] ❌ Error: Container stopped unexpectedly after {elapsed}s")
-                    await broadcast_log(f"[WEBUI] Check the logs above for errors")
+                    await broadcast_log(f"[WEBUI] ❌ Error: Container stopped unexpectedly after {elapsed}s", inst_id)
+                    await broadcast_log(f"[WEBUI] Check the logs above for errors", inst_id)
                     raise HTTPException(status_code=500, detail="Container stopped during startup")
                 else:
-                    await broadcast_log(f"[WEBUI] ⚠️ Warning: Could not verify readiness: {error_msg}")
-                    await broadcast_log(f"[WEBUI] Container may still be working - check logs for details")
+                    await broadcast_log(f"[WEBUI] ⚠️ Warning: Could not verify readiness: {error_msg}", inst_id)
+                    await broadcast_log(f"[WEBUI] Container may still be working - check logs for details", inst_id)
 
                 return {
                     "status": "started",
@@ -3226,21 +3298,25 @@ async def start_server(config: VLLMConfig):
             current_model_identifier = model_source
             current_served_model_name = config.served_model_name  # May be None
 
-            # Start log reader task
-            asyncio.create_task(read_logs_subprocess())
+            # Register first, then start per-instance log reader with the ID
+            inst_id = await _auto_register_instance(config, model_source)
+            _flush_global_logs_to_instance(inst_id)
 
-            await broadcast_log(f"[WEBUI] vLLM subprocess started (PID: {vllm_process.pid})")
-            await broadcast_log(f"[WEBUI] Model: {model_display_name}")
+            if inst_id:
+                _log_reader_tasks[inst_id] = asyncio.create_task(read_logs_subprocess(inst_id, vllm_process))
+
+            await broadcast_log(f"[WEBUI] vLLM subprocess started (PID: {vllm_process.pid})", inst_id)
+            await broadcast_log(f"[WEBUI] Model: {model_display_name}", inst_id)
             if config.local_model_path:
-                await broadcast_log(f"[WEBUI] Model Source: Local ({model_source})")
+                await broadcast_log(f"[WEBUI] Model Source: Local ({model_source})", inst_id)
             elif config.use_modelscope:
-                await broadcast_log(f"[WEBUI] Model Source: ModelScope (modelscope.cn)")
+                await broadcast_log(f"[WEBUI] Model Source: ModelScope (modelscope.cn)", inst_id)
             else:
-                await broadcast_log(f"[WEBUI] Model Source: HuggingFace Hub")
+                await broadcast_log(f"[WEBUI] Model Source: HuggingFace Hub", inst_id)
             if config.use_cpu:
-                await broadcast_log(f"[WEBUI] Mode: CPU (KV Cache: {config.cpu_kvcache_space}GB)")
+                await broadcast_log(f"[WEBUI] Mode: CPU (KV Cache: {config.cpu_kvcache_space}GB)", inst_id)
             else:
-                await broadcast_log(f"[WEBUI] Mode: GPU (Memory: {int(config.gpu_memory_utilization * 100)}%)")
+                await broadcast_log(f"[WEBUI] Mode: GPU (Memory: {int(config.gpu_memory_utilization * 100)}%)", inst_id)
 
             return {"status": "started", "pid": vllm_process.pid, "mode": "subprocess"}
 
@@ -3305,6 +3381,22 @@ async def stop_server():
         current_served_model_name = None
         current_run_mode = None
 
+        # Mark the stopped instance in the registry (keep the entry, don't remove).
+        registry = _ir_mod.instance_registry
+        if registry and registry.active_id:
+            stopped_id = registry.active_id
+            registry.stop_health_loop(stopped_id)
+            await registry.update(stopped_id, health="stopped", pid=None)
+
+            # Cancel the per-instance log reader
+            task = _log_reader_tasks.pop(stopped_id, None)
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
         return {"status": "stopped"}
 
     except Exception as e:
@@ -3312,62 +3404,533 @@ async def stop_server():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def read_logs_container():
-    """Read logs from vLLM container"""
-    global vllm_running
+# =============================================================================
+# Multi-Instance Registry Helpers & Endpoints
+# =============================================================================
+
+
+async def _auto_register_instance(config: VLLMConfig, model: Optional[str] = None) -> Optional[str]:
+    """Register the just-started server as the active instance in the registry.
+
+    Creates a **transient** entry (saved=False).  If an existing entry matches
+    the same port+run_mode, update it in place instead of creating a duplicate
+    (handles playground restart scenario).
+
+    Returns the instance ID (or None if registry is unavailable).
+    """
+    registry = _ir_mod.instance_registry
+    if registry is None:
+        return None
+
+    gpu_devices = None
+    if config.gpu_device:
+        try:
+            gpu_devices = [int(d) for d in config.gpu_device.split(",")]
+        except ValueError:
+            pass
+
+    base_url = get_vllm_base_url()
+    now_iso = datetime.now().isoformat()
+
+    # Reuse an existing entry only when it's a dead/stopped instance on the
+    # exact same endpoint (restart-recovery scenario).  Never overwrite a
+    # running instance -- that would merge two live servers into one ID.
+    existing = None
+    for e in await registry.list_all():
+        if e.run_mode != config.run_mode:
+            continue
+        if e.health in ("healthy", "unknown"):
+            continue  # never overwrite a live instance
+        if config.run_mode == "remote":
+            if e.url == base_url:
+                existing = e
+                break
+        else:
+            if e.port == config.port:
+                existing = e
+                break
+
+    if existing:
+        await registry.update(
+            existing.id,
+            name=model or config.model or existing.name,
+            model=model or config.model,
+            url=base_url,
+            pid=vllm_process.pid if vllm_process else None,
+            container_name=container_id if config.run_mode == "container" else None,
+            gpu_devices=gpu_devices,
+            config=config.model_dump(),
+            health="healthy" if vllm_running else "unknown",
+            created_at=now_iso,
+            _process=vllm_process if vllm_process else None,
+        )
+        await registry.set_active(existing.id)
+        registry.start_health_loop(existing.id)
+        logger.info(f"Updated existing instance {existing.id} ({existing.name}) as active")
+        return existing.id
+    else:
+        entry = InstanceEntry(
+            id=registry._generate_id(),
+            name=model or config.model or "vLLM Server",
+            model=model or config.model,
+            url=base_url,
+            port=config.port,
+            api_key=config.remote_api_key,
+            run_mode=config.run_mode,
+            managed=config.run_mode != "remote",
+            pid=vllm_process.pid if vllm_process else None,
+            container_name=container_id if config.run_mode == "container" else None,
+            gpu_devices=gpu_devices,
+            config=config.model_dump(),
+            health="healthy" if vllm_running else "unknown",
+            created_at=now_iso,
+            saved=False,
+        )
+        if vllm_process:
+            entry._process = vllm_process
+
+        await registry.add(entry)
+        await registry.set_active(entry.id)
+        registry.start_health_loop(entry.id)
+        logger.info(f"Auto-registered instance {entry.id} ({entry.name}) as active")
+        return entry.id
+
+
+@app.get("/api/instances/next-port")
+async def get_next_port():
+    """Return the next free port for a new instance."""
+    registry = _ir_mod.instance_registry
+    if registry is None:
+        return {"port": 8000}
+    try:
+        port = registry.allocate_port()
+        return {"port": port}
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get("/api/instances/{instance_id}/logs")
+async def get_instance_logs(instance_id: str):
+    """Return the buffered log history for a specific instance."""
+    buf = _log_buffers.get(instance_id, deque())
+    return {"instance_id": instance_id, "logs": list(buf)}
+
+
+@app.get("/api/instances")
+async def list_instances():
+    """List all registered instances with health status."""
+    registry = _ir_mod.instance_registry
+    if registry is None:
+        return {"instances": [], "active_id": None}
+    instances = await registry.list_all()
+    return {
+        "instances": [e.to_dict() for e in instances],
+        "active_id": registry.active_id,
+    }
+
+
+@app.post("/api/instances")
+async def create_instance(request: Request):
+    """Add a remote instance or start a new managed instance."""
+    registry = _ir_mod.instance_registry
+    if registry is None:
+        raise HTTPException(status_code=503, detail="Backend registry not initialized")
+
+    body = await request.json()
+    run_mode = body.get("run_mode", "remote")
+    name = body.get("name", "New Instance")
+
+    if run_mode == "remote":
+        url = body.get("url")
+        if not url:
+            raise HTTPException(status_code=400, detail="URL is required for remote backends")
+        entry = await registry.add_remote(
+            name=name,
+            url=url,
+            api_key=body.get("api_key"),
+            model=body.get("model"),
+        )
+        health = await registry.check_health(entry.id)
+        if health == "healthy" and not entry.model:
+            try:
+                import aiohttp as _aiohttp
+
+                headers = {}
+                if entry.api_key:
+                    headers["Authorization"] = f"Bearer {entry.api_key}"
+                timeout = _aiohttp.ClientTimeout(total=5)
+                async with _aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                    async with session.get(f"{entry.url}/v1/models") as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            models = data.get("data", [])
+                            if models:
+                                await registry.update(entry.id, model=models[0].get("id"))
+            except Exception:
+                pass
+        return {"backend": entry.to_dict()}
+
+    raise HTTPException(
+        status_code=400, detail=f"Creating managed backends via this endpoint is not yet supported. Use /api/start."
+    )
+
+
+@app.delete("/api/instances/{backend_id}")
+async def delete_instance(backend_id: str):
+    """Stop (if managed) and remove an instance."""
+    registry = _ir_mod.instance_registry
+    if registry is None:
+        raise HTTPException(status_code=503, detail="Backend registry not initialized")
+
+    entry = await registry.get(backend_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Backend not found")
+
+    if entry.managed:
+        await registry.stop_instance(backend_id)
+
+    # Clean up per-instance log reader and buffer
+    task = _log_reader_tasks.pop(backend_id, None)
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    _log_buffers.pop(backend_id, None)
+
+    was_active = registry.active_id == backend_id
+    await registry.remove(backend_id)
+
+    if was_active:
+        remaining = await registry.list_all()
+        if remaining:
+            await _do_activate(remaining[0].id)
+        else:
+            global vllm_running, current_run_mode, current_config, server_start_time
+            global current_model_identifier, current_served_model_name
+            vllm_running = False
+            current_run_mode = None
+            current_config = None
+            server_start_time = None
+            current_model_identifier = None
+            current_served_model_name = None
+            await registry.set_active(None)
+
+    return {"status": "removed", "backend_id": backend_id}
+
+
+@app.post("/api/instances/{backend_id}/activate")
+async def activate_instance(backend_id: str):
+    """Switch the active instance. Re-points app.py globals to the selected instance."""
+    return await _do_activate(backend_id)
+
+
+async def _park_active_instance() -> None:
+    """Save current globals into the active registry entry, then clear globals
+    so a new server can be started. The parked instance keeps running."""
+    global vllm_process, vllm_running, current_config, current_run_mode
+    global container_id, server_start_time, current_model_identifier
+    global current_served_model_name, _globals_version
+    global latest_vllm_metrics, metrics_timestamp
+
+    registry = _ir_mod.instance_registry
+    if registry is None or registry.active_id is None:
+        return
+
+    entry = await registry.get(registry.active_id)
+    if entry is None:
+        return
+
+    updates = {"health": "healthy"}
+    if vllm_process and current_run_mode == "subprocess":
+        updates["_process"] = vllm_process
+        updates["pid"] = vllm_process.pid
+    if current_config:
+        updates["config"] = current_config.model_dump()
+    await registry.update(entry.id, **updates)
+
+    # Do NOT cancel the log reader -- parked instances keep running and
+    # their log readers continue writing to per-instance buffers.
+
+    _globals_version += 1
+    latest_vllm_metrics = {}
+    metrics_timestamp = None
+    vllm_process = None
+    vllm_running = False
+    current_config = None
+    current_run_mode = None
+    container_id = None
+    server_start_time = None
+    current_model_identifier = None
+    current_served_model_name = None
+
+    await registry.set_active(None)
+    logger.info(f"Parked instance {entry.id} ({entry.name}) — process kept alive")
+
+
+async def _do_activate(backend_id: str) -> dict:
+    """Core activation logic, shared by the endpoint and internal callers."""
+    global current_config, current_run_mode, vllm_running
+    global current_model_identifier, current_served_model_name
+    global container_id, vllm_process, server_start_time
+    global latest_vllm_metrics, metrics_timestamp
+    global _globals_version
+
+    registry = _ir_mod.instance_registry
+    if registry is None:
+        raise HTTPException(status_code=503, detail="Backend registry not initialized")
+
+    entry = await registry.get(backend_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Backend not found")
+
+    # Clear stale metrics from previous backend
+    latest_vllm_metrics = {}
+    metrics_timestamp = None
+    metric_store.latest.clear()
+    metric_store.history.clear()
+    metric_store._scrape_warned = False
+
+    # Bump version to prevent get_status() from overwriting (Safety Risk 2)
+    _globals_version += 1
+
+    # Re-point globals
+    current_run_mode = entry.run_mode if entry.managed else "remote"
+    vllm_running = entry.health in ("healthy", "unknown")
+    current_model_identifier = entry.model
+    current_served_model_name = entry.model
+    server_start_time = datetime.fromisoformat(entry.created_at) if entry.created_at else datetime.now()
+
+    if entry.config:
+        current_config = VLLMConfig(**entry.config)
+    else:
+        current_config = VLLMConfig(model=entry.model or "unknown", port=entry.port)
+        current_config.remote_url = entry.url
+        current_config.remote_api_key = entry.api_key
+
+    if entry.managed and entry.run_mode == "container":
+        container_id = entry.container_name
+    else:
+        container_id = None
+
+    # Restore subprocess process handle if available
+    if entry._process and entry._process.returncode is None:
+        vllm_process = entry._process
+    else:
+        vllm_process = None
+
+    await registry.set_active(backend_id)
+    logger.info(f"Activated instance {backend_id} ({entry.name})")
+
+    # Trigger immediate metrics scrape for the new instance
+    asyncio.ensure_future(metric_store._do_scrape())
+
+    return {
+        "status": "activated",
+        "instance": entry.id,
+        "model": entry.model,
+        "health": entry.health,
+        "running": entry.health in ("healthy", "unknown"),
+        "config": entry.config,
+        "run_mode": entry.run_mode if entry.managed else "remote",
+    }
+
+
+@app.post("/api/instances/{backend_id}/health")
+async def trigger_health_check(backend_id: str):
+    """Trigger an immediate health check for an instance."""
+    registry = _ir_mod.instance_registry
+    if registry is None:
+        raise HTTPException(status_code=503, detail="Backend registry not initialized")
+
+    entry = await registry.get(backend_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Backend not found")
+
+    health = await registry.check_health(backend_id)
+    return {"backend_id": backend_id, "health": health}
+
+
+# =============================================================================
+# Instance Save / Unsave & Port Allocation
+# =============================================================================
+
+
+@app.post("/api/instances/{instance_id}/save")
+async def save_instance(instance_id: str):
+    """Mark an instance as saved so it persists across playground restarts."""
+    registry = _ir_mod.instance_registry
+    if registry is None:
+        raise HTTPException(status_code=503, detail="Instance registry not initialized")
+
+    entry = await registry.save_instance(instance_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Instance not found")
+    return {"status": "saved", "instance": entry.to_dict()}
+
+
+@app.post("/api/instances/{instance_id}/unsave")
+async def unsave_instance(instance_id: str):
+    """Remove the saved flag; instance stays in-memory but won't survive restart."""
+    registry = _ir_mod.instance_registry
+    if registry is None:
+        raise HTTPException(status_code=503, detail="Instance registry not initialized")
+
+    entry = await registry.unsave_instance(instance_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Instance not found")
+    return {"status": "unsaved", "instance": entry.to_dict()}
+
+
+# =============================================================================
+# /v1/* OpenAI-Compatible Proxy (model-based routing through registry)
+# =============================================================================
+
+
+@app.get("/v1/models")
+async def v1_list_models():
+    """Aggregate models from all healthy backends."""
+    registry = _ir_mod.instance_registry
+    if registry is None:
+        return {"object": "list", "data": []}
+
+    models = []
+    for entry in await registry.list_all():
+        if entry.health == "healthy" and entry.model:
+            models.append(
+                {
+                    "id": entry.model,
+                    "object": "model",
+                    "created": 0,
+                    "owned_by": "vllm",
+                    "meta": {"backend_id": entry.id, "url": entry.url},
+                }
+            )
+    return {"object": "list", "data": models}
+
+
+@app.post("/v1/chat/completions")
+async def v1_chat_completions(request: Request):
+    """Proxy to the backend that serves the requested model."""
+    return await _v1_proxy(request, "/v1/chat/completions")
+
+
+@app.post("/v1/completions")
+async def v1_completions(request: Request):
+    """Proxy to the backend that serves the requested model."""
+    return await _v1_proxy(request, "/v1/completions")
+
+
+async def _v1_proxy(request: Request, path: str):
+    """Route a /v1/ request to the correct backend based on the model field."""
+    registry = _ir_mod.instance_registry
+    if registry is None:
+        raise HTTPException(status_code=503, detail="Backend registry not initialized")
+
+    body = await request.json()
+    model_name = body.get("model")
+    if not model_name:
+        raise HTTPException(status_code=400, detail="model field is required")
+
+    matches = registry.find_by_model(model_name)
+    if not matches:
+        available = [e.model for e in await registry.list_all() if e.health == "healthy" and e.model]
+        raise HTTPException(
+            status_code=404,
+            detail=f"No healthy backend serves model '{model_name}'. Available: {available}",
+        )
+
+    target = matches[0]
+    target_url = f"{target.url.rstrip('/')}{path}"
+
+    headers = {"Content-Type": "application/json"}
+    if target.api_key:
+        headers["Authorization"] = f"Bearer {target.api_key}"
+
+    is_stream = body.get("stream", False)
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=300)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(target_url, json=body, headers=headers) as resp:
+                response_headers = {
+                    "X-Backend-Id": target.id,
+                    "X-Backend-Model": target.model or "",
+                }
+
+                if is_stream:
+                    from starlette.responses import StreamingResponse
+
+                    async def stream_generator():
+                        async for chunk in resp.content.iter_any():
+                            yield chunk
+
+                    return StreamingResponse(
+                        stream_generator(),
+                        media_type=resp.content_type or "text/event-stream",
+                        headers=response_headers,
+                    )
+                else:
+                    resp_body = await resp.json()
+                    return JSONResponse(
+                        content=resp_body,
+                        status_code=resp.status,
+                        headers=response_headers,
+                    )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to proxy to backend {target.id}: {str(e)}")
+
+
+async def read_logs_container(instance_id: str):
+    """Read logs from vLLM container for a specific instance."""
 
     if not container_manager:
         logger.error("read_logs_container called but container_manager is not available")
         return
 
     try:
-        await broadcast_log("[WEBUI] Starting log stream from container...")
+        await broadcast_log("[WEBUI] Starting log stream from container...", instance_id)
 
-        # Stream logs from container
         async for log_line in container_manager.stream_logs():
             if log_line:
                 line = log_line.strip()
-                if line:  # Only send non-empty lines
-                    await broadcast_log(line)
-                    logger.debug(f"vLLM: {line}")
+                if line:
+                    await broadcast_log(line, instance_id)
+                    logger.debug(f"vLLM [{instance_id[:8]}]: {line}")
 
-            # Check if container is still running
-            if not vllm_running:
-                break
+            # Check if the task has been cancelled (instance stopped/removed)
+            await asyncio.sleep(0.01)
 
-            await asyncio.sleep(0.01)  # Small delay to prevent busy loop
+        await broadcast_log("[WEBUI] Container log stream ended", instance_id)
 
-        await broadcast_log("[WEBUI] Container log stream ended")
-
+    except asyncio.CancelledError:
+        logger.info(f"Log reader for container instance {instance_id} cancelled")
     except Exception as e:
         logger.error(f"Error reading container logs: {e}")
-        await broadcast_log(f"[WEBUI] Error reading logs: {e}")
+        await broadcast_log(f"[WEBUI] Error reading logs: {e}", instance_id)
 
 
-async def read_logs_subprocess():
-    """Read logs from vLLM subprocess"""
-    global vllm_running, vllm_process
+async def read_logs_subprocess(instance_id: str, process: asyncio.subprocess.Process):
+    """Read logs from a vLLM subprocess for a specific instance."""
 
     try:
-        await broadcast_log("[WEBUI] Starting log stream from subprocess...")
+        await broadcast_log("[WEBUI] Starting log stream from subprocess...", instance_id)
 
-        # Stream logs from subprocess stdout
-        while vllm_process and vllm_process.returncode is None:
+        while process and process.returncode is None:
             try:
-                line = await asyncio.wait_for(vllm_process.stdout.readline(), timeout=1.0)
+                line = await asyncio.wait_for(process.stdout.readline(), timeout=1.0)
 
                 if line:
                     decoded_line = line.decode().strip()
-                    if decoded_line:  # Only send non-empty lines
-                        await broadcast_log(decoded_line)
-                        logger.debug(f"vLLM: {decoded_line}")
+                    if decoded_line:
+                        await broadcast_log(decoded_line, instance_id)
+                        logger.debug(f"vLLM [{instance_id[:8]}]: {decoded_line}")
                 else:
-                    # No more output
                     break
 
             except asyncio.TimeoutError:
-                # No output in this interval, check if still running
-                if not vllm_running or vllm_process.returncode is not None:
+                if process.returncode is not None:
                     break
                 continue
 
@@ -3375,88 +3938,102 @@ async def read_logs_subprocess():
                 logger.error(f"Error reading line: {e}")
                 break
 
-        await broadcast_log("[WEBUI] Subprocess log stream ended")
+        await broadcast_log("[WEBUI] Subprocess log stream ended", instance_id)
 
+    except asyncio.CancelledError:
+        logger.info(f"Log reader for subprocess instance {instance_id} cancelled")
     except Exception as e:
         logger.error(f"Error reading subprocess logs: {e}")
-        await broadcast_log(f"[WEBUI] Error reading logs: {e}")
+        await broadcast_log(f"[WEBUI] Error reading logs: {e}", instance_id)
 
 
-async def broadcast_log(message: str):
-    """Broadcast log message to all connected websockets"""
+async def broadcast_log(message: str, instance_id: Optional[str] = None):
+    """Broadcast log message to all connected websockets, tagged with instance_id.
+
+    Messages are stored in per-instance ring buffers and sent as JSON so the
+    frontend can filter by active instance.
+    """
     global latest_vllm_metrics, metrics_timestamp
 
     if not message:
         return
 
-    # Minimal fallback: parse a few key metrics from vLLM log lines.
-    # The MetricStore background scraper handles comprehensive metrics via
-    # Prometheus; these patterns are only needed for remote/managed endpoints
-    # where Prometheus may be inaccessible.
-    import re
+    # Store in per-instance buffer
+    buf_key = instance_id or "__global__"
+    if buf_key not in _log_buffers:
+        _log_buffers[buf_key] = deque(maxlen=_LOG_BUFFER_MAX)
+    _log_buffers[buf_key].append(message)
 
-    metrics_updated = False
-    msg_lower = message.lower()
+    # Parse metrics only for the currently active instance
+    registry = _ir_mod.instance_registry
+    is_active = instance_id is None or (registry and registry.active_id == instance_id)
 
-    if "avg prompt throughput" in msg_lower:
-        m = re.search(r"Avg prompt throughput:\s+([\d.]+)\s+tokens/s", message, re.IGNORECASE)
-        if m:
-            latest_vllm_metrics["avg_prompt_throughput"] = float(m.group(1))
-            metrics_updated = True
+    if is_active:
+        import re
 
-    if "avg generation throughput" in msg_lower:
-        m = re.search(r"Avg generation throughput:\s+([\d.]+)\s+tokens/s", message, re.IGNORECASE)
-        if m:
-            latest_vllm_metrics["avg_generation_throughput"] = float(m.group(1))
-            metrics_updated = True
+        metrics_updated = False
+        msg_lower = message.lower()
 
-    if "cache usage" in msg_lower and "%" in message:
-        match = re.search(r"cache usage[:\s]+([\d.]+)\s*%", message, re.IGNORECASE)
-        if match:
-            latest_vllm_metrics["kv_cache_usage_perc"] = float(match.group(1))
-            metrics_updated = True
+        if "avg prompt throughput" in msg_lower:
+            m = re.search(r"Avg prompt throughput:\s+([\d.]+)\s+tokens/s", message, re.IGNORECASE)
+            if m:
+                latest_vllm_metrics["avg_prompt_throughput"] = float(m.group(1))
+                metrics_updated = True
 
-    if "hit rate" in msg_lower and "%" in message:
-        match = re.search(r"hit rate[:\s]+([\d.]+)\s*%", message, re.IGNORECASE)
-        if match:
-            latest_vllm_metrics["prefix_cache_hit_rate"] = float(match.group(1))
-            metrics_updated = True
+        if "avg generation throughput" in msg_lower:
+            m = re.search(r"Avg generation throughput:\s+([\d.]+)\s+tokens/s", message, re.IGNORECASE)
+            if m:
+                latest_vllm_metrics["avg_generation_throughput"] = float(m.group(1))
+                metrics_updated = True
 
-    if "specdecoding metrics" in msg_lower:
-        m = re.search(r"Draft acceptance rate:\s+([\d.]+)%", message)
-        if m:
-            latest_vllm_metrics["spec_decode_acceptance_rate"] = float(m.group(1))
-            metrics_updated = True
+        if "cache usage" in msg_lower and "%" in message:
+            match = re.search(r"cache usage[:\s]+([\d.]+)\s*%", message, re.IGNORECASE)
+            if match:
+                latest_vllm_metrics["kv_cache_usage_perc"] = float(match.group(1))
+                metrics_updated = True
 
-    if metrics_updated:
-        metrics_timestamp = datetime.now()
-        latest_vllm_metrics["timestamp"] = metrics_timestamp.isoformat()
+        if "hit rate" in msg_lower and "%" in message:
+            match = re.search(r"hit rate[:\s]+([\d.]+)\s*%", message, re.IGNORECASE)
+            if match:
+                latest_vllm_metrics["prefix_cache_hit_rate"] = float(match.group(1))
+                metrics_updated = True
 
-        any_ingested = False
-        for key in (
-            "kv_cache_usage_perc",
-            "prefix_cache_hit_rate",
-            "spec_decode_acceptance_rate",
-            "avg_prompt_throughput",
-            "avg_generation_throughput",
-        ):
-            val = latest_vllm_metrics.get(key)
-            if val is not None:
-                if metric_store.ingest_log_parsed(key, val):
-                    any_ingested = True
+        if "specdecoding metrics" in msg_lower:
+            m = re.search(r"Draft acceptance rate:\s+([\d.]+)%", message)
+            if m:
+                latest_vllm_metrics["spec_decode_acceptance_rate"] = float(m.group(1))
+                metrics_updated = True
 
-        if any_ingested:
-            metric_store.append_snapshot_from_latest()
+        if metrics_updated:
+            metrics_timestamp = datetime.now()
+            latest_vllm_metrics["timestamp"] = metrics_timestamp.isoformat()
 
+            any_ingested = False
+            for key in (
+                "kv_cache_usage_perc",
+                "prefix_cache_hit_rate",
+                "spec_decode_acceptance_rate",
+                "avg_prompt_throughput",
+                "avg_generation_throughput",
+            ):
+                val = latest_vllm_metrics.get(key)
+                if val is not None:
+                    if metric_store.ingest_log_parsed(key, val):
+                        any_ingested = True
+
+            if any_ingested:
+                metric_store.append_snapshot_from_latest()
+
+    # Send tagged JSON to all connected websockets
+    payload = json.dumps({"instance_id": instance_id, "message": message})
     disconnected = []
     for ws in websocket_connections:
         try:
-            await ws.send_text(message)
+            await ws.send_text(payload)
         except Exception as e:
             logger.error(f"Error sending to websocket: {e}")
             disconnected.append(ws)
 
-    # Remove disconnected websockets
     for ws in disconnected:
         websocket_connections.remove(ws)
 
@@ -3468,16 +4045,14 @@ async def websocket_logs(websocket: WebSocket):
     websocket_connections.append(websocket)
 
     try:
-        await websocket.send_text("[WEBUI] Connected to log stream")
+        await websocket.send_text(json.dumps({"instance_id": None, "message": "[WEBUI] Connected to log stream"}))
 
         # Keep connection alive
         while True:
             try:
-                # Wait for messages (ping/pong)
                 await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
             except asyncio.TimeoutError:
-                # Send ping to keep connection alive
-                await websocket.send_text("")
+                await websocket.send_text(json.dumps({"instance_id": None, "message": ""}))
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
@@ -5386,9 +5961,30 @@ async def start_benchmark(config: BenchmarkConfig):
     """Start a benchmark test using either built-in or GuideLLM"""
     global current_config, benchmark_task, benchmark_results, current_run_mode
 
-    # Check server status based on mode
-    if not await check_vllm_server_running():
-        raise HTTPException(status_code=400, detail="vLLM server is not running")
+    # Resolve target URL: specific instance or active instance
+    target_base_url = None
+    target_auth_headers = {}
+
+    if config.instance_id:
+        registry = _ir_mod.instance_registry
+        if registry is None:
+            raise HTTPException(status_code=503, detail="Instance registry not initialized")
+        entry = await registry.get(config.instance_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"Instance {config.instance_id} not found")
+        if entry.health != "healthy":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Instance {entry.name} is not running (health: {entry.health})",
+            )
+        target_base_url = entry.url.rstrip("/") if entry.url else f"http://localhost:{entry.port}"
+        if entry.api_key:
+            target_auth_headers = {"Authorization": f"Bearer {entry.api_key}"}
+    else:
+        if not await check_vllm_server_running():
+            raise HTTPException(status_code=400, detail="vLLM server is not running")
+        target_base_url = get_vllm_base_url()
+        target_auth_headers = get_vllm_auth_headers()
 
     if benchmark_task is not None and not benchmark_task.done():
         raise HTTPException(status_code=400, detail="Benchmark is already running")
@@ -5399,13 +5995,13 @@ async def start_benchmark(config: BenchmarkConfig):
 
         # Choose benchmark method
         if config.use_guidellm:
-            # Start GuideLLM benchmark task
-            benchmark_task = asyncio.create_task(run_guidellm_benchmark(config, current_config))
-            await broadcast_log("[BENCHMARK] Starting GuideLLM benchmark...")
+            benchmark_task = asyncio.create_task(run_guidellm_benchmark(config, current_config, target_base_url))
+            await broadcast_log(f"[BENCHMARK] Starting GuideLLM benchmark against {target_base_url}...")
         else:
-            # Start built-in benchmark task
-            benchmark_task = asyncio.create_task(run_benchmark(config, current_config))
-            await broadcast_log("[BENCHMARK] Starting built-in benchmark...")
+            benchmark_task = asyncio.create_task(
+                run_benchmark(config, current_config, target_base_url, target_auth_headers)
+            )
+            await broadcast_log(f"[BENCHMARK] Starting built-in benchmark against {target_base_url}...")
 
         return {"status": "started", "message": "Benchmark started"}
 
@@ -5450,7 +6046,12 @@ async def stop_benchmark():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
+async def run_benchmark(
+    config: BenchmarkConfig,
+    server_config: VLLMConfig,
+    target_base_url: Optional[str] = None,
+    target_auth_headers: Optional[dict] = None,
+):
     """Run a simple benchmark test"""
     global benchmark_results, current_model_identifier, current_run_mode
 
@@ -5464,8 +6065,7 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
             f"[BENCHMARK] Configuration: {config.total_requests} requests at {config.request_rate} req/s"
         )
 
-        # Use centralized URL construction
-        base_url = get_vllm_base_url()
+        base_url = target_base_url or get_vllm_base_url()
         url = f"{base_url}/v1/chat/completions"
         logger.info(f"Using URL for benchmark: {url}")
 
@@ -5478,7 +6078,7 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
         start_time = time.time()
 
         # Create session
-        auth_headers = get_vllm_auth_headers()
+        auth_headers = target_auth_headers if target_auth_headers is not None else get_vllm_auth_headers()
         async with aiohttp.ClientSession(headers=auth_headers) as session:
             # Send requests
             for i in range(config.total_requests):
@@ -5588,7 +6188,11 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
         benchmark_results = None
 
 
-async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
+async def run_guidellm_benchmark(
+    config: BenchmarkConfig,
+    server_config: VLLMConfig,
+    target_base_url: Optional[str] = None,
+):
     """Run a benchmark using GuideLLM"""
     global benchmark_results
 
@@ -5616,7 +6220,8 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
             return
 
         # Setup target URL
-        target_url = f"{get_vllm_base_url()}/v1"
+        base = target_base_url or get_vllm_base_url()
+        target_url = f"{base}/v1"
         await broadcast_log(f"[GUIDELLM] Target: {target_url}")
 
         # Run GuideLLM benchmark using subprocess (since GuideLLM CLI is simpler)

@@ -87,6 +87,19 @@
     color: var(--text-secondary);
 }
 
+.obs-active-instance {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent-color, #6366f1);
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: 4px;
+    padding: 1px 8px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
 .obs-header-actions {
     display: flex;
     gap: 8px;

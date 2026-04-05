@@ -38,6 +38,7 @@
                 <button class="nav-item active" data-view="vllm-server" title="vLLM Server">
                     <img src="/assets/vllm-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label" data-i18n="nav.vllmServer">vLLM Server</span>
+                    <span class="nav-badge instance-count-badge" id="instance-count-badge" style="display: none;"></span>
                 </button>
                 <button class="nav-item" data-view="guidellm" title="GuideLLM Benchmark">
                     <img src="/assets/guidellm-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
@@ -46,6 +47,16 @@
                 <button class="nav-item" data-view="vllm-omni" title="vLLM-Omni" id="nav-omni">
                     <img src="/assets/vllm-omni-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label">vLLM-Omni</span>
+                </button>
+
+                <!-- Management Section -->
+                <div class="nav-divider">
+                    <span class="nav-divider-label">Management</span>
+                </div>
+                <button class="nav-item" data-view="instances" title="Instances" id="nav-instances">
+                    <span class="nav-item-icon icon-instances-nav"></span>
+                    <span class="nav-label">Instances</span>
+                    <span class="nav-badge" id="instances-badge" style="display: none;">0</span>
                 </button>
 
                 <!-- Monitoring Section -->
@@ -123,6 +134,31 @@
 
             <!-- vLLM Server View -->
             <div class="view-content active" id="vllm-server-view">
+                <!-- Instance Tab Bar (multi-instance) -->
+                <div class="instance-tab-bar" id="instance-tab-bar">
+                    <div class="instance-tabs" id="instance-tabs">
+                        <!-- Tabs rendered dynamically by JS -->
+                    </div>
+                    <div class="instance-tab-actions">
+                        <button class="instance-tab-add" id="instance-tab-add" title="Add instance">
+                            <span class="add-icon">+</span>
+                        </button>
+                        <div class="instance-add-dropdown" id="instance-add-dropdown" style="display: none;">
+                            <button class="dropdown-item" data-action="new-instance">New Instance</button>
+                            <div class="dropdown-divider" id="saved-instances-divider" style="display: none;"></div>
+                            <div class="dropdown-label" id="saved-instances-label" style="display: none;">Saved Instances</div>
+                            <div id="saved-instances-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Context Menu (right-click) -->
+                <div class="tab-context-menu" id="tab-context-menu" style="display: none;">
+                    <button class="context-menu-item" data-action="save-instance">Save Instance</button>
+                    <div class="context-menu-divider"></div>
+                    <button class="context-menu-item context-menu-danger" data-action="remove-instance">Remove Instance</button>
+                </div>
+
                 <!-- Main Content - Two Row Layout -->
                 <div class="main-content-wrapper">
                     <!-- Row 1: Config | Chat | Metrics -->
@@ -131,6 +167,7 @@
                     <aside class="sidebar resizable" id="config-panel">
                         <div class="panel">
                             <h2 data-i18n="serverConfig.title">⚙️ Server Configuration</h2>
+
 
                             <!-- Run Mode Toggle (always visible) -->
                             <div class="form-group mode-toggle-group">
@@ -578,9 +615,12 @@
                                 <small class="command-help" data-i18n="serverConfig.commandPreview.help">Editable for customization. Copy to run manually. "Start Server" uses settings above.</small>
                             </div>
 
-                            <div class="button-group">
-                                <button id="start-btn" class="btn btn-primary" data-i18n="serverConfig.buttons.start">Start Server</button>
-                                <button id="stop-btn" class="btn btn-danger" disabled data-i18n="serverConfig.buttons.stop">Stop Server</button>
+                            <div class="button-group-stack">
+                                <button id="save-instance-btn" class="btn btn-secondary btn-full-width" disabled title="Save this instance so it persists across playground restarts">Save Instance</button>
+                                <div class="button-group">
+                                    <button id="start-btn" class="btn btn-primary" data-i18n="serverConfig.buttons.start">Start Server</button>
+                                    <button id="stop-btn" class="btn btn-danger" disabled data-i18n="serverConfig.buttons.stop">Stop Server</button>
+                                </div>
                             </div>
                         </div>
                         <div class="resize-handle resize-handle-vertical" data-direction="horizontal"></div>
@@ -1187,6 +1227,17 @@
 
                             <!-- Benchmark Configuration -->
                             <div class="benchmark-config">
+                                <!-- Target Instance Selection -->
+                                <div class="config-row" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #2a3142;">
+                                    <div class="config-item" style="flex: 1;">
+                                        <label for="benchmark-target-instance" style="font-weight: 600; margin-bottom: 8px; display: block;">Target Instance:</label>
+                                        <select id="benchmark-target-instance" class="form-control-sm benchmark-instance-select">
+                                            <option value="">Active Instance</option>
+                                        </select>
+                                        <small class="form-help" style="display: block; margin-top: 5px;">Select which running vLLM instance to benchmark against</small>
+                                    </div>
+                                </div>
+
                                 <!-- Benchmark Method Selection -->
                                 <div class="config-row" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #2a3142;">
                                     <div class="config-item" style="flex: 1;">
@@ -1735,6 +1786,64 @@ claude --model <span class="env-model">your-model-name</span></code></pre>
                             </div>
                         </div>
 
+                    </div>
+                </div>
+            </div>
+
+            <!-- Instances View -->
+            <div class="view-content" id="instances-view" style="display: none;">
+                <div class="instances-page">
+                    <div class="instances-toolbar">
+                        <div class="instances-search-wrap">
+                            <input type="text" id="instances-search" class="instances-search" placeholder="Search instances by model, URL, mode...">
+                        </div>
+                        <div class="instances-view-toggle" id="instances-view-toggle">
+                            <button class="toggle-btn active" data-mode="card" title="Card view">
+                                <span class="toggle-icon-card"></span>
+                            </button>
+                            <button class="toggle-btn" data-mode="table" title="Table view">
+                                <span class="toggle-icon-table"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="instances-section" id="instances-section-vllm">
+                        <div class="instances-section-header">
+                            <img src="/assets/vllm-logo.svg" alt="" class="instances-section-logo">
+                            <h2>vLLM Server</h2>
+                            <span class="instances-section-count" id="vllm-instance-count">0 instances</span>
+                        </div>
+                        <div class="instances-grid" id="vllm-instances-grid"></div>
+                        <div class="instances-table-wrap" id="vllm-instances-table" style="display: none;">
+                            <table class="instances-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 25%">Model</th>
+                                        <th style="width: 30%">URL</th>
+                                        <th style="width: 65px">Port</th>
+                                        <th style="width: 100px">Run Mode</th>
+                                        <th style="width: 90px">Health</th>
+                                        <th style="width: 90px">Created</th>
+                                        <th style="width: 70px"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="vllm-instances-tbody"></tbody>
+                            </table>
+                        </div>
+                        <div class="instances-empty" id="vllm-instances-empty" style="display: none;">
+                            No saved vLLM Server instances. Start a server and click "Save Instance" to see it here.
+                        </div>
+                    </div>
+
+                    <div class="instances-section instances-section-placeholder" id="instances-section-omni">
+                        <div class="instances-section-header">
+                            <img src="/assets/vllm-omni-logo.svg" alt="" class="instances-section-logo">
+                            <h2>vLLM-Omni</h2>
+                            <span class="instances-section-count">Coming soon</span>
+                        </div>
+                        <div class="instances-placeholder-message">
+                            Multi-instance support for vLLM-Omni is planned for a future release.
+                        </div>
                     </div>
                 </div>
             </div>
