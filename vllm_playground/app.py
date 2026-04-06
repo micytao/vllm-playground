@@ -814,6 +814,27 @@ class VLLMConfig(BaseModel):
 # =============================================================================
 
 
+def _format_async_client_error(exc: BaseException) -> str:
+    """aiohttp / asyncio errors often have an empty ``str()``; keep logs actionable."""
+    s = str(exc).strip()
+    return s if s else repr(exc)
+
+
+def normalize_vllm_remote_root_url(url: str) -> str:
+    """Strip a trailing ``/v1`` so URLs match vLLM's server root convention.
+
+    Gateways (LiteLLM, many hosted APIs) document an OpenAI *base* of
+    ``https://host/v1``. This app uses the HTTP *root* (no ``/v1``): it calls
+    ``{root}/health``, ``{root}/v1/models``, and ``{root}/v1/chat/completions``.
+    Without normalization, ``https://host/v1`` becomes double ``/v1`` paths and
+    chat returns no response.
+    """
+    u = (url or "").strip().rstrip("/")
+    if len(u) >= 3 and u.lower().endswith("/v1"):
+        return u[:-3].rstrip("/")
+    return u
+
+
 def get_vllm_base_url() -> str:
     """Get the base URL for the running vLLM instance based on current mode.
 
@@ -823,7 +844,7 @@ def get_vllm_base_url() -> str:
     global current_config, current_run_mode
 
     if current_run_mode == "remote" and current_config and current_config.remote_url:
-        return current_config.remote_url.rstrip("/")
+        return normalize_vllm_remote_root_url(current_config.remote_url).rstrip("/")
 
     is_kubernetes = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
 
@@ -940,7 +961,7 @@ def get_omni_base_url() -> str:
     global omni_config, omni_run_mode
 
     if omni_run_mode == "remote" and omni_config and omni_config.remote_url:
-        return omni_config.remote_url.rstrip("/")
+        return normalize_vllm_remote_root_url(omni_config.remote_url).rstrip("/")
 
     if omni_config:
         return f"http://localhost:{omni_config.port}"
@@ -2651,6 +2672,15 @@ async def start_server(config: VLLMConfig):
         if not remote_url.startswith(("http://", "https://")):
             raise HTTPException(status_code=400, detail="Remote URL must start with http:// or https://")
 
+        raw_remote_input = remote_url
+        remote_url = normalize_vllm_remote_root_url(remote_url)
+        if raw_remote_input != remote_url:
+            await broadcast_log(
+                f"[WEBUI] Normalized remote URL to server root: {remote_url} "
+                f"(input looked like an OpenAI base ending in /v1)"
+            )
+        config.remote_url = remote_url
+
         await broadcast_log(f"[WEBUI] Run mode: REMOTE")
         await broadcast_log(f"[WEBUI] Connecting to remote vLLM instance at {remote_url}...")
 
@@ -2663,9 +2693,14 @@ async def start_server(config: VLLMConfig):
         try:
             import aiohttp
 
-            timeout = aiohttp.ClientTimeout(total=10)
+            # LiteLLM and many gateways omit or block /health; do not fail connect on health alone.
+            timeout = aiohttp.ClientTimeout(total=30, connect=20)
+            health_probe_exc: Optional[BaseException] = None
+            models_probe_exc: Optional[BaseException] = None
+            models_http_status: Optional[int] = None
+
             async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
-                # Probe health endpoint
+                # Probe health endpoint (best-effort)
                 health_url = f"{remote_url}/health"
                 await broadcast_log(f"[WEBUI] Checking health: {health_url}")
                 health_ok = False
@@ -2679,9 +2714,11 @@ async def start_server(config: VLLMConfig):
                             await broadcast_log(
                                 f"[WEBUI] ⚠ Health check returned status {response.status}: {text[:200]}"
                             )
-                except aiohttp.ClientError as e:
-                    raise HTTPException(
-                        status_code=400, detail=f"Cannot connect to remote vLLM instance at {remote_url}: {str(e)}"
+                except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+                    health_probe_exc = e
+                    await broadcast_log(
+                        f"[WEBUI] ⚠ Health endpoint unreachable ({type(e).__name__}): "
+                        f"{_format_async_client_error(e)} — trying /v1/models (LiteLLM often has no /health)"
                     )
 
                 # Probe /v1/models to discover served models and their details
@@ -2691,7 +2728,14 @@ async def start_server(config: VLLMConfig):
                 discovered_models_list = []
                 try:
                     async with session.get(models_url) as response:
+                        models_http_status = response.status
                         if response.status == 200:
+                            if not health_ok:
+                                health_ok = True
+                                await broadcast_log(
+                                    "[WEBUI] ✓ Using /v1/models as health signal (/health did not return 200; "
+                                    "common for LiteLLM and some ingress setups)"
+                                )
                             data = await response.json()
                             models = data.get("data", [])
                             if models:
@@ -2714,9 +2758,38 @@ async def start_server(config: VLLMConfig):
                             else:
                                 await broadcast_log("[WEBUI] ⚠ No models found on remote server")
                         else:
-                            await broadcast_log(f"[WEBUI] ⚠ Could not list models (status {response.status})")
-                except aiohttp.ClientError as e:
-                    await broadcast_log(f"[WEBUI] ⚠ Could not discover models: {str(e)}")
+                            text = await response.text()
+                            await broadcast_log(
+                                f"[WEBUI] ⚠ Could not list models (status {response.status}): {text[:300]}"
+                            )
+                except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+                    models_probe_exc = e
+                    await broadcast_log(
+                        f"[WEBUI] ⚠ Could not discover models ({type(e).__name__}): {_format_async_client_error(e)}"
+                    )
+
+            if not health_ok and models_http_status != 200:
+                parts = []
+                if health_probe_exc is not None:
+                    parts.append(
+                        f"GET /health → {type(health_probe_exc).__name__}: {_format_async_client_error(health_probe_exc)}"
+                    )
+                if models_probe_exc is not None:
+                    parts.append(
+                        f"GET /v1/models → {type(models_probe_exc).__name__}: {_format_async_client_error(models_probe_exc)}"
+                    )
+                elif models_http_status is not None:
+                    parts.append(f"GET /v1/models → HTTP {models_http_status}")
+                else:
+                    parts.append("GET /v1/models → no response")
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Cannot reach OpenAI-compatible API at {remote_url}. "
+                        + "; ".join(parts)
+                        + ". Check URL, API key, TLS, VPN/firewall, and that the service exposes GET /v1/models."
+                    ),
+                )
 
             # Set global state
             current_run_mode = "remote"
@@ -2755,7 +2828,10 @@ async def start_server(config: VLLMConfig):
             raise
         except Exception as e:
             logger.error(f"Failed to connect to remote vLLM: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to connect to remote vLLM instance: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to connect to remote vLLM instance: {_format_async_client_error(e)}",
+            )
 
     # =========================================================================
     # Subprocess / Container mode - launch a local vLLM instance
@@ -3842,7 +3918,8 @@ async def _v1_proxy(request: Request, path: str):
         )
 
     target = matches[0]
-    target_url = f"{target.url.rstrip('/')}{path}"
+    root = normalize_vllm_remote_root_url(target.url)
+    target_url = f"{root.rstrip('/')}{path}"
 
     headers = {"Content-Type": "application/json"}
     if target.api_key:
@@ -5977,7 +6054,9 @@ async def start_benchmark(config: BenchmarkConfig):
                 status_code=400,
                 detail=f"Instance {entry.name} is not running (health: {entry.health})",
             )
-        target_base_url = entry.url.rstrip("/") if entry.url else f"http://localhost:{entry.port}"
+        target_base_url = (
+            normalize_vllm_remote_root_url(entry.url.rstrip("/")) if entry.url else f"http://localhost:{entry.port}"
+        )
         if entry.api_key:
             target_auth_headers = {"Authorization": f"Bearer {entry.api_key}"}
     else:
@@ -6846,6 +6925,13 @@ async def start_omni_server(config: OmniConfig):
 
             omni_run_mode = "remote"
             remote_base = config.remote_url.rstrip("/")
+            raw_omni_remote = remote_base
+            remote_base = normalize_vllm_remote_root_url(remote_base)
+            if raw_omni_remote != remote_base:
+                await broadcast_omni_log(
+                    f"[OMNI] Normalized remote URL to server root: {remote_base} (was OpenAI-style /v1 base)"
+                )
+            config.remote_url = remote_base
             await broadcast_omni_log(f"[OMNI] Connecting to remote vLLM-Omni instance: {remote_base}")
 
             # Probe health endpoint
@@ -6872,6 +6958,11 @@ async def start_omni_server(config: OmniConfig):
                     try:
                         async with session.get(f"{remote_base}/v1/models", headers=headers) as resp:
                             if resp.status == 200:
+                                if not health_ok:
+                                    health_ok = True
+                                    await broadcast_omni_log(
+                                        "[OMNI] ✓ Using /v1/models as health signal (/health not OK)"
+                                    )
                                 models_data = await resp.json()
                                 models_raw = models_data.get("data", [])
                                 model_ids = [m.get("id", "unknown") for m in models_raw]

@@ -31,6 +31,14 @@ _PORT_RANGE_START = 8000
 _PORT_RANGE_END = 8100
 
 
+def _normalize_remote_root_url(url: str) -> str:
+    """Match app.py ``normalize_vllm_remote_root_url`` (avoid importing app here)."""
+    u = (url or "").strip().rstrip("/")
+    if len(u) >= 3 and u.lower().endswith("/v1"):
+        return u[:-3].rstrip("/")
+    return u
+
+
 @dataclass
 class InstanceEntry:
     """Represents a single vLLM instance (running or stopped)."""
@@ -64,7 +72,10 @@ class InstanceEntry:
         data.pop("_process", None)
         known_fields = {f.name for f in cls.__dataclass_fields__.values() if f.name != "_process"}
         filtered = {k: v for k, v in data.items() if k in known_fields}
-        return cls(**filtered)
+        entry = cls(**filtered)
+        if entry.run_mode == "remote" and entry.url:
+            entry.url = _normalize_remote_root_url(entry.url)
+        return entry
 
 
 # Keep old name as alias so existing imports still work during migration
@@ -230,7 +241,8 @@ class InstanceRegistry:
         if entry.health == "stopped":
             return "stopped"
 
-        url = entry.url.rstrip("/") + "/health"
+        root = _normalize_remote_root_url(entry.url)
+        health_url = f"{root}/health"
         health = "unreachable"
         try:
             import aiohttp
@@ -241,9 +253,13 @@ class InstanceRegistry:
 
             timeout = aiohttp.ClientTimeout(total=5)
             async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                async with session.get(url) as response:
+                async with session.get(health_url) as response:
                     if response.status == 200:
                         health = "healthy"
+                    elif entry.run_mode == "remote":
+                        # LiteLLM / some ingresses do not expose /health; OpenAI /v1/models often works.
+                        async with session.get(f"{root}/v1/models", headers=headers) as r2:
+                            health = "healthy" if r2.status == 200 else "unhealthy"
                     else:
                         health = "unhealthy"
         except Exception:
@@ -405,11 +421,12 @@ class InstanceRegistry:
         """Register an externally-managed remote vLLM server."""
         entry_id = self._generate_id()
 
+        norm_url = _normalize_remote_root_url(url)
         parsed_port = 8000
         try:
             from urllib.parse import urlparse
 
-            parsed = urlparse(url)
+            parsed = urlparse(norm_url)
             if parsed.port:
                 parsed_port = parsed.port
         except Exception:
@@ -419,7 +436,7 @@ class InstanceRegistry:
             id=entry_id,
             name=name,
             model=model,
-            url=url.rstrip("/"),
+            url=norm_url,
             port=parsed_port,
             api_key=api_key,
             run_mode="remote",
