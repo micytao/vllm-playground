@@ -835,6 +835,66 @@ def normalize_vllm_remote_root_url(url: str) -> str:
     return u
 
 
+def _max_context_from_litellm_model_info(mi: Optional[Dict[str, Any]]) -> Optional[int]:
+    """Derive a display context size from LiteLLM ``model_info`` (see GET /v1/model/info)."""
+    if not mi or not isinstance(mi, dict):
+        return None
+    inp, out, mt = mi.get("max_input_tokens"), mi.get("max_output_tokens"), mi.get("max_tokens")
+    for v in (inp, mt):
+        if v is not None:
+            try:
+                iv = int(v)
+                if iv > 0:
+                    return iv
+            except (TypeError, ValueError):
+                pass
+    if inp is not None and out is not None:
+        try:
+            return int(inp) + int(out)
+        except (TypeError, ValueError):
+            pass
+    return None
+
+
+async def _enrich_remote_models_from_litellm_model_info(
+    session: Any,
+    remote_url: str,
+    headers: Dict[str, str],
+    discovered_models_list: List[Dict[str, Any]],
+) -> None:
+    """Fill ``max_model_len`` when the gateway is LiteLLM (OpenAI /v1/models omits it)."""
+    if not discovered_models_list or any(m.get("max_model_len") for m in discovered_models_list):
+        return
+    root = remote_url.rstrip("/")
+    for path in ("/v1/model/info", "/model/info"):
+        url = f"{root}{path}"
+        try:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    continue
+                payload = await resp.json()
+                rows = payload.get("data") or []
+                if not rows:
+                    continue
+                by_name = {row["model_name"]: row for row in rows if row.get("model_name")}
+                filled = 0
+                for m in discovered_models_list:
+                    if m.get("max_model_len"):
+                        continue
+                    row = by_name.get(m.get("id"))
+                    if not row:
+                        continue
+                    ctx = _max_context_from_litellm_model_info(row.get("model_info"))
+                    if ctx is not None:
+                        m["max_model_len"] = ctx
+                        filled += 1
+                if filled:
+                    await broadcast_log(f"[WEBUI] ✓ Max context from LiteLLM model/info ({path}) for {filled} model(s)")
+                return
+        except Exception:
+            continue
+
+
 def get_vllm_base_url() -> str:
     """Get the base URL for the running vLLM instance based on current mode.
 
@@ -2693,49 +2753,23 @@ async def start_server(config: VLLMConfig):
         try:
             import aiohttp
 
-            # LiteLLM and many gateways omit or block /health; do not fail connect on health alone.
+            # Remote readiness: OpenAI GET /v1/models only (skip /health — many proxies omit or stall it).
             timeout = aiohttp.ClientTimeout(total=30, connect=20)
-            health_probe_exc: Optional[BaseException] = None
             models_probe_exc: Optional[BaseException] = None
             models_http_status: Optional[int] = None
 
             async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
-                # Probe health endpoint (best-effort)
-                health_url = f"{remote_url}/health"
-                await broadcast_log(f"[WEBUI] Checking health: {health_url}")
-                health_ok = False
-                try:
-                    async with session.get(health_url) as response:
-                        if response.status == 200:
-                            health_ok = True
-                            await broadcast_log("[WEBUI] ✓ Remote server is healthy")
-                        else:
-                            text = await response.text()
-                            await broadcast_log(
-                                f"[WEBUI] ⚠ Health check returned status {response.status}: {text[:200]}"
-                            )
-                except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
-                    health_probe_exc = e
-                    await broadcast_log(
-                        f"[WEBUI] ⚠ Health endpoint unreachable ({type(e).__name__}): "
-                        f"{_format_async_client_error(e)} — trying /v1/models (LiteLLM often has no /health)"
-                    )
-
-                # Probe /v1/models to discover served models and their details
                 models_url = f"{remote_url}/v1/models"
-                await broadcast_log(f"[WEBUI] Discovering models: {models_url}")
+                await broadcast_log(f"[WEBUI] Probing remote API: {models_url}")
+                health_ok = False
                 discovered_model = None
                 discovered_models_list = []
                 try:
                     async with session.get(models_url) as response:
                         models_http_status = response.status
                         if response.status == 200:
-                            if not health_ok:
-                                health_ok = True
-                                await broadcast_log(
-                                    "[WEBUI] ✓ Using /v1/models as health signal (/health did not return 200; "
-                                    "common for LiteLLM and some ingress setups)"
-                                )
+                            health_ok = True
+                            await broadcast_log("[WEBUI] ✓ Remote API reachable (/v1/models)")
                             data = await response.json()
                             models = data.get("data", [])
                             if models:
@@ -2751,10 +2785,14 @@ async def start_server(config: VLLMConfig):
                                 ]
                                 model_list = ", ".join(m.get("id", "unknown") for m in models)
                                 await broadcast_log(f"[WEBUI] ✓ Available models: {model_list}")
-                                # Log extra details if available
-                                first_model = models[0]
-                                if first_model.get("max_model_len"):
-                                    await broadcast_log(f"[WEBUI] ✓ Max context length: {first_model['max_model_len']}")
+                                if not any(m.get("max_model_len") for m in discovered_models_list):
+                                    await _enrich_remote_models_from_litellm_model_info(
+                                        session, remote_url, auth_headers, discovered_models_list
+                                    )
+                                if discovered_models_list and discovered_models_list[0].get("max_model_len"):
+                                    await broadcast_log(
+                                        f"[WEBUI] ✓ Max context length: {discovered_models_list[0]['max_model_len']}"
+                                    )
                             else:
                                 await broadcast_log("[WEBUI] ⚠ No models found on remote server")
                         else:
@@ -2770,10 +2808,6 @@ async def start_server(config: VLLMConfig):
 
             if not health_ok and models_http_status != 200:
                 parts = []
-                if health_probe_exc is not None:
-                    parts.append(
-                        f"GET /health → {type(health_probe_exc).__name__}: {_format_async_client_error(health_probe_exc)}"
-                    )
                 if models_probe_exc is not None:
                     parts.append(
                         f"GET /v1/models → {type(models_probe_exc).__name__}: {_format_async_client_error(models_probe_exc)}"
@@ -5627,23 +5661,31 @@ async def check_vllm_health():
     if current_config is None:
         return {"success": False, "status_code": 503, "error": "No configuration"}
 
-    # Try to call vLLM's health endpoint
     try:
         import aiohttp
 
         base_url = get_vllm_base_url()
-        health_url = f"{base_url}/health"
         auth_headers = get_vllm_auth_headers()
+        timeout = aiohttp.ClientTimeout(total=10, connect=5)
 
-        timeout = aiohttp.ClientTimeout(total=3)
         async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
+            if current_run_mode == "remote":
+                models_url = f"{base_url}/v1/models"
+                async with session.get(models_url) as response:
+                    if response.status == 200:
+                        return {"success": True, "status_code": 200, "message": "Remote API reachable (/v1/models)"}
+                    return {
+                        "success": False,
+                        "status_code": response.status,
+                        "error": f"/v1/models returned {response.status}",
+                    }
+            health_url = f"{base_url}/health"
             async with session.get(health_url) as response:
                 if response.status == 200:
                     return {"success": True, "status_code": 200, "message": "Server is healthy"}
-                else:
-                    return {"success": False, "status_code": response.status, "error": "Health check failed"}
+                return {"success": False, "status_code": response.status, "error": "Health check failed"}
     except Exception as e:
-        return {"success": False, "status_code": 503, "error": str(e)}
+        return {"success": False, "status_code": 503, "error": _format_async_client_error(e)}
 
 
 # ---------------------------------------------------------------------------

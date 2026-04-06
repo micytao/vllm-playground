@@ -242,7 +242,6 @@ class InstanceRegistry:
             return "stopped"
 
         root = _normalize_remote_root_url(entry.url)
-        health_url = f"{root}/health"
         health = "unreachable"
         try:
             import aiohttp
@@ -253,15 +252,13 @@ class InstanceRegistry:
 
             timeout = aiohttp.ClientTimeout(total=5)
             async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                async with session.get(health_url) as response:
-                    if response.status == 200:
-                        health = "healthy"
-                    elif entry.run_mode == "remote":
-                        # LiteLLM / some ingresses do not expose /health; OpenAI /v1/models often works.
-                        async with session.get(f"{root}/v1/models", headers=headers) as r2:
-                            health = "healthy" if r2.status == 200 else "unhealthy"
-                    else:
-                        health = "unhealthy"
+                if entry.run_mode == "remote":
+                    async with session.get(f"{root}/v1/models", headers=headers) as response:
+                        health = "healthy" if response.status == 200 else "unhealthy"
+                else:
+                    health_url = f"{root}/health"
+                    async with session.get(health_url) as response:
+                        health = "healthy" if response.status == 200 else "unhealthy"
         except Exception:
             health = "unreachable"
 
