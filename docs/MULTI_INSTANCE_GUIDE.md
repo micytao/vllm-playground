@@ -5,6 +5,16 @@ Each server — whether a local subprocess, a container, or a remote endpoint �
 lives in its own **Instance** with isolated chat history, logs, token tracking,
 and performance metrics. Switch between them with a single click.
 
+### UI overview
+
+**vLLM Server** view with multiple instance tabs, per-instance configuration, chat, and the saved-instances list:
+
+![vLLM Server: multiple instance tabs, config, chat, and saved instances](../assets/vllm-playground-multiinstances.png)
+
+**Management → Instances** lists every saved backend in a searchable grid (run mode, port, and running / stopped status):
+
+![Instances management: grid of all backends](../assets/vllm-playground-multiinstnaces-view.png)
+
 ---
 
 ## Table of Contents
