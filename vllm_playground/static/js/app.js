@@ -72,8 +72,34 @@ class VLLMWebUI {
         this._tabBarInitialized = false;
         this._draftMode = false;
         this._activating = false;
+        /** Last run-mode radio (remote | container | subprocess) for toggleRunMode transitions */
+        this._prevRunModeForToggle = null;
+        /** Remote session model id for clearing custom-model when switching instance/tab away from remote */
+        this._remoteSessionModelId = null;
 
         this.init();
+    }
+
+    /**
+     * Backend uses gpu_memory_utilization in 0–1; the #gpu-memory input is percent 10–100.
+     */
+    _gpuMemUiPercentFromConfig(gmu) {
+        const n = Number(gmu);
+        if (Number.isNaN(n) || n <= 0) return null;
+        let pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
+        pct = Math.min(100, Math.max(10, pct));
+        return String(pct);
+    }
+
+    /** Fix #gpu-memory when it contains a fraction (e.g. 0.9) instead of percent. */
+    _coerceGpuMemoryPercentDisplay() {
+        const el = this.elements.gpuMemory;
+        if (!el) return;
+        const raw = parseFloat(String(el.value).trim());
+        if (Number.isNaN(raw)) return;
+        if (raw > 0 && raw <= 1) {
+            el.value = String(Math.min(100, Math.max(10, Math.round(raw * 100))));
+        }
     }
 
     init() {
@@ -1965,6 +1991,9 @@ number ::= [0-9]+`
                 this.serverRunning = true;
                 this.currentConfig = data.config;
                 const isRemote = data.config && data.config.run_mode === 'remote';
+                if (isRemote && data.config.model) {
+                    this._remoteSessionModelId = data.config.model;
+                }
                 this.updateStatus('running', isRemote ? 'Connected (Remote)' : 'Server Running');
                 if (!this._draftMode) {
                     this.elements.startBtn.disabled = true;
@@ -1988,7 +2017,15 @@ number ::= [0-9]+`
                 this.serverReady = false;
                 this.healthCheckStarted = false;
                 const stoppedIsRemote = this.currentConfig && this.currentConfig.run_mode === 'remote';
+                const stoppedRemoteModel = stoppedIsRemote ? this.currentConfig.model : null;
                 this.currentConfig = null;
+                if (stoppedIsRemote) {
+                    this._remoteSessionModelId = null;
+                    if (stoppedRemoteModel && this.elements.customModel &&
+                        this.elements.customModel.value.trim() === stoppedRemoteModel) {
+                        this.elements.customModel.value = '';
+                    }
+                }
                 this.updateStatus('connected', stoppedIsRemote ? 'Disconnected' : 'Server Stopped');
                 this.elements.startBtn.disabled = false;
                 this.elements.stopBtn.disabled = true;
@@ -2264,6 +2301,7 @@ number ::= [0-9]+`
     }
 
     toggleRunMode() {
+        const wasRemote = this._prevRunModeForToggle === 'remote';
         const isSubprocess = this.elements.runModeSubprocess.checked;
         const isContainer = this.elements.runModeContainer.checked;
         const isRemote = this.elements.runModeRemote.checked;
@@ -2361,6 +2399,25 @@ number ::= [0-9]+`
 
         // Update tool panel: in remote mode, tool calling is always enabled
         this.updateToolPanelStatus();
+
+        // Leaving remote for container/subprocess: remote discovery often lands in custom-model;
+        // don't reuse that string for local vLLM. Also fix GPU % if a 0–1 fraction leaked into the input.
+        if ((isContainer || isSubprocess) && wasRemote) {
+            this._coerceGpuMemoryPercentDisplay();
+            const remoteModelId =
+                (this.currentConfig?.run_mode === 'remote'
+                    ? (this.currentConfig.model || this._remoteSessionModelId)
+                    : this._remoteSessionModelId);
+            if (remoteModelId && this.elements.customModel &&
+                this.elements.customModel.value.trim() === remoteModelId) {
+                this.elements.customModel.value = '';
+            }
+        }
+        if (!isRemote && wasRemote) {
+            this._remoteSessionModelId = null;
+        }
+
+        this._prevRunModeForToggle = isRemote ? 'remote' : (isContainer ? 'container' : 'subprocess');
     }
 
     updateRunModeAvailability() {
@@ -2986,6 +3043,7 @@ number ::= [0-9]+`
                     model: data.model || config.model,
                     remote_url: data.remote_url,
                 };
+                this._remoteSessionModelId = data.model || config.model || null;
                 // Remote mode is immediately ready (no startup wait needed)
                 this.serverReady = true;
                 this.updateSendButtonState();
@@ -3050,9 +3108,16 @@ number ::= [0-9]+`
             // Hide remote server info panel on disconnect
             if (isRemote) {
                 this.hideRemoteServerInfo();
+                const rm = this.currentConfig?.model;
+                if (rm && this.elements.customModel && this.elements.customModel.value.trim() === rm) {
+                    this.elements.customModel.value = '';
+                }
             }
             // Clear config so tool panel reverts to local checkbox state
             this.currentConfig = null;
+            if (isRemote) {
+                this._remoteSessionModelId = null;
+            }
             this.updateToolPanelStatus();
 
             // Re-enable start button and refresh tab bar
@@ -5624,9 +5689,12 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 this.elements.tensorParallel.value = config.tensor_parallel_size;
             }
 
-            // Set GPU memory utilization
-            if (config.gpu_memory_utilization && this.elements.gpuMemory) {
-                this.elements.gpuMemory.value = config.gpu_memory_utilization;
+            // Set GPU memory utilization (API: 0–1; UI: percent 10–100)
+            if (config.gpu_memory_utilization != null && this.elements.gpuMemory) {
+                const pct = this._gpuMemUiPercentFromConfig(config.gpu_memory_utilization);
+                if (pct != null) {
+                    this.elements.gpuMemory.value = pct;
+                }
             }
 
             // Set max model length
@@ -7428,9 +7496,12 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             this.elements.remoteApiKeyInput.value = cfg.remote_api_key;
         }
 
-        // GPU settings
+        // GPU settings (API: 0–1 fraction; UI: percent 10–100)
         if (cfg.gpu_memory_utilization != null && this.elements.gpuMemory) {
-            this.elements.gpuMemory.value = cfg.gpu_memory_utilization;
+            const pct = this._gpuMemUiPercentFromConfig(cfg.gpu_memory_utilization);
+            if (pct != null) {
+                this.elements.gpuMemory.value = pct;
+            }
         }
         if (cfg.tensor_parallel_size != null && this.elements.tensorParallel) {
             this.elements.tensorParallel.value = cfg.tensor_parallel_size;
@@ -7510,9 +7581,19 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             const isRemote = runMode === 'remote';
             const cfg = activateData.config || {};
 
+            if (this.currentConfig?.run_mode === 'remote' && this.currentConfig.model) {
+                this._remoteSessionModelId = this.currentConfig.model;
+            }
+
             this.serverRunning = isRunning;
             this.serverReady = isRunning;
             this.currentConfig = cfg;
+
+            const inst = this._instances.find(i => i.id === instanceId);
+            if (isRemote && inst) {
+                this._remoteSessionModelId =
+                    activateData.config?.model ?? inst.model ?? this._remoteSessionModelId;
+            }
 
             // Button states derived from the instance
             if (isRunning) {
@@ -7552,7 +7633,6 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             }
 
             // Restore config panel to reflect the activated instance
-            const inst = this._instances.find(i => i.id === instanceId);
             if (inst) this._restoreConfigPanel(inst);
 
             // Fetch logs and metrics in parallel (they are independent)
