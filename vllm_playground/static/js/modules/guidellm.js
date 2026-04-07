@@ -43,6 +43,7 @@ function injectMethods(ui) {
 
     // Benchmark server status
     ui.updateBenchmarkServerStatus = GuideLLMModule.updateBenchmarkServerStatus.bind(GuideLLMModule);
+    ui.populateBenchmarkInstanceDropdown = GuideLLMModule.populateBenchmarkInstanceDropdown.bind(GuideLLMModule);
 
     // Command preview and copy methods
     ui.updateBenchmarkCommandPreview = GuideLLMModule.updateBenchmarkCommandPreview.bind(GuideLLMModule);
@@ -62,6 +63,8 @@ export const GuideLLMModule = {
     ui: null,
     available: false,
     version: null,
+    /** Fingerprint of running instance rows; avoids rebuilding <select> every status poll (fixes flaky clicks). */
+    _benchmarkDropdownFingerprint: null,
 
     // =========================================================================
     // Status Indicator
@@ -172,6 +175,14 @@ export const GuideLLMModule = {
             ui.elements.benchmarkMethodGuidellm.addEventListener('change', () => ui.updateBenchmarkCommandPreview());
         }
 
+        // Target instance dropdown — update command preview AND status banner
+        if (ui.elements.benchmarkTargetInstance) {
+            ui.elements.benchmarkTargetInstance.addEventListener('change', () => {
+                ui.updateBenchmarkServerStatus();
+                ui.updateBenchmarkCommandPreview();
+            });
+        }
+
         // Copy buttons
         if (ui.elements.copyBenchmarkCommandBtn) {
             ui.elements.copyBenchmarkCommandBtn.addEventListener('click', () => ui.copyBenchmarkCommand());
@@ -201,18 +212,35 @@ export const GuideLLMModule = {
         const statusBanner = document.getElementById('benchmark-server-status');
         if (!statusBanner) return;
 
-        const isRemote = ui.currentConfig && ui.currentConfig.run_mode === 'remote';
+        // If a specific instance is selected, use its health instead of
+        // the active instance.  This avoids showing "server not running"
+        // when the user picks a healthy non-active instance.
+        const select = ui.elements.benchmarkTargetInstance;
+        const selectedId = select ? select.value : '';
+        let targetReady = false;
+        let targetLabel = '';
 
-        if (ui.serverRunning && ui.serverReady) {
+        if (selectedId) {
+            const opt = select.options[select.selectedIndex];
+            const health = opt?.dataset.health;
+            targetReady = health === 'healthy' || health === 'unknown';
+            targetLabel = opt?.textContent?.trim() || 'Selected instance';
+        } else {
+            targetReady = ui.serverRunning && ui.serverReady;
+            const isRemote = ui.currentConfig && ui.currentConfig.run_mode === 'remote';
+            targetLabel = isRemote ? 'Connected to remote vLLM instance' : 'vLLM server is running';
+        }
+
+        if (targetReady) {
             statusBanner.classList.add('connected');
-            const modeLabel = isRemote ? 'Connected to remote vLLM instance' : 'vLLM server is running';
             statusBanner.innerHTML = `
                 <div class="server-status-content">
                     <span class="status-icon">✅</span>
-                    <span class="status-message">${modeLabel} — ready for benchmarks</span>
+                    <span class="status-message">${targetLabel} — ready for benchmarks</span>
                 </div>
             `;
-        } else if (ui.serverRunning) {
+            if (ui.elements.runBenchmarkBtn) ui.elements.runBenchmarkBtn.disabled = false;
+        } else if (!selectedId && ui.serverRunning) {
             statusBanner.classList.remove('connected');
             statusBanner.innerHTML = `
                 <div class="server-status-content">
@@ -229,10 +257,79 @@ export const GuideLLMModule = {
                     <button class="btn btn-primary btn-sm" onclick="window.vllmUI.switchView('vllm-server')">Go to Server →</button>
                 </div>
             `;
+            if (!selectedId && ui.elements.runBenchmarkBtn) ui.elements.runBenchmarkBtn.disabled = true;
         }
 
         // Refresh command preview so it reflects the current target URL
         this.updateBenchmarkCommandPreview();
+
+        // Do NOT call populateBenchmarkInstanceDropdown() here — pollStatus invokes
+        // updateStatus every ~1s while the server runs, which was wiping the <select>
+        // whenever "Active instance" (value "") was selected and made choosing an instance nearly impossible.
+    },
+
+    /**
+     * @param {Array<object>|undefined} prefetchedInstances - from fetchInstances() to avoid a duplicate /api/instances round-trip
+     */
+    async populateBenchmarkInstanceDropdown(prefetchedInstances) {
+        const ui = this.ui;
+        const select = ui.elements.benchmarkTargetInstance;
+        if (!select) return;
+
+        const prevValue = select.value;
+
+        try {
+            let instances;
+            if (Array.isArray(prefetchedInstances)) {
+                instances = prefetchedInstances;
+            } else {
+                const resp = await fetch('/api/instances');
+                const data = await resp.json();
+                instances = data.instances || [];
+            }
+            const running = instances.filter(i =>
+                i.health === 'healthy' || i.health === 'unknown'
+            );
+            const fp = running.map(i => `${i.id}:${i.health}`).sort().join('|');
+            if (fp === this._benchmarkDropdownFingerprint) {
+                return;
+            }
+            this._benchmarkDropdownFingerprint = fp;
+
+            select.innerHTML = '';
+
+            const optActive = document.createElement('option');
+            optActive.value = '';
+            optActive.textContent = 'Active instance (follows sidebar tab)';
+            select.appendChild(optActive);
+
+            if (running.length > 0) {
+                const group = document.createElement('optgroup');
+                group.label = 'Running instances';
+                running.forEach(inst => {
+                    const model = inst.model || inst.name || 'Unknown';
+                    const port = inst.port || '?';
+                    const mode = inst.run_mode === 'remote' ? 'Remote'
+                        : inst.run_mode === 'container' ? 'Container' : 'Subprocess';
+                    const opt = document.createElement('option');
+                    opt.value = inst.id;
+                    opt.textContent = `${model} :${port} (${mode})`;
+                    opt.dataset.url = inst.url || '';
+                    opt.dataset.runMode = inst.run_mode || '';
+                    opt.dataset.port = String(inst.port || '');
+                    opt.dataset.apiKey = inst.api_key || '';
+                    opt.dataset.health = inst.health || '';
+                    group.appendChild(opt);
+                });
+                select.appendChild(group);
+            }
+
+            if (prevValue && [...select.options].some(o => o.value === prevValue)) {
+                select.value = prevValue;
+            }
+        } catch (e) {
+            // best-effort; keep the default "Active Instance" option
+        }
     },
 
     // =========================================================================
@@ -242,7 +339,10 @@ export const GuideLLMModule = {
     async runBenchmark() {
         const ui = this.ui;
 
-        if (!ui.serverRunning) {
+        const selectedInstanceId = ui.elements.benchmarkTargetInstance
+            ? ui.elements.benchmarkTargetInstance.value : '';
+
+        if (!selectedInstanceId && !ui.serverRunning) {
             ui.showNotification('Server must be running to benchmark', 'warning');
             return;
         }
@@ -254,6 +354,64 @@ export const GuideLLMModule = {
             output_tokens: parseInt(ui.elements.benchmarkOutputTokens.value),
             use_guidellm: ui.elements.benchmarkMethodGuidellm.checked
         };
+
+        if (selectedInstanceId) {
+            config.instance_id = selectedInstanceId;
+        }
+
+        // Remote LiteLLM auth: send remote_api_key only when the benchmark *target* is a remote
+        // gateway. Server also ignores client_key for localhost (_benchmark_target_is_localhost).
+        //
+        // Scenarios: (1) Registry omits url for remote rows → use data-run-mode === 'remote'.
+        // (2) User leaves Server tab on Remote radio but picks a container/subprocess instance
+        // here → mode is container|subprocess → never send key (even if URL field is weird).
+        // (3) Active instance + local runtime → do not use stale remote_url when run_mode is
+        // container|subprocess (Remote API key may still be filled from a prior session).
+        const isLocalHostUrl = (url) => {
+            if (!url || typeof url !== 'string') return false;
+            const u = url.toLowerCase();
+            return u.includes('localhost') || u.includes('127.0.0.1') || u.includes('::1')
+                || u.startsWith('http://0.0.0.0');
+        };
+        let targetLooksRemote = false;
+        if (selectedInstanceId && ui.elements.benchmarkTargetInstance) {
+            const opt = ui.elements.benchmarkTargetInstance.options[
+                ui.elements.benchmarkTargetInstance.selectedIndex];
+            const mode = (opt?.dataset?.runMode || '').toLowerCase();
+            const instUrl = opt?.dataset?.url || '';
+            if (mode === 'container' || mode === 'subprocess') {
+                targetLooksRemote = false;
+            } else if (mode === 'remote') {
+                targetLooksRemote = true;
+            } else if (instUrl) {
+                targetLooksRemote = !isLocalHostUrl(instUrl);
+            }
+        } else {
+            const cfg = ui.currentConfig;
+            if (cfg?.run_mode === 'remote') {
+                targetLooksRemote = true;
+            } else if (
+                cfg?.remote_url
+                && cfg?.run_mode !== 'container'
+                && cfg?.run_mode !== 'subprocess'
+                && !isLocalHostUrl(cfg.remote_url)
+            ) {
+                targetLooksRemote = true;
+            }
+        }
+        if (targetLooksRemote) {
+            const keyFromField = ui.elements.remoteApiKeyInput?.value?.trim();
+            if (keyFromField) {
+                config.remote_api_key = keyFromField;
+            } else if (selectedInstanceId && ui.elements.benchmarkTargetInstance) {
+                const sel = ui.elements.benchmarkTargetInstance;
+                const opt = sel.options[sel.selectedIndex];
+                const keyFromInstance = opt?.dataset?.apiKey?.trim();
+                if (keyFromInstance) {
+                    config.remote_api_key = keyFromInstance;
+                }
+            }
+        }
 
         ui.benchmarkRunning = true;
         ui.benchmarkStartTime = Date.now();
@@ -602,15 +760,29 @@ export const GuideLLMModule = {
         const outputTokens = ui.elements.benchmarkOutputTokens.value || '100';
         const useGuideLLM = ui.elements.benchmarkMethodGuidellm?.checked;
 
-        // In remote mode, use the remote URL; otherwise build from host/port inputs
-        const isRemote = ui.currentConfig && ui.currentConfig.run_mode === 'remote';
+        // Determine target URL: selected instance takes priority over active instance
+        const select = ui.elements.benchmarkTargetInstance;
+        const selectedId = select ? select.value : '';
         let targetUrl;
-        if (isRemote && ui.currentConfig.remote_url) {
-            targetUrl = `${ui.currentConfig.remote_url.replace(/\/+$/, '')}/v1`;
+
+        if (selectedId) {
+            const selectedOpt = select.options[select.selectedIndex];
+            const instUrl = selectedOpt.dataset.url;
+            const instPort = selectedOpt.dataset.port;
+            if (instUrl) {
+                targetUrl = `${instUrl.replace(/\/+$/, '')}/v1`;
+            } else {
+                targetUrl = `http://localhost:${instPort}/v1`;
+            }
         } else {
-            const host = ui.elements.host?.value || 'localhost';
-            const port = ui.elements.port?.value || '8000';
-            targetUrl = `http://${host}:${port}/v1`;
+            const isRemote = ui.currentConfig && ui.currentConfig.run_mode === 'remote';
+            if (isRemote && ui.currentConfig.remote_url) {
+                targetUrl = `${ui.currentConfig.remote_url.replace(/\/+$/, '')}/v1`;
+            } else {
+                const host = ui.elements.host?.value || 'localhost';
+                const port = ui.elements.port?.value || '8000';
+                targetUrl = `http://${host}:${port}/v1`;
+            }
         }
 
         let cmd = '';

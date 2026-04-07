@@ -22,17 +22,21 @@ A modern web interface for managing and interacting with vLLM servers (www.githu
 
 *Upload images and chat with vision models like Qwen2.5-VL, LLaVA, and more.*
 
-### 🆕 What's New in v0.1.6
-![Observability Dashboard](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-observability.png)
+### 🧩 Multiple instances & backends
 
-*Real-time Observability Dashboard with auto-discovered vLLM metrics, category filtering, and threshold alerts.*
+Run subprocess, container, and remote vLLM servers side by side; switch tabs, save configs, and manage everything from **Management → Instances**. See **[Multi-Instance Guide](docs/MULTI_INSTANCE_GUIDE.md)** for details.
 
-- 📊 **Observability Dashboard** - Full-page metrics dashboard with time-series charts, threshold alerts, and auto-discovery
-- 🔍 **PagedAttention Visualizer** - Real-time KV cache utilization heatmap with eviction alerts
-- 🔢 **Token Counter & Logprobs** - Live token estimation and per-token probability heatmap
-- ⚡ **Speculative Decoding Dashboard** - Acceptance rate, speedup factor, and method configuration
+![vLLM Server with multiple instance tabs and saved backends](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-multiinstances.png)
 
-See **[Changelog](CHANGELOG.md)** for full details.
+![Instances management grid](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-multiinstnaces-view.png)
+
+### 🆕 What's New in v0.1.8
+
+- **Multi-instance backends** — Registry-backed tabs and **Management → Instances**; run subprocess, container, and remote servers side by side ([guide](docs/MULTI_INSTANCE_GUIDE.md)).
+- **Remote & LiteLLM** — Tougher URL/probing, `/v1/models` for the chat model list, better context limits from gateway metadata.
+- **Benchmarking** — Remote Bearer auth and UI API key (remote only); **model ID follows the benchmark’s target instance** so local vLLM is not called with a stale remote model name.
+
+*v0.1.6 introduced the Observability Dashboard, PagedAttention visualizer, token counter, logprobs, and speculative decoding — see **[Changelog](CHANGELOG.md)** and **[v0.1.6](releases/v0.1.6.md)** for details.*
 
 ---
 
@@ -72,6 +76,7 @@ vllm-playground status              # Check status
 | Feature | Description |
 |---------|-------------|
 | 🌐 **Remote Server** | Connect to any remote vLLM instance via URL + API key |
+| 🧩 **Multi-instance** | Several backends at once (subprocess, container, remote); tabs + **[Instances](docs/MULTI_INSTANCE_GUIDE.md)** page |
 | 🖼️ **VLM Support** | Upload images and chat with vision models (Qwen2.5-VL, LLaVA) |
 | 🤖 **Claude Code** | Use open-source models as Claude Code backend via vLLM |
 | 💬 **Modern Chat UI** | Markdown-rendered chat with streaming responses |
@@ -190,6 +195,7 @@ See [Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md) for details.
 
 ### Features
 - **[Features Overview](docs/FEATURES.md)** - Complete feature list
+- **[Multi-Instance Guide](docs/MULTI_INSTANCE_GUIDE.md)** - Multiple backends, tabs, and Instances management
 - **[Gated Models Guide](docs/GATED_MODELS_GUIDE.md)** - Access Llama, Gemma, etc.
 
 ### Deployment
@@ -204,6 +210,8 @@ See [Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md) for details.
 
 ### Releases
 - **[Changelog](CHANGELOG.md)** - Version history and changes
+- **[v0.1.8](releases/v0.1.8.md)** - Multi-instance backends & remote polish
+- **[v0.1.7](releases/v0.1.7.md)** - Hotfix & tutorials
 - **[v0.1.6](releases/v0.1.6.md)** - Observability dashboard, PagedAttention visualizer, token counter, logprobs
 - **[v0.1.5](releases/v0.1.5.md)** - Remote server, VLM vision support, markdown rendering
 - **[v0.1.4](releases/v0.1.4.md)** - vLLM-Omni multimodal, Studio UI

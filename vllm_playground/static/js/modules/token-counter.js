@@ -32,21 +32,23 @@ const TokenCounterMethods = {
     },
 
     _tcTryGetMaxModelLen() {
-        // Attempt to get from /api/status periodically until available
         const poll = async () => {
             try {
                 const resp = await fetch('/api/status');
                 if (!resp.ok) return;
                 const data = await resp.json();
+                let found = null;
                 if (data.config?.max_model_len) {
-                    this._tcMaxModelLen = data.config.max_model_len;
-                    this._tcUpdateDisplay();
-                    return;
+                    found = data.config.max_model_len;
+                } else if (data.models?.[0]?.max_model_len) {
+                    found = data.models[0].max_model_len;
                 }
-                // For remote mode, check models
-                if (data.models?.[0]?.max_model_len) {
-                    this._tcMaxModelLen = data.models[0].max_model_len;
+                if (found) {
+                    this._tcMaxModelLen = found;
                     this._tcUpdateDisplay();
+                    if (this._activeInstanceId && this._tokenCounts) {
+                        this._saveTokenCountState(this._activeInstanceId);
+                    }
                     return;
                 }
             } catch { /* silent */ }
@@ -66,6 +68,10 @@ const TokenCounterMethods = {
         if (prompt + completion > 0) {
             this._tcConversationTokens = prompt + completion;
             this._tcUpdateDisplay();
+            // Eagerly persist so a tab switch always has the latest value
+            if (this._activeInstanceId && this._tokenCounts) {
+                this._saveTokenCountState(this._activeInstanceId);
+            }
         }
     },
 
@@ -84,6 +90,9 @@ const TokenCounterMethods = {
         if (len && len > 0) {
             this._tcMaxModelLen = len;
             this._tcUpdateDisplay();
+            if (this._activeInstanceId && this._tokenCounts) {
+                this._saveTokenCountState(this._activeInstanceId);
+            }
         }
     },
 

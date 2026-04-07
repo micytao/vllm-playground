@@ -6,6 +6,25 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 ---
 
+## [v0.1.8](releases/v0.1.8.md) - 2026-04-06
+
+**Multi-Instance Backends & Remote Polish**
+
+### Added
+- **Multi-instance backends** — Registry-backed instances with per-tab chat, logs, and metrics; **Management → Instances** for search and lifecycle. See [Multi-Instance Guide](docs/MULTI_INSTANCE_GUIDE.md).
+- **Remote chat model list** — Model dropdown populated from `/v1/models` where available; improved served-name and remote catalog alignment.
+
+### Changed
+- **Remote / LiteLLM connectivity** — More resilient URL handling and server probing (including paths without `/health`).
+- **Benchmark auth** — Bearer token support for remote OpenAI-compatible targets; optional UI API key for remote runs only (not applied to localhost/container targets).
+- **Benchmark model selection** — When a benchmark targets a specific `instance_id`, the OpenAI `model` field (and GuideLLM `--model` when used) resolves from that instance’s registry entry, avoiding 404s against local servers while the global session points at another model.
+
+### Fixed
+- GuideLLM target-instance dropdown stability when the instance list refreshes.
+- GPU memory utilization field normalization; remote model cleared appropriately on some mode switches.
+
+---
+
 ## [v0.1.7](releases/v0.1.7.md) - 2026-03-03
 
 **Hotfix & Tutorials**
