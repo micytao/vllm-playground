@@ -1467,6 +1467,9 @@ class BenchmarkConfig(BaseModel):
     output_tokens: int = 100
     use_guidellm: bool = False  # Toggle between built-in and GuideLLM
     instance_id: Optional[str] = None  # Target a specific instance instead of the active one
+    # Optional Bearer token from the browser (Remote API key field). Server globals may omit the key
+    # after restarts or registry sync; sending it with the benchmark request fixes LiteLLM 401s.
+    remote_api_key: Optional[str] = None
 
 
 class BenchmarkResults(BaseModel):
@@ -6298,6 +6301,10 @@ async def start_benchmark(config: BenchmarkConfig):
             raise HTTPException(status_code=400, detail="vLLM server is not running")
         target_base_url = get_vllm_base_url()
         target_auth_headers = get_vllm_auth_headers()
+
+    client_key = (config.remote_api_key or "").strip()
+    if client_key:
+        target_auth_headers = {"Authorization": f"Bearer {client_key}"}
 
     if benchmark_task is not None and not benchmark_task.done():
         raise HTTPException(status_code=400, detail="Benchmark is already running")

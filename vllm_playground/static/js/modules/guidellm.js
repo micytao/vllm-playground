@@ -358,6 +358,20 @@ export const GuideLLMModule = {
             config.instance_id = selectedInstanceId;
         }
 
+        // Remote LiteLLM auth: server-side current_config may not retain the API key; always send
+        // the value from the Remote settings field (or selected instance row) when present.
+        const keyFromField = ui.elements.remoteApiKeyInput?.value?.trim();
+        if (keyFromField) {
+            config.remote_api_key = keyFromField;
+        } else if (selectedInstanceId && ui.elements.benchmarkTargetInstance) {
+            const sel = ui.elements.benchmarkTargetInstance;
+            const opt = sel.options[sel.selectedIndex];
+            const keyFromInstance = opt?.dataset?.apiKey?.trim();
+            if (keyFromInstance) {
+                config.remote_api_key = keyFromInstance;
+            }
+        }
+
         ui.benchmarkRunning = true;
         ui.benchmarkStartTime = Date.now();
         ui.elements.runBenchmarkBtn.disabled = true;
