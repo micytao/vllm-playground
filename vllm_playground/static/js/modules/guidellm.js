@@ -315,6 +315,7 @@ export const GuideLLMModule = {
                     opt.value = inst.id;
                     opt.textContent = `${model} :${port} (${mode})`;
                     opt.dataset.url = inst.url || '';
+                    opt.dataset.runMode = inst.run_mode || '';
                     opt.dataset.port = String(inst.port || '');
                     opt.dataset.apiKey = inst.api_key || '';
                     opt.dataset.health = inst.health || '';
@@ -358,21 +359,45 @@ export const GuideLLMModule = {
             config.instance_id = selectedInstanceId;
         }
 
-        // Remote LiteLLM auth: server may lack the key; send from UI only for remote targets
-        // (do not attach gateway Bearer tokens to localhost container benchmarks).
-        const localUrl = (url) => {
-            if (!url || typeof url !== 'string') return true;
+        // Remote LiteLLM auth: send remote_api_key only when the benchmark *target* is a remote
+        // gateway. Server also ignores client_key for localhost (_benchmark_target_is_localhost).
+        //
+        // Scenarios: (1) Registry omits url for remote rows → use data-run-mode === 'remote'.
+        // (2) User leaves Server tab on Remote radio but picks a container/subprocess instance
+        // here → mode is container|subprocess → never send key (even if URL field is weird).
+        // (3) Active instance + local runtime → do not use stale remote_url when run_mode is
+        // container|subprocess (Remote API key may still be filled from a prior session).
+        const isLocalHostUrl = (url) => {
+            if (!url || typeof url !== 'string') return false;
             const u = url.toLowerCase();
-            return u.includes('localhost') || u.includes('127.0.0.1') || u.startsWith('http://0.0.0.0');
+            return u.includes('localhost') || u.includes('127.0.0.1') || u.includes('::1')
+                || u.startsWith('http://0.0.0.0');
         };
         let targetLooksRemote = false;
         if (selectedInstanceId && ui.elements.benchmarkTargetInstance) {
             const opt = ui.elements.benchmarkTargetInstance.options[
                 ui.elements.benchmarkTargetInstance.selectedIndex];
+            const mode = (opt?.dataset?.runMode || '').toLowerCase();
             const instUrl = opt?.dataset?.url || '';
-            targetLooksRemote = !localUrl(instUrl);
+            if (mode === 'container' || mode === 'subprocess') {
+                targetLooksRemote = false;
+            } else if (mode === 'remote') {
+                targetLooksRemote = true;
+            } else if (instUrl) {
+                targetLooksRemote = !isLocalHostUrl(instUrl);
+            }
         } else {
-            targetLooksRemote = ui.currentConfig?.run_mode === 'remote';
+            const cfg = ui.currentConfig;
+            if (cfg?.run_mode === 'remote') {
+                targetLooksRemote = true;
+            } else if (
+                cfg?.remote_url
+                && cfg?.run_mode !== 'container'
+                && cfg?.run_mode !== 'subprocess'
+                && !isLocalHostUrl(cfg.remote_url)
+            ) {
+                targetLooksRemote = true;
+            }
         }
         if (targetLooksRemote) {
             const keyFromField = ui.elements.remoteApiKeyInput?.value?.trim();
