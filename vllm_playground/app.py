@@ -1033,6 +1033,40 @@ def get_vllm_auth_headers() -> dict:
     return {}
 
 
+def _benchmark_auth_headers_for_entry(entry: InstanceEntry) -> Dict[str, str]:
+    """Bearer token for benchmarking a specific registry entry.
+
+    Keys may live only on ``entry.config['remote_api_key']`` (persisted dump) while
+    ``entry.api_key`` is unset; both are checked. If the entry is remote with no
+    stored key but matches the active session URL, reuse ``current_config``'s key.
+    """
+    global current_config
+
+    key: Optional[str] = entry.api_key
+    if not key and entry.config and isinstance(entry.config, dict):
+        raw = entry.config.get("remote_api_key")
+        if raw:
+            key = str(raw)
+    if key:
+        return {"Authorization": f"Bearer {key}"}
+    if entry.run_mode == "remote" and current_config and current_config.remote_api_key:
+        e_root = normalize_vllm_remote_root_url(entry.url or "").rstrip("/")
+        c_root = normalize_vllm_remote_root_url(current_config.remote_url or "").rstrip("/")
+        if e_root and e_root == c_root:
+            return {"Authorization": f"Bearer {current_config.remote_api_key}"}
+    return {}
+
+
+def _benchmark_target_is_active_remote(target_base_url: str) -> bool:
+    """True if ``target_base_url`` is the same server root as the active remote config."""
+    global current_config, current_run_mode
+    if current_run_mode != "remote" or not current_config or not current_config.remote_url:
+        return False
+    t = normalize_vllm_remote_root_url(target_base_url or "").rstrip("/")
+    c = normalize_vllm_remote_root_url(current_config.remote_url).rstrip("/")
+    return bool(t and t == c)
+
+
 async def check_vllm_server_running() -> bool:
     """Check if the vLLM server is currently running based on the active mode.
 
@@ -6258,8 +6292,7 @@ async def start_benchmark(config: BenchmarkConfig):
         target_base_url = (
             normalize_vllm_remote_root_url(entry.url.rstrip("/")) if entry.url else f"http://localhost:{entry.port}"
         )
-        if entry.api_key:
-            target_auth_headers = {"Authorization": f"Bearer {entry.api_key}"}
+        target_auth_headers = _benchmark_auth_headers_for_entry(entry)
     else:
         if not await check_vllm_server_running():
             raise HTTPException(status_code=400, detail="vLLM server is not running")
@@ -6275,7 +6308,9 @@ async def start_benchmark(config: BenchmarkConfig):
 
         # Choose benchmark method
         if config.use_guidellm:
-            benchmark_task = asyncio.create_task(run_guidellm_benchmark(config, current_config, target_base_url))
+            benchmark_task = asyncio.create_task(
+                run_guidellm_benchmark(config, current_config, target_base_url, target_auth_headers)
+            )
             await broadcast_log(f"[BENCHMARK] Starting GuideLLM benchmark against {target_base_url}...")
         else:
             benchmark_task = asyncio.create_task(
@@ -6357,8 +6392,12 @@ async def run_benchmark(
         failed = 0
         start_time = time.time()
 
-        # Create session
-        auth_headers = target_auth_headers if target_auth_headers is not None else get_vllm_auth_headers()
+        # Create session (empty {} must not suppress session auth — was causing 401 on remote LiteLLM)
+        auth_headers = dict(target_auth_headers or {})
+        if not auth_headers.get("Authorization"):
+            session_auth = get_vllm_auth_headers()
+            if session_auth.get("Authorization") and _benchmark_target_is_active_remote(base_url):
+                auth_headers.update(session_auth)
         async with aiohttp.ClientSession(headers=auth_headers) as session:
             # Send requests
             for i in range(config.total_requests):
@@ -6472,6 +6511,7 @@ async def run_guidellm_benchmark(
     config: BenchmarkConfig,
     server_config: VLLMConfig,
     target_base_url: Optional[str] = None,
+    target_auth_headers: Optional[Dict[str, str]] = None,
 ):
     """Run a benchmark using GuideLLM"""
     global benchmark_results
@@ -6604,13 +6644,26 @@ async def run_guidellm_benchmark(
         await broadcast_log(f"[GUIDELLM] Running: {' '.join(cmd)}")
         await broadcast_log(f"[GUIDELLM] JSON output will be saved to: {result_file.name}")
 
+        # OpenAI-compatible gateways (LiteLLM, etc.) expect a Bearer token; GuideLLM CLI reads OPENAI_API_KEY.
+        proc_env = os.environ.copy()
+        hdrs = dict(target_auth_headers or {})
+        if not hdrs.get("Authorization"):
+            sa = get_vllm_auth_headers()
+            if sa.get("Authorization") and _benchmark_target_is_active_remote(base):
+                hdrs.update(sa)
+        authz = hdrs.get("Authorization", "")
+        if isinstance(authz, str) and authz.startswith("Bearer "):
+            tok = authz[7:].strip()
+            if tok:
+                proc_env["OPENAI_API_KEY"] = tok
+
         # Run GuideLLM process and capture ALL output.
         # IMPORTANT: Read stdout and stderr concurrently to avoid deadlock.
         # GuideLLM writes progress/status to stderr; if we only read stdout
         # the stderr pipe buffer fills up, blocking the process, which in
         # turn blocks our stdout readline -- classic subprocess deadlock.
         process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=proc_env
         )
 
         # Collect all output lines for parsing
