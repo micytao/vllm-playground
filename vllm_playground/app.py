@@ -1088,6 +1088,20 @@ def _benchmark_target_is_localhost(target_base_url: Optional[str]) -> bool:
     return False
 
 
+def _benchmark_model_for_entry(entry: InstanceEntry) -> Optional[str]:
+    """OpenAI ``model`` string for benchmarking this registry entry (not globals)."""
+    cfg = entry.config or {}
+    served = cfg.get("served_model_name")
+    if isinstance(served, str) and served.strip():
+        return served.strip()
+    if entry.model and str(entry.model).strip():
+        return str(entry.model).strip()
+    m = cfg.get("model")
+    if isinstance(m, str) and m.strip():
+        return m.strip()
+    return None
+
+
 async def check_vllm_server_running() -> bool:
     """Check if the vLLM server is currently running based on the active mode.
 
@@ -6300,6 +6314,7 @@ async def start_benchmark(config: BenchmarkConfig):
     # Resolve target URL: specific instance or active instance
     target_base_url = None
     target_auth_headers = {}
+    target_model_id: Optional[str] = None
 
     if config.instance_id:
         registry = _ir_mod.instance_registry
@@ -6317,6 +6332,7 @@ async def start_benchmark(config: BenchmarkConfig):
             normalize_vllm_remote_root_url(entry.url.rstrip("/")) if entry.url else f"http://localhost:{entry.port}"
         )
         target_auth_headers = _benchmark_auth_headers_for_entry(entry)
+        target_model_id = _benchmark_model_for_entry(entry)
     else:
         if not await check_vllm_server_running():
             raise HTTPException(status_code=400, detail="vLLM server is not running")
@@ -6339,12 +6355,16 @@ async def start_benchmark(config: BenchmarkConfig):
         # Choose benchmark method
         if config.use_guidellm:
             benchmark_task = asyncio.create_task(
-                run_guidellm_benchmark(config, current_config, target_base_url, target_auth_headers)
+                run_guidellm_benchmark(
+                    config, current_config, target_base_url, target_auth_headers, target_model_id=target_model_id
+                )
             )
             await broadcast_log(f"[BENCHMARK] Starting GuideLLM benchmark against {target_base_url}...")
         else:
             benchmark_task = asyncio.create_task(
-                run_benchmark(config, current_config, target_base_url, target_auth_headers)
+                run_benchmark(
+                    config, current_config, target_base_url, target_auth_headers, target_model_id=target_model_id
+                )
             )
             await broadcast_log(f"[BENCHMARK] Starting built-in benchmark against {target_base_url}...")
 
@@ -6396,6 +6416,7 @@ async def run_benchmark(
     server_config: VLLMConfig,
     target_base_url: Optional[str] = None,
     target_auth_headers: Optional[dict] = None,
+    target_model_id: Optional[str] = None,
 ):
     """Run a simple benchmark test"""
     global benchmark_results, current_model_identifier, current_run_mode
@@ -6413,6 +6434,11 @@ async def run_benchmark(
         base_url = target_base_url or get_vllm_base_url()
         url = f"{base_url}/v1/chat/completions"
         logger.info(f"Using URL for benchmark: {url}")
+
+        model_name = (target_model_id or "").strip() or get_model_name_for_api()
+        if not model_name:
+            logger.warning("[BENCHMARK] No model name resolved; OpenAI requests may fail with 400/404")
+            await broadcast_log("[BENCHMARK] WARNING: No model name resolved; requests may fail.")
 
         # Generate a sample prompt of specified length
         prompt_text = " ".join(["benchmark" for _ in range(config.prompt_tokens // 10)])
@@ -6435,7 +6461,7 @@ async def run_benchmark(
 
                 try:
                     payload = {
-                        "model": get_model_name_for_api(),
+                        "model": model_name,
                         "messages": [{"role": "user", "content": prompt_text}],
                         "max_tokens": config.output_tokens,
                         "temperature": 0.7,
@@ -6542,6 +6568,7 @@ async def run_guidellm_benchmark(
     server_config: VLLMConfig,
     target_base_url: Optional[str] = None,
     target_auth_headers: Optional[Dict[str, str]] = None,
+    target_model_id: Optional[str] = None,
 ):
     """Run a benchmark using GuideLLM"""
     global benchmark_results
@@ -6652,6 +6679,11 @@ async def run_guidellm_benchmark(
                 "--target",
                 target_url,
             ]
+
+        # OpenAI-compatible target: pin model so GuideLLM matches the selected instance (not session globals).
+        tm = (target_model_id or "").strip()
+        if tm:
+            cmd.extend(["--model", tm])
 
         # Add rate configuration
         # If rate is specified, use constant rate, otherwise use sweep
