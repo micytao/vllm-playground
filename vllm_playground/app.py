@@ -699,6 +699,8 @@ class MetricStore:
 metric_store = MetricStore(history_maxlen=8640, scrape_interval=5.0)
 current_model_identifier: Optional[str] = None  # Track the actual model identifier passed to vLLM
 current_served_model_name: Optional[str] = None  # Track the served model name alias (for API calls)
+# OpenAI ``model`` field as advertised by this vLLM process (GET /v1/models); source of truth for chat.
+current_api_model_id: Optional[str] = None
 
 # vLLM-Omni global state (separate from vLLM)
 omni_process: Optional[asyncio.subprocess.Process] = None  # For subprocess mode
@@ -723,18 +725,71 @@ def get_model_name_for_api() -> Optional[str]:
     """
     Get the model name to use in API calls.
 
-    Uses served_model_name if set (required when --served-model-name is used),
-    otherwise falls back to current_model_identifier or current_config.model.
+    Use explicit ``served_model_name`` first when set (must match ``--served-model-name``).
 
-    Returns None if no model name is available.
+    Otherwise prefer ``current_api_model_id`` from GET /v1/models so the string
+    matches what vLLM registered (covers images whose loaded model differs from
+    the UI dropdown).
+
+    Then stored identifier / config.model.
     """
     if current_served_model_name:
         return current_served_model_name
+    if current_api_model_id:
+        return current_api_model_id
     if current_model_identifier:
         return current_model_identifier
     if current_config:
         return current_config.model
     return None
+
+
+async def sync_current_api_model_id_from_backend() -> None:
+    """Set ``current_api_model_id`` from the running server's GET /v1/models (local/container/subprocess only)."""
+    global current_api_model_id
+
+    if current_run_mode == "remote":
+        return
+    if not await check_vllm_server_running():
+        return
+    try:
+        import aiohttp
+
+        base_url = get_vllm_base_url()
+        url = f"{base_url}/v1/models"
+        auth_headers = get_vllm_auth_headers()
+        timeout = aiohttp.ClientTimeout(total=15, connect=5)
+        async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    logger.warning("sync_current_api_model_id: /v1/models returned %s", response.status)
+                    return
+                data = await response.json()
+                models = data.get("data") or []
+                if not models:
+                    return
+                mid = models[0].get("id")
+                if mid:
+                    current_api_model_id = str(mid)
+                    logger.info("OpenAI API model id synced from vLLM: %s", current_api_model_id)
+    except Exception as e:
+        logger.debug("sync_current_api_model_id: %s", e)
+
+
+def schedule_sync_api_model_id_after_subprocess_start() -> None:
+    """Poll /v1/models until vLLM subprocess has bound its HTTP port."""
+
+    async def _poll() -> None:
+        for _ in range(45):
+            await asyncio.sleep(3)
+            if current_run_mode == "remote" or not await check_vllm_server_running():
+                return
+            prev = current_api_model_id
+            await sync_current_api_model_id_from_backend()
+            if current_api_model_id and current_api_model_id != prev:
+                await broadcast_log(f"[WEBUI] OpenAI model id from server: {current_api_model_id}")
+
+    asyncio.create_task(_poll())
 
 
 class VLLMConfig(BaseModel):
@@ -2689,6 +2744,7 @@ async def start_server(config: VLLMConfig):
         server_start_time, \
         current_model_identifier, \
         current_served_model_name, \
+        current_api_model_id, \
         current_run_mode, \
         latest_vllm_metrics, \
         metrics_timestamp
@@ -2840,6 +2896,7 @@ async def start_server(config: VLLMConfig):
             else:
                 current_model_identifier = config.model or "unknown"
                 current_served_model_name = None
+            current_api_model_id = None
 
             await broadcast_log(f"[WEBUI] ✓ Connected to remote vLLM instance")
             await broadcast_log(f"[WEBUI] Model: {current_model_identifier}")
@@ -3319,6 +3376,7 @@ async def start_server(config: VLLMConfig):
             # Store the actual model identifier for use in API calls
             current_model_identifier = model_source
             current_served_model_name = config.served_model_name  # May be None
+            current_api_model_id = None
 
             # Show if container was reused or created new
             if container_info.get("reused", False):
@@ -3356,6 +3414,9 @@ async def start_server(config: VLLMConfig):
 
             if readiness.get("ready"):
                 await broadcast_log(f"[WEBUI] ✅ vLLM is ready! (took {readiness['elapsed_time']}s)", inst_id)
+                await sync_current_api_model_id_from_backend()
+                if current_api_model_id:
+                    await broadcast_log(f"[WEBUI] OpenAI model id from server: {current_api_model_id}", inst_id)
                 return {
                     "status": "ready",
                     "container_id": container_id[:12],
@@ -3407,6 +3468,7 @@ async def start_server(config: VLLMConfig):
             # Store the actual model identifier for use in API calls
             current_model_identifier = model_source
             current_served_model_name = config.served_model_name  # May be None
+            current_api_model_id = None
 
             # Register first, then start per-instance log reader with the ID
             inst_id = await _auto_register_instance(config, model_source)
@@ -3428,6 +3490,8 @@ async def start_server(config: VLLMConfig):
             else:
                 await broadcast_log(f"[WEBUI] Mode: GPU (Memory: {int(config.gpu_memory_utilization * 100)}%)", inst_id)
 
+            schedule_sync_api_model_id_after_subprocess_start()
+
             return {"status": "started", "pid": vllm_process.pid, "mode": "subprocess"}
 
     except Exception as e:
@@ -3445,6 +3509,7 @@ async def stop_server():
         server_start_time, \
         current_model_identifier, \
         current_served_model_name, \
+        current_api_model_id, \
         current_run_mode
 
     # Check if server is running
@@ -3489,6 +3554,7 @@ async def stop_server():
         server_start_time = None
         current_model_identifier = None
         current_served_model_name = None
+        current_api_model_id = None
         current_run_mode = None
 
         # Mark the stopped instance in the registry (keep the entry, don't remove).
@@ -3718,13 +3784,14 @@ async def delete_instance(backend_id: str):
             await _do_activate(remaining[0].id)
         else:
             global vllm_running, current_run_mode, current_config, server_start_time
-            global current_model_identifier, current_served_model_name
+            global current_model_identifier, current_served_model_name, current_api_model_id
             vllm_running = False
             current_run_mode = None
             current_config = None
             server_start_time = None
             current_model_identifier = None
             current_served_model_name = None
+            current_api_model_id = None
             await registry.set_active(None)
 
     return {"status": "removed", "backend_id": backend_id}
@@ -3741,7 +3808,7 @@ async def _park_active_instance() -> None:
     so a new server can be started. The parked instance keeps running."""
     global vllm_process, vllm_running, current_config, current_run_mode
     global container_id, server_start_time, current_model_identifier
-    global current_served_model_name, _globals_version
+    global current_served_model_name, current_api_model_id, _globals_version
     global latest_vllm_metrics, metrics_timestamp
 
     registry = _ir_mod.instance_registry
@@ -3774,6 +3841,7 @@ async def _park_active_instance() -> None:
     server_start_time = None
     current_model_identifier = None
     current_served_model_name = None
+    current_api_model_id = None
 
     await registry.set_active(None)
     logger.info(f"Parked instance {entry.id} ({entry.name}) — process kept alive")
@@ -3782,7 +3850,7 @@ async def _park_active_instance() -> None:
 async def _do_activate(backend_id: str) -> dict:
     """Core activation logic, shared by the endpoint and internal callers."""
     global current_config, current_run_mode, vllm_running
-    global current_model_identifier, current_served_model_name
+    global current_model_identifier, current_served_model_name, current_api_model_id
     global container_id, vllm_process, server_start_time
     global latest_vllm_metrics, metrics_timestamp
     global _globals_version
@@ -3809,7 +3877,7 @@ async def _do_activate(backend_id: str) -> dict:
     current_run_mode = entry.run_mode if entry.managed else "remote"
     vllm_running = entry.health in ("healthy", "unknown")
     current_model_identifier = entry.model
-    current_served_model_name = entry.model
+    current_api_model_id = None
     server_start_time = datetime.fromisoformat(entry.created_at) if entry.created_at else datetime.now()
 
     if entry.config:
@@ -3818,6 +3886,9 @@ async def _do_activate(backend_id: str) -> dict:
         current_config = VLLMConfig(model=entry.model or "unknown", port=entry.port)
         current_config.remote_url = entry.url
         current_config.remote_api_key = entry.api_key
+
+    # Only use served-model alias when it was set in config (never use HF id as alias).
+    current_served_model_name = (current_config.served_model_name or None) if current_config else None
 
     if entry.managed and entry.run_mode == "container":
         container_id = entry.container_name
@@ -3832,6 +3903,9 @@ async def _do_activate(backend_id: str) -> dict:
 
     await registry.set_active(backend_id)
     logger.info(f"Activated instance {backend_id} ({entry.name})")
+
+    if entry.managed and vllm_running:
+        await sync_current_api_model_id_from_backend()
 
     # Trigger immediate metrics scrape for the new instance
     asyncio.ensure_future(metric_store._do_scrape())
