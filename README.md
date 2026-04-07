@@ -30,17 +30,13 @@ Run subprocess, container, and remote vLLM servers side by side; switch tabs, sa
 
 ![Instances management grid](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-multiinstnaces-view.png)
 
-### 🆕 What's New in v0.1.6
-![Observability Dashboard](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-observability.png)
+### 🆕 What's New in v0.1.8
 
-*Real-time Observability Dashboard with auto-discovered vLLM metrics, category filtering, and threshold alerts.*
+- **Multi-instance backends** — Registry-backed tabs and **Management → Instances**; run subprocess, container, and remote servers side by side ([guide](docs/MULTI_INSTANCE_GUIDE.md)).
+- **Remote & LiteLLM** — Tougher URL/probing, `/v1/models` for the chat model list, better context limits from gateway metadata.
+- **Benchmarking** — Remote Bearer auth and UI API key (remote only); **model ID follows the benchmark’s target instance** so local vLLM is not called with a stale remote model name.
 
-- 📊 **Observability Dashboard** - Full-page metrics dashboard with time-series charts, threshold alerts, and auto-discovery
-- 🔍 **PagedAttention Visualizer** - Real-time KV cache utilization heatmap with eviction alerts
-- 🔢 **Token Counter & Logprobs** - Live token estimation and per-token probability heatmap
-- ⚡ **Speculative Decoding Dashboard** - Acceptance rate, speedup factor, and method configuration
-
-See **[Changelog](CHANGELOG.md)** for full details.
+*v0.1.6 introduced the Observability Dashboard, PagedAttention visualizer, token counter, logprobs, and speculative decoding — see **[Changelog](CHANGELOG.md)** and **[v0.1.6](releases/v0.1.6.md)** for details.*
 
 ---
 
@@ -214,6 +210,7 @@ See [Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md) for details.
 
 ### Releases
 - **[Changelog](CHANGELOG.md)** - Version history and changes
+- **[v0.1.8](releases/v0.1.8.md)** - Multi-instance backends & remote polish
 - **[v0.1.7](releases/v0.1.7.md)** - Hotfix & tutorials
 - **[v0.1.6](releases/v0.1.6.md)** - Observability dashboard, PagedAttention visualizer, token counter, logprobs
 - **[v0.1.5](releases/v0.1.5.md)** - Remote server, VLM vision support, markdown rendering

@@ -1,5 +1,7 @@
 # Multi-Instance Guide
 
+*Shipped in **v0.1.8** (April 2026).*
+
 vLLM Playground lets you run and manage multiple vLLM servers side by side.
 Each server — whether a local subprocess, a container, or a remote endpoint —
 lives in its own **Instance** with isolated chat history, logs, token tracking,
@@ -320,3 +322,9 @@ Health checks run every 15 seconds in the background for all running instances.
 - **Container limitations:** Container mode uses the system container runtime
   (Docker or Podman). Make sure the vLLM container image is available before
   starting a container instance.
+
+- **Benchmarks (GuideLLM / built-in):** If you pick a **target instance** in the
+  benchmark panel, requests use that instance’s URL **and** its saved model id
+  (`served_model_name` or registry model), not only the globally active chat
+  model. That avoids “model not found” when the Server page is still connected
+  to a different remote model while you benchmark a local container.

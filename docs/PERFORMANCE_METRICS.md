@@ -185,6 +185,7 @@ Displays results in a responsive grid:
 - Starts a benchmark with given configuration
 - Returns immediately, benchmark runs in background
 - Logs progress to WebSocket stream
+- When the UI sends **`instance_id`** (multi-instance target), the OpenAI `model` in each request is taken from that instance’s registry entry (served name / saved model), not only from the globally active session — so local targets are not accidentally called with a remote model id
 
 **GET /api/benchmark/status**
 - Returns current benchmark status
