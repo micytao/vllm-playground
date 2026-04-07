@@ -233,9 +233,12 @@
                                             <span class="info-label">Health</span>
                                             <span class="info-value" id="remote-info-health-value">--</span>
                                         </div>
-                                        <div class="remote-info-row">
-                                            <span class="info-label">Models</span>
-                                            <span class="info-value" id="remote-info-models-value">--</span>
+                                        <div class="remote-info-row" id="remote-chat-model-row">
+                                            <span class="info-label">Chat model</span>
+                                            <span class="info-value remote-chat-model-cell">
+                                                <select id="remote-chat-model-select" class="form-control" style="display: none; max-width: 100%;" aria-label="Remote chat model"></select>
+                                                <span id="remote-info-models-fallback">--</span>
+                                            </span>
                                         </div>
                                         <div class="remote-info-row">
                                             <span class="info-label">Max Context</span>

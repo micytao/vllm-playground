@@ -16,7 +16,7 @@ import shutil
 import time
 from collections import deque
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any, Literal, Union
+from typing import Optional, List, Dict, Any, Literal, Union, Tuple
 from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
@@ -701,6 +701,8 @@ current_model_identifier: Optional[str] = None  # Track the actual model identif
 current_served_model_name: Optional[str] = None  # Track the served model name alias (for API calls)
 # OpenAI ``model`` field as advertised by this vLLM process (GET /v1/models); source of truth for chat.
 current_api_model_id: Optional[str] = None
+# Ids from the last GET /v1/models on the active remote (for select-model validation)
+remote_discovered_model_ids: List[str] = []
 
 # vLLM-Omni global state (separate from vLLM)
 omni_process: Optional[asyncio.subprocess.Process] = None  # For subprocess mode
@@ -864,6 +866,12 @@ class VLLMConfig(BaseModel):
     prompt_lookup_max: Optional[int] = None
 
 
+class RemoteSelectModelRequest(BaseModel):
+    """Body for ``POST /api/remote/select-model`` — which remote ``model`` id to use for chat."""
+
+    model: str
+
+
 # =============================================================================
 # Helper functions for vLLM server URL and status
 # =============================================================================
@@ -948,6 +956,46 @@ async def _enrich_remote_models_from_litellm_model_info(
                 return
         except Exception:
             continue
+
+
+async def fetch_remote_v1_models_enriched(
+    remote_url: str, auth_headers: Dict[str, str]
+) -> Tuple[List[Dict[str, Any]], Optional[int], Optional[BaseException]]:
+    """GET ``/v1/models`` from a remote OpenAI-compatible root; enrich context via LiteLLM when needed.
+
+    Returns ``(discovered_models_list, http_status, transport_error)``.
+    On HTTP non-200, the list is empty and ``transport_error`` is ``None``.
+    """
+    root = normalize_vllm_remote_root_url(remote_url).rstrip("/")
+    models_url = f"{root}/v1/models"
+    discovered_models_list: List[Dict[str, Any]] = []
+    try:
+        timeout = aiohttp.ClientTimeout(total=30, connect=20)
+        async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
+            async with session.get(models_url) as response:
+                status = response.status
+                if response.status != 200:
+                    return [], status, None
+                data = await response.json()
+                models = data.get("data", [])
+                if not models:
+                    return [], status, None
+                discovered_models_list = [
+                    {
+                        "id": m.get("id", "unknown"),
+                        "owned_by": m.get("owned_by", ""),
+                        "max_model_len": m.get("max_model_len"),
+                        "root": m.get("root", ""),
+                    }
+                    for m in models
+                ]
+                if not any(m.get("max_model_len") for m in discovered_models_list):
+                    await _enrich_remote_models_from_litellm_model_info(
+                        session, root, auth_headers, discovered_models_list
+                    )
+                return discovered_models_list, status, None
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError, TypeError, KeyError) as e:
+        return [], None, e
 
 
 def get_vllm_base_url() -> str:
@@ -2747,7 +2795,8 @@ async def start_server(config: VLLMConfig):
         current_api_model_id, \
         current_run_mode, \
         latest_vllm_metrics, \
-        metrics_timestamp
+        metrics_timestamp, \
+        remote_discovered_model_ids
 
     # If a server is already running, park it (keep process alive, clear globals)
     # so the new server can start on its own port.
@@ -2807,60 +2856,45 @@ async def start_server(config: VLLMConfig):
             await broadcast_log("[WEBUI] Using API key for authentication")
 
         try:
-            import aiohttp
-
-            # Remote readiness: OpenAI GET /v1/models only (skip /health — many proxies omit or stall it).
-            timeout = aiohttp.ClientTimeout(total=30, connect=20)
             models_probe_exc: Optional[BaseException] = None
             models_http_status: Optional[int] = None
+            health_ok = False
+            discovered_model = None
+            discovered_models_list: List[Dict[str, Any]] = []
 
-            async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
-                models_url = f"{remote_url}/v1/models"
-                await broadcast_log(f"[WEBUI] Probing remote API: {models_url}")
-                health_ok = False
-                discovered_model = None
-                discovered_models_list = []
-                try:
-                    async with session.get(models_url) as response:
-                        models_http_status = response.status
-                        if response.status == 200:
-                            health_ok = True
-                            await broadcast_log("[WEBUI] ✓ Remote API reachable (/v1/models)")
-                            data = await response.json()
-                            models = data.get("data", [])
-                            if models:
-                                discovered_model = models[0].get("id", None)
-                                discovered_models_list = [
-                                    {
-                                        "id": m.get("id", "unknown"),
-                                        "owned_by": m.get("owned_by", ""),
-                                        "max_model_len": m.get("max_model_len"),
-                                        "root": m.get("root", ""),
-                                    }
-                                    for m in models
-                                ]
-                                model_list = ", ".join(m.get("id", "unknown") for m in models)
-                                await broadcast_log(f"[WEBUI] ✓ Available models: {model_list}")
-                                if not any(m.get("max_model_len") for m in discovered_models_list):
-                                    await _enrich_remote_models_from_litellm_model_info(
-                                        session, remote_url, auth_headers, discovered_models_list
-                                    )
-                                if discovered_models_list and discovered_models_list[0].get("max_model_len"):
-                                    await broadcast_log(
-                                        f"[WEBUI] ✓ Max context length: {discovered_models_list[0]['max_model_len']}"
-                                    )
-                            else:
-                                await broadcast_log("[WEBUI] ⚠ No models found on remote server")
-                        else:
-                            text = await response.text()
-                            await broadcast_log(
-                                f"[WEBUI] ⚠ Could not list models (status {response.status}): {text[:300]}"
-                            )
-                except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
-                    models_probe_exc = e
-                    await broadcast_log(
-                        f"[WEBUI] ⚠ Could not discover models ({type(e).__name__}): {_format_async_client_error(e)}"
-                    )
+            probe_url = f"{normalize_vllm_remote_root_url(remote_url).rstrip('/')}/v1/models"
+            await broadcast_log(f"[WEBUI] Probing remote API: {probe_url}")
+            discovered_models_list, models_http_status, models_probe_exc = await fetch_remote_v1_models_enriched(
+                remote_url, auth_headers
+            )
+            if models_probe_exc is not None:
+                await broadcast_log(
+                    f"[WEBUI] ⚠ Could not discover models ({type(models_probe_exc).__name__}): "
+                    f"{_format_async_client_error(models_probe_exc)}"
+                )
+            elif models_http_status == 200:
+                health_ok = True
+                await broadcast_log("[WEBUI] ✓ Remote API reachable (/v1/models)")
+                if discovered_models_list:
+                    model_list = ", ".join(m.get("id", "unknown") for m in discovered_models_list)
+                    await broadcast_log(f"[WEBUI] ✓ Available models: {model_list}")
+                    remote_discovered_model_ids = [m["id"] for m in discovered_models_list]
+                    ids = remote_discovered_model_ids
+                    if config.model and config.model in ids:
+                        discovered_model = config.model
+                    else:
+                        discovered_model = discovered_models_list[0].get("id")
+                    first_with_ctx = next((m for m in discovered_models_list if m.get("max_model_len")), None)
+                    if first_with_ctx:
+                        await broadcast_log(f"[WEBUI] ✓ Max context length: {first_with_ctx['max_model_len']}")
+                else:
+                    remote_discovered_model_ids = []
+                    await broadcast_log("[WEBUI] ⚠ No models found on remote server")
+            elif models_http_status is not None:
+                remote_discovered_model_ids = []
+                await broadcast_log(f"[WEBUI] ⚠ Could not list models (status {models_http_status})")
+            else:
+                remote_discovered_model_ids = []
 
             if not health_ok and models_http_status != 200:
                 parts = []
@@ -2883,6 +2917,8 @@ async def start_server(config: VLLMConfig):
 
             # Set global state
             current_run_mode = "remote"
+            if discovered_model:
+                config = config.model_copy(update={"model": discovered_model})
             current_config = config
             vllm_running = True
             server_start_time = datetime.now()
@@ -2903,7 +2939,7 @@ async def start_server(config: VLLMConfig):
             await broadcast_log(f"[WEBUI] URL: {remote_url}")
 
             # Auto-register in backend registry
-            inst_id = await _auto_register_instance(config, current_model_identifier)
+            inst_id = await _auto_register_instance(current_config, current_model_identifier)
             _flush_global_logs_to_instance(inst_id)
 
             return {
@@ -3510,7 +3546,8 @@ async def stop_server():
         current_model_identifier, \
         current_served_model_name, \
         current_api_model_id, \
-        current_run_mode
+        current_run_mode, \
+        remote_discovered_model_ids
 
     # Check if server is running
     if not await check_vllm_server_running():
@@ -3556,6 +3593,7 @@ async def stop_server():
         current_served_model_name = None
         current_api_model_id = None
         current_run_mode = None
+        remote_discovered_model_ids = []
 
         # Mark the stopped instance in the registry (keep the entry, don't remove).
         registry = _ir_mod.instance_registry
@@ -3578,6 +3616,53 @@ async def stop_server():
     except Exception as e:
         logger.error(f"Failed to stop server: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/remote/models")
+async def api_remote_list_models():
+    """Re-fetch ``GET /v1/models`` from the active remote (e.g. after switching instances)."""
+    global remote_discovered_model_ids
+
+    if current_run_mode != "remote" or not vllm_running or not current_config or not current_config.remote_url:
+        raise HTTPException(status_code=400, detail="Not connected to a remote server")
+    auth_headers = get_vllm_auth_headers()
+    lst, status, exc = await fetch_remote_v1_models_enriched(current_config.remote_url, auth_headers)
+    if exc is not None:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not reach remote /v1/models: {_format_async_client_error(exc)}",
+        )
+    if status != 200:
+        raise HTTPException(status_code=502, detail=f"Remote /v1/models returned HTTP {status}")
+    remote_discovered_model_ids = [m["id"] for m in lst]
+    return {"models": lst}
+
+
+@app.post("/api/remote/select-model")
+async def api_remote_select_model(body: RemoteSelectModelRequest):
+    """Set ``current_model_identifier`` for proxied chat when multiple models exist on the remote."""
+    global current_model_identifier, current_config, remote_discovered_model_ids
+
+    if current_run_mode != "remote" or not vllm_running or not current_config:
+        raise HTTPException(status_code=400, detail="Not connected to a remote server")
+    mid = (body.model or "").strip()
+    if not mid:
+        raise HTTPException(status_code=400, detail="model is required")
+    if remote_discovered_model_ids and mid not in remote_discovered_model_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Model {mid!r} is not in the cached remote catalog. "
+                "Call GET /api/remote/models or reconnect, then try again."
+            ),
+        )
+    current_model_identifier = mid
+    current_config = current_config.model_copy(update={"model": mid})
+    registry = _ir_mod.instance_registry
+    if registry and registry.active_id:
+        await registry.update(registry.active_id, model=mid, config=current_config.model_dump())
+    await broadcast_log(f"[WEBUI] Remote chat model set to: {mid}")
+    return {"status": "ok", "model": mid}
 
 
 # =============================================================================

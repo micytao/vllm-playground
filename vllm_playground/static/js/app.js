@@ -76,6 +76,8 @@ class VLLMWebUI {
         this._prevRunModeForToggle = null;
         /** Remote session model id for clearing custom-model when switching instance/tab away from remote */
         this._remoteSessionModelId = null;
+        /** OpenAI model objects from last remote /v1/models (id, max_model_len, root, …) */
+        this._remoteModelsCatalog = [];
 
         this.init();
     }
@@ -3150,46 +3152,117 @@ number ::= [0-9]+`
             }
         }
 
-        // Models
-        const modelsEl = document.getElementById('remote-info-models-value');
-        if (modelsEl && data.models && data.models.length > 0) {
-            modelsEl.innerHTML = data.models.map(m =>
-                `<code class="remote-model-id">${m.id}</code>`
-            ).join('<br>');
-        } else if (modelsEl) {
-            modelsEl.textContent = data.model || 'Unknown';
+        // Chat model: dropdown when /v1/models returns a list (default = first, or server pick)
+        this._syncRemoteChatModelSelect(data.models, data.model, { skipPost: true });
+
+        // Root row hidden in remote mode
+        const rootRow = document.getElementById('remote-info-root-row');
+        if (rootRow) rootRow.style.display = data.mode === 'remote' ? 'none' : '';
+
+        panel.style.display = 'block';
+    }
+
+    /**
+     * Fill remote chat model <select> from /v1/models; update max context / root for selection.
+     * @param {Array<{id:string,max_model_len?:number,root?:string}>|undefined} models
+     * @param {string} [preferredId] - id to select if present (else first)
+     * @param {{skipPost?:boolean}} [opts] - skip POST /api/remote/select-model (e.g. right after connect)
+     */
+    _syncRemoteChatModelSelect(models, preferredId, opts = {}) {
+        const skipPost = opts.skipPost === true;
+        const sel = document.getElementById('remote-chat-model-select');
+        const fb = document.getElementById('remote-info-models-fallback');
+        if (!sel || !fb) return;
+
+        this._remoteModelsCatalog = Array.isArray(models) ? models : [];
+
+        if (!this._remoteModelsCatalog.length) {
+            sel.style.display = 'none';
+            sel.innerHTML = '';
+            sel.onchange = null;
+            fb.style.display = '';
+            fb.textContent = (preferredId && String(preferredId).trim()) || 'Unknown';
+            const maxCtxEl = document.getElementById('remote-info-maxctx-value');
+            if (maxCtxEl) maxCtxEl.textContent = 'N/A';
+            const rootEl = document.getElementById('remote-info-root-value');
+            if (rootEl) rootEl.textContent = 'N/A';
+            return;
         }
 
-        // Max Context Length (from first model's max_model_len)
+        const ids = this._remoteModelsCatalog.map(m => m.id);
+        sel.innerHTML = '';
+        for (const m of this._remoteModelsCatalog) {
+            const opt = document.createElement('option');
+            opt.value = m.id;
+            opt.textContent = m.id;
+            sel.appendChild(opt);
+        }
+        const pref = (preferredId && String(preferredId).trim()) || '';
+        const pick = pref && ids.includes(pref) ? pref : this._remoteModelsCatalog[0].id;
+        sel.value = pick;
+        sel.style.display = '';
+        fb.style.display = 'none';
+
+        this._updateRemoteModelDetailRows(pick);
+        sel.onchange = () => {
+            const v = sel.value;
+            this._updateRemoteModelDetailRows(v);
+            this._postRemoteSelectModel(v);
+        };
+
+        if (!skipPost) {
+            this._postRemoteSelectModel(pick);
+        }
+    }
+
+    _updateRemoteModelDetailRows(modelId) {
+        const m = this._remoteModelsCatalog.find(x => x.id === modelId);
         const maxCtxEl = document.getElementById('remote-info-maxctx-value');
-        if (maxCtxEl && data.models && data.models.length > 0) {
-            const maxLen = data.models[0].max_model_len;
-            if (maxLen !== undefined && maxLen !== null) {
-                maxCtxEl.textContent = Number(maxLen).toLocaleString() + ' tokens';
-                if (this.tcSetMaxModelLen) this.tcSetMaxModelLen(maxLen);
+        if (maxCtxEl) {
+            if (m && m.max_model_len != null && m.max_model_len !== undefined) {
+                maxCtxEl.textContent = Number(m.max_model_len).toLocaleString() + ' tokens';
+                if (this.tcSetMaxModelLen) this.tcSetMaxModelLen(m.max_model_len);
             } else {
                 maxCtxEl.textContent = 'N/A';
             }
-        } else if (maxCtxEl) {
-            maxCtxEl.textContent = 'N/A';
         }
-
-        // Root Model (base model path) -- hidden in remote mode
-        const rootRow = document.getElementById('remote-info-root-row');
-        if (rootRow) rootRow.style.display = data.mode === 'remote' ? 'none' : '';
         const rootEl = document.getElementById('remote-info-root-value');
-        if (rootEl && data.models && data.models.length > 0) {
-            const root = data.models[0].root;
-            if (root) {
-                rootEl.innerHTML = `<code class="remote-model-id">${root}</code>`;
+        if (rootEl) {
+            if (m && m.root) {
+                rootEl.innerHTML = `<code class="remote-model-id">${m.root}</code>`;
             } else {
                 rootEl.textContent = 'N/A';
             }
-        } else if (rootEl) {
-            rootEl.textContent = 'N/A';
         }
+    }
 
-        panel.style.display = 'block';
+    async _postRemoteSelectModel(modelId) {
+        try {
+            const r = await fetch('/api/remote/select-model', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: modelId }),
+            });
+            if (!r.ok) {
+                const err = await r.json().catch(() => ({}));
+                this.showNotification(err.detail || 'Failed to switch remote model', 'error');
+            }
+        } catch (e) {
+            this.showNotification(e.message || 'Failed to switch remote model', 'error');
+        }
+    }
+
+    async refreshRemoteModelsAfterActivate(preferredModelId) {
+        try {
+            const r = await fetch('/api/remote/models');
+            if (!r.ok) return;
+            const data = await r.json();
+            if (data.models && data.models.length > 0) {
+                this._syncRemoteChatModelSelect(data.models, preferredModelId, { skipPost: true });
+            }
+        } catch {
+            // Best-effort
+        }
     }
 
     /**
@@ -3198,8 +3271,21 @@ number ::= [0-9]+`
     hideRemoteServerInfo() {
         const panel = document.getElementById('remote-server-info');
         if (panel) panel.style.display = 'none';
-        const ids = ['remote-info-health-value', 'remote-info-models-value', 'remote-info-maxctx-value', 'remote-info-root-value'];
-        ids.forEach(id => {
+        const healthEl = document.getElementById('remote-info-health-value');
+        if (healthEl) healthEl.textContent = '--';
+        const sel = document.getElementById('remote-chat-model-select');
+        const fb = document.getElementById('remote-info-models-fallback');
+        if (sel) {
+            sel.innerHTML = '';
+            sel.style.display = 'none';
+            sel.onchange = null;
+        }
+        if (fb) {
+            fb.style.display = '';
+            fb.textContent = '--';
+        }
+        this._remoteModelsCatalog = [];
+        ['remote-info-maxctx-value', 'remote-info-root-value'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.textContent = '--';
         });
@@ -7634,6 +7720,10 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
             // Restore config panel to reflect the activated instance
             if (inst) this._restoreConfigPanel(inst);
+
+            if (isRemote && isRunning) {
+                await this.refreshRemoteModelsAfterActivate(activateData.model);
+            }
 
             // Fetch logs and metrics in parallel (they are independent)
             const logsPromise = this._switchLogsToInstance(instanceId);
