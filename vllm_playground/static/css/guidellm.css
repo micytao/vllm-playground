@@ -237,12 +237,14 @@
 .benchmark-instance-select {
     width: 100%;
     max-width: 420px;
+    min-height: 42px;
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
-    padding: 8px 12px;
+    padding: 10px 14px;
     border-radius: 6px;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
+    line-height: 1.35;
     cursor: pointer;
     appearance: auto;
     transition: border-color 0.2s;
@@ -257,6 +259,13 @@
 .benchmark-instance-select option {
     background: var(--bg-primary);
     color: var(--text-primary);
+    padding: 0.35em 0.5rem;
+}
+
+.benchmark-instance-select optgroup {
+    font-weight: 700;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
 }
 
 /* =============================================================================

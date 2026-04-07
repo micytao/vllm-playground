@@ -63,6 +63,8 @@ export const GuideLLMModule = {
     ui: null,
     available: false,
     version: null,
+    /** Fingerprint of running instance rows; avoids rebuilding <select> every status poll (fixes flaky clicks). */
+    _benchmarkDropdownFingerprint: null,
 
     // =========================================================================
     // Status Indicator
@@ -261,13 +263,15 @@ export const GuideLLMModule = {
         // Refresh command preview so it reflects the current target URL
         this.updateBenchmarkCommandPreview();
 
-        // Refresh instance dropdown (skip if triggered by the dropdown itself)
-        if (!selectedId) {
-            this.populateBenchmarkInstanceDropdown();
-        }
+        // Do NOT call populateBenchmarkInstanceDropdown() here — pollStatus invokes
+        // updateStatus every ~1s while the server runs, which was wiping the <select>
+        // whenever "Active instance" (value "") was selected and made choosing an instance nearly impossible.
     },
 
-    async populateBenchmarkInstanceDropdown() {
+    /**
+     * @param {Array<object>|undefined} prefetchedInstances - from fetchInstances() to avoid a duplicate /api/instances round-trip
+     */
+    async populateBenchmarkInstanceDropdown(prefetchedInstances) {
         const ui = this.ui;
         const select = ui.elements.benchmarkTargetInstance;
         if (!select) return;
@@ -275,29 +279,49 @@ export const GuideLLMModule = {
         const prevValue = select.value;
 
         try {
-            const resp = await fetch('/api/instances');
-            const data = await resp.json();
-            const instances = data.instances || [];
+            let instances;
+            if (Array.isArray(prefetchedInstances)) {
+                instances = prefetchedInstances;
+            } else {
+                const resp = await fetch('/api/instances');
+                const data = await resp.json();
+                instances = data.instances || [];
+            }
             const running = instances.filter(i =>
                 i.health === 'healthy' || i.health === 'unknown'
             );
+            const fp = running.map(i => `${i.id}:${i.health}`).sort().join('|');
+            if (fp === this._benchmarkDropdownFingerprint) {
+                return;
+            }
+            this._benchmarkDropdownFingerprint = fp;
 
-            select.innerHTML = '<option value="">Active Instance</option>';
+            select.innerHTML = '';
 
-            running.forEach(inst => {
-                const model = inst.model || inst.name || 'Unknown';
-                const port = inst.port || '?';
-                const mode = inst.run_mode === 'remote' ? 'Remote'
-                    : inst.run_mode === 'container' ? 'Container' : 'Subprocess';
-                const opt = document.createElement('option');
-                opt.value = inst.id;
-                opt.textContent = `${model}  :${port}  (${mode})`;
-                opt.dataset.url = inst.url || '';
-                opt.dataset.port = inst.port || '';
-                opt.dataset.apiKey = inst.api_key || '';
-                opt.dataset.health = inst.health || '';
-                select.appendChild(opt);
-            });
+            const optActive = document.createElement('option');
+            optActive.value = '';
+            optActive.textContent = 'Active instance (follows sidebar tab)';
+            select.appendChild(optActive);
+
+            if (running.length > 0) {
+                const group = document.createElement('optgroup');
+                group.label = 'Running instances';
+                running.forEach(inst => {
+                    const model = inst.model || inst.name || 'Unknown';
+                    const port = inst.port || '?';
+                    const mode = inst.run_mode === 'remote' ? 'Remote'
+                        : inst.run_mode === 'container' ? 'Container' : 'Subprocess';
+                    const opt = document.createElement('option');
+                    opt.value = inst.id;
+                    opt.textContent = `${model} :${port} (${mode})`;
+                    opt.dataset.url = inst.url || '';
+                    opt.dataset.port = String(inst.port || '');
+                    opt.dataset.apiKey = inst.api_key || '';
+                    opt.dataset.health = inst.health || '';
+                    group.appendChild(opt);
+                });
+                select.appendChild(group);
+            }
 
             if (prevValue && [...select.options].some(o => o.value === prevValue)) {
                 select.value = prevValue;

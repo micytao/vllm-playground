@@ -7396,6 +7396,10 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             if (this.currentView === 'instances') {
                 this._renderInstancesPageFromCache(this._instances);
             }
+
+            if (this.currentView === 'guidellm' && this.populateBenchmarkInstanceDropdown) {
+                void this.populateBenchmarkInstanceDropdown(this._instances);
+            }
         } catch (e) {
             // Registry not ready yet; will update on next pollStatus
         }
