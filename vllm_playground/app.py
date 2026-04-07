@@ -1067,6 +1067,27 @@ def _benchmark_target_is_active_remote(target_base_url: str) -> bool:
     return bool(t and t == c)
 
 
+def _benchmark_target_is_localhost(target_base_url: Optional[str]) -> bool:
+    """True when benchmarking container/subprocess on this host (not a remote HTTPS gateway)."""
+    from urllib.parse import urlparse
+
+    raw = (target_base_url or "").strip()
+    if not raw:
+        return True
+    if "://" not in raw:
+        raw = f"http://{raw}"
+    try:
+        u = urlparse(raw)
+    except Exception:
+        return False
+    host = (u.hostname or "").lower()
+    if not host:
+        return True
+    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        return True
+    return False
+
+
 async def check_vllm_server_running() -> bool:
     """Check if the vLLM server is currently running based on the active mode.
 
@@ -6302,8 +6323,10 @@ async def start_benchmark(config: BenchmarkConfig):
         target_base_url = get_vllm_base_url()
         target_auth_headers = get_vllm_auth_headers()
 
+    # UI always sends Remote API key when the field is filled; never apply it to local
+    # vLLM (container/subprocess) or leftover gateway tokens break localhost benchmarks.
     client_key = (config.remote_api_key or "").strip()
-    if client_key:
+    if client_key and not _benchmark_target_is_localhost(target_base_url):
         target_auth_headers = {"Authorization": f"Bearer {client_key}"}
 
     if benchmark_task is not None and not benchmark_task.done():

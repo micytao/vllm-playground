@@ -358,17 +358,33 @@ export const GuideLLMModule = {
             config.instance_id = selectedInstanceId;
         }
 
-        // Remote LiteLLM auth: server-side current_config may not retain the API key; always send
-        // the value from the Remote settings field (or selected instance row) when present.
-        const keyFromField = ui.elements.remoteApiKeyInput?.value?.trim();
-        if (keyFromField) {
-            config.remote_api_key = keyFromField;
-        } else if (selectedInstanceId && ui.elements.benchmarkTargetInstance) {
-            const sel = ui.elements.benchmarkTargetInstance;
-            const opt = sel.options[sel.selectedIndex];
-            const keyFromInstance = opt?.dataset?.apiKey?.trim();
-            if (keyFromInstance) {
-                config.remote_api_key = keyFromInstance;
+        // Remote LiteLLM auth: server may lack the key; send from UI only for remote targets
+        // (do not attach gateway Bearer tokens to localhost container benchmarks).
+        const localUrl = (url) => {
+            if (!url || typeof url !== 'string') return true;
+            const u = url.toLowerCase();
+            return u.includes('localhost') || u.includes('127.0.0.1') || u.startsWith('http://0.0.0.0');
+        };
+        let targetLooksRemote = false;
+        if (selectedInstanceId && ui.elements.benchmarkTargetInstance) {
+            const opt = ui.elements.benchmarkTargetInstance.options[
+                ui.elements.benchmarkTargetInstance.selectedIndex];
+            const instUrl = opt?.dataset?.url || '';
+            targetLooksRemote = !localUrl(instUrl);
+        } else {
+            targetLooksRemote = ui.currentConfig?.run_mode === 'remote';
+        }
+        if (targetLooksRemote) {
+            const keyFromField = ui.elements.remoteApiKeyInput?.value?.trim();
+            if (keyFromField) {
+                config.remote_api_key = keyFromField;
+            } else if (selectedInstanceId && ui.elements.benchmarkTargetInstance) {
+                const sel = ui.elements.benchmarkTargetInstance;
+                const opt = sel.options[sel.selectedIndex];
+                const keyFromInstance = opt?.dataset?.apiKey?.trim();
+                if (keyFromInstance) {
+                    config.remote_api_key = keyFromInstance;
+                }
             }
         }
 
