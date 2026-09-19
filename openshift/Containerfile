@@ -31,17 +31,29 @@ RUN useradd -m -u 1001 -g 0 -s /bin/bash playground && \
 # Set working directory
 WORKDIR ${HOME}/vllm-playground
 
-# Copy application files
-COPY --chown=1001:0 vllm_playground/app.py ${HOME}/vllm-playground/
-COPY --chown=1001:0 vllm_playground/index.html ${HOME}/vllm-playground/
-COPY --chown=1001:0 vllm_playground/static/ ${HOME}/vllm-playground/static/
-COPY --chown=1001:0 vllm_playground/assets/ ${HOME}/vllm-playground/assets/
-COPY --chown=1001:0 openshift/kubernetes_container_manager.py ${HOME}/vllm-playground/container_manager.py
-COPY --chown=1001:0 openshift/requirements-k8s.txt ${HOME}/vllm-playground/requirements.txt
+# Copy the whole project, not just a handful of loose files: app.py does
+# `import vllm_playground.backend_registry`, `from . import image_catalog`,
+# `.mcp_client`, etc., so it only works when it stays inside a real,
+# importable vllm_playground/ package (settings_store.py, image_catalog.py,
+# backend_registry.py, cli.py, mcp_client/, static/, assets/, index.html
+# all have to ship together).
+COPY --chown=1001:0 . ${HOME}/vllm-playground/
 
-# Install Python dependencies
+# Swap in the Kubernetes-specific container manager and its requirements.
+# This build targets OpenShift/Kubernetes pod orchestration, so the
+# Podman-based vllm_playground/container_manager.py is replaced with
+# openshift/kubernetes_container_manager.py, which exposes the same
+# `container_manager` singleton that app.py imports.
+RUN cp ${HOME}/vllm-playground/openshift/kubernetes_container_manager.py \
+       ${HOME}/vllm-playground/vllm_playground/container_manager.py && \
+    cp ${HOME}/vllm-playground/openshift/requirements-k8s.txt \
+       ${HOME}/vllm-playground/requirements.txt
+
+# Install Python dependencies. `pip install .` installs the vllm_playground
+# package itself so `python3.12 -m vllm_playground.app` below can import it.
 RUN python3.12 -m pip install --no-cache-dir --upgrade pip && \
-    python3.12 -m pip install --no-cache-dir -r ${HOME}/vllm-playground/requirements.txt
+    python3.12 -m pip install --no-cache-dir -r ${HOME}/vllm-playground/requirements.txt && \
+    python3.12 -m pip install --no-cache-dir ${HOME}/vllm-playground/
 
 # Make playground directory accessible
 RUN chmod -R 775 ${HOME}/vllm-playground
@@ -60,5 +72,6 @@ ENV WEBUI_PORT=7860 \
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:7860/api/status || exit 1
 
-# Start web UI
-CMD ["python3.12", "/home/playground/vllm-playground/app.py"]
+# Start web UI as an installed module (app.py must run as part of the
+# vllm_playground package, not as a standalone script file).
+CMD ["python3.12", "-m", "vllm_playground.app"]

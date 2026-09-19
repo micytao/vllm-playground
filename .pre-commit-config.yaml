@@ -12,8 +12,20 @@ repos:
       - id: check-yaml
         args: ["--allow-multiple-documents"]
 
-  # Python: Ruff (formatting only)
+  # Python: Ruff (lint + formatting)
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.11
     hooks:
+      - id: ruff
+        args: ["--fix"]
       - id: ruff-format
+
+  # Single-source-of-truth project structure check
+  - repo: local
+    hooks:
+      - id: verify-structure
+        name: verify project structure
+        entry: python3 scripts/verify_structure.py
+        language: system
+        pass_filenames: false
+        always_run: true

@@ -1,0 +1,192 @@
+/**
+ * Settings Styles
+ * Styling for the Settings tab (container image version selection) in vLLM Playground
+ */
+
+.settings-container {
+    padding: 24px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.settings-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 24px;
+}
+
+.settings-section-header h2 {
+    margin: 0 0 8px 0;
+    font-size: 1.3rem;
+}
+
+.settings-section-description {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin: 0 0 16px 0;
+}
+
+.settings-note {
+    background: var(--bg-tertiary);
+    border-left: 3px solid var(--primary-color);
+    border-radius: 4px;
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+}
+
+/* ============================================
+   Image Version Table
+   ============================================ */
+
+.image-settings-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+.image-settings-table thead th {
+    text-align: left;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.image-settings-table tbody tr,
+.image-settings-table tfoot tr {
+    border-top: 1px solid var(--border-color);
+}
+
+.image-settings-table tbody tr:first-child {
+    border-top: none;
+}
+
+.image-settings-table td {
+    padding: 14px 16px;
+    vertical-align: top;
+}
+
+.image-settings-loading,
+.image-settings-error {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 20px 16px !important;
+}
+
+.image-settings-error {
+    color: #ef4444;
+}
+
+.image-settings-row-static {
+    opacity: 0.85;
+}
+
+.image-settings-row-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.image-settings-row-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    /* Grow to fill remaining space, pushing .image-settings-row-controls
+       flush against the right edge of every row. */
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.image-settings-row-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.image-settings-row-repo {
+    display: block;
+    font-family: monospace;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.image-settings-row-description {
+    margin: 6px 0 0 0;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    width: 100%;
+}
+
+.image-settings-select {
+    background: var(--input-bg, var(--bg-tertiary));
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    /* Fixed (not min-) width so every row's dropdown is the same size and
+       lines up at the same left edge, since the controls group as a whole
+       is right-aligned within each row. */
+    width: 180px;
+    flex-shrink: 0;
+}
+
+.image-settings-custom-input {
+    background: var(--input-bg, var(--bg-tertiary));
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    flex: 1;
+    min-width: 180px;
+}
+
+.image-settings-static-value {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-family: monospace;
+}
+
+.settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+@media (max-width: 640px) {
+    .image-settings-table,
+    .image-settings-table thead,
+    .image-settings-table tbody,
+    .image-settings-table tfoot,
+    .image-settings-table tr,
+    .image-settings-table td,
+    .image-settings-table th {
+        display: block;
+        width: 100%;
+    }
+
+    .image-settings-table thead {
+        display: none;
+    }
+
+    .image-settings-table td {
+        border-bottom: none;
+    }
+}

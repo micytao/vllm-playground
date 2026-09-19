@@ -5,14 +5,14 @@ Uses subprocess for maximum compatibility on macOS
 """
 
 import asyncio
+import json
 import logging
 import os
-import json
 import platform
 import shutil
 import subprocess
 import time
-from typing import Optional, Dict, Any, AsyncIterator
+from typing import Any, AsyncIterator, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -47,19 +47,27 @@ class VLLMContainerManager:
     OMNI_CONTAINER_NAME = "vllm-omni-service"  # Separate container name for vLLM-Omni
 
     # Default images for different platforms and accelerators (must use fully-qualified names for Podman)
+    # These are the "built-in defaults" shown pre-selected in the Settings > Container Images tab.
+    # Users can override any of these per-session via settings_store (image_override_* keys);
+    # see image_catalog.py for the version dropdown catalog.
     # GPU images by accelerator type
     # Note: v0.12.0+ required for Anthropic Messages API (Claude Code support)
-    DEFAULT_IMAGE_GPU_NVIDIA = "docker.io/vllm/vllm-openai:v0.12.0"  # Official vLLM CUDA image (linux/amd64)
-    DEFAULT_IMAGE_GPU_AMD = "docker.io/rocm/vllm:latest"  # Official vLLM ROCm image from AMD
-    DEFAULT_IMAGE_GPU_TPU = "docker.io/vllm/vllm-tpu:latest"  # Official vLLM TPU image for Google Cloud TPU
-    # CPU images by platform
-    DEFAULT_IMAGE_CPU_MACOS = "quay.io/rh_ee_micyang/vllm-mac:v0.11.0"  # CPU image for macOS (linux/arm64)
-    DEFAULT_IMAGE_CPU_X86 = "quay.io/rh_ee_micyang/vllm-cpu:v0.11.0"  # CPU image for x86_64 Linux
+    DEFAULT_IMAGE_GPU_NVIDIA = "docker.io/vllm/vllm-openai:v0.29.0"  # Official vLLM CUDA image (linux/amd64, arm64)
+    DEFAULT_IMAGE_GPU_AMD = (
+        "docker.io/vllm/vllm-openai-rocm:v0.29.0"  # Official vLLM ROCm image (versioned, replaces rocm/vllm:latest)
+    )
+    DEFAULT_IMAGE_GPU_TPU = (
+        "docker.io/vllm/vllm-tpu:latest"  # Official vLLM TPU image for Google Cloud TPU (no versioned tags published)
+    )
+    # CPU images - single official multi-arch image (replaces self-built Quay vllm-cpu/vllm-mac images)
+    DEFAULT_IMAGE_CPU = "docker.io/vllm/vllm-openai-cpu:v0.29.0"  # Official vLLM CPU image (linux/amd64, arm64)
 
     # vLLM-Omni images (for omni-modality generation)
     # Check Docker Hub for latest: https://hub.docker.com/r/vllm/vllm-omni/tags
-    DEFAULT_IMAGE_OMNI_NVIDIA = "docker.io/vllm/vllm-omni:v0.14.0rc1"  # Official NVIDIA/CUDA image
-    DEFAULT_IMAGE_OMNI_AMD = "docker.io/vllm/vllm-omni-rocm:v0.14.0rc1"  # Official AMD/ROCm image
+    DEFAULT_IMAGE_OMNI_NVIDIA = (
+        "docker.io/vllm/vllm-omni:v0.28.0"  # Official NVIDIA/CUDA image (latest stable; v0.29.0rc1 is pre-release only)
+    )
+    DEFAULT_IMAGE_OMNI_AMD = "docker.io/vllm/vllm-omni-rocm:v0.28.0"  # Official AMD/ROCm image (amd64 only)
 
     def __init__(self, container_runtime: str = "podman", use_sudo: bool = None):
         """
@@ -96,16 +104,20 @@ class VLLMContainerManager:
 
     def get_default_image(self, use_cpu: bool = False, accelerator: str = "nvidia") -> str:
         """
-        Get the appropriate container image based on platform, CPU/GPU mode, and accelerator type.
+        Get the appropriate built-in default container image based on CPU/GPU mode and accelerator type.
+
+        This returns the built-in default only. Callers (app.py) should check
+        settings_store for a user-configured `image_override_*` value first and
+        pass it explicitly via the `image=` parameter of start_container() /
+        start_omni_container() when present - this method is the fallback.
 
         Image selection:
-        1. CPU mode: Select based on platform
-           - macOS (ARM64): quay.io/rh_ee_micyang/vllm-mac:v0.11.0
-           - Linux x86_64: quay.io/rh_ee_micyang/vllm-cpu:v0.11.0
+        1. CPU mode: docker.io/vllm/vllm-openai-cpu:v0.29.0 (official multi-arch image;
+           covers macOS ARM64 and Linux x86_64 with a single manifest)
         2. GPU mode: Select based on accelerator type
-           - nvidia: docker.io/vllm/vllm-openai:v0.12.0 (Official CUDA image, v0.12.0+ for Claude Code)
-           - amd: docker.io/rocm/vllm:latest (Official ROCm image)
-           - tpu: docker.io/vllm/vllm-tpu:latest (Official TPU image for Google Cloud)
+           - nvidia: docker.io/vllm/vllm-openai:v0.29.0 (Official CUDA image)
+           - amd: docker.io/vllm/vllm-openai-rocm:v0.29.0 (Official ROCm image)
+           - tpu: docker.io/vllm/vllm-tpu:latest (Official TPU image for Google Cloud; no versioned tags)
 
         Args:
             use_cpu: Whether CPU mode is enabled
@@ -114,20 +126,9 @@ class VLLMContainerManager:
         Returns:
             Container image name
         """
-        # Return appropriate default based on mode and platform
         if use_cpu:
-            # Detect platform for CPU image selection
-            system = platform.system()
-            machine = platform.machine()
-
-            if system == "Darwin" or machine in ("arm64", "aarch64"):
-                # macOS or ARM64 architecture
-                logger.info(f"Detected platform: {system}/{machine} - using macOS/ARM64 CPU image")
-                return self.DEFAULT_IMAGE_CPU_MACOS
-            else:
-                # Linux x86_64 or other
-                logger.info(f"Detected platform: {system}/{machine} - using x86_64 CPU image")
-                return self.DEFAULT_IMAGE_CPU_X86
+            logger.info("Using official vLLM CPU image (multi-arch: amd64 + arm64)")
+            return self.DEFAULT_IMAGE_CPU
 
         # GPU mode - select based on accelerator
         if accelerator == "amd":
@@ -220,7 +221,7 @@ class VLLMContainerManager:
         # Core vLLM parameters (read by start_vllm.sh)
         env.extend(["-e", f"VLLM_MODEL={vllm_config.get('model_source', vllm_config.get('model'))}"])
         env.extend(["-e", "VLLM_HOST=0.0.0.0"])  # Must be 0.0.0.0 inside container
-        env.extend(["-e", f"VLLM_PORT=8000"])  # Internal port (mapped to host)
+        env.extend(["-e", "VLLM_PORT=8000"])  # Internal port (mapped to host)
 
         # Dtype
         if vllm_config.get("use_cpu", False) and vllm_config.get("dtype", "auto") == "auto":
@@ -444,19 +445,19 @@ class VLLMContainerManager:
 
             # Check if config changed
             if stored_hash != current_hash:
-                logger.info(f"Configuration changed - will recreate container")
+                logger.info("Configuration changed - will recreate container")
                 logger.info(f"  Old hash: {stored_hash}")
                 logger.info(f"  New hash: {current_hash}")
                 return True
 
             # Check if image changed (critical for CPU/GPU mode switching)
             if stored_image != expected_image:
-                logger.info(f"Container image changed - will recreate container")
+                logger.info("Container image changed - will recreate container")
                 logger.info(f"  Current image: {stored_image}")
                 logger.info(f"  Required image: {expected_image}")
                 return True
 
-            logger.info(f"Configuration and image unchanged - will reuse existing container")
+            logger.info("Configuration and image unchanged - will reuse existing container")
             return False
 
         except Exception as e:
@@ -637,7 +638,7 @@ class VLLMContainerManager:
             logger.info(f"Environment: {config['environment']}")
             logger.info(f"Volumes: {config['volumes']}")
             logger.info(f"Ports: {config['ports']}")
-            logger.info(f"Using container's default entrypoint (start_vllm.sh)")
+            logger.info("Using container's default entrypoint (start_vllm.sh)")
 
             # Build podman run command
             podman_cmd = [
@@ -1046,19 +1047,19 @@ class VLLMContainerManager:
 
             # Check if config changed
             if stored_hash != current_hash:
-                logger.info(f"vLLM-Omni configuration changed - will recreate container")
+                logger.info("vLLM-Omni configuration changed - will recreate container")
                 logger.info(f"  Old hash: {stored_hash}")
                 logger.info(f"  New hash: {current_hash}")
                 return True
 
             # Check if image changed
             if stored_image != expected_image:
-                logger.info(f"vLLM-Omni image changed - will recreate container")
+                logger.info("vLLM-Omni image changed - will recreate container")
                 logger.info(f"  Current image: {stored_image}")
                 logger.info(f"  Required image: {expected_image}")
                 return True
 
-            logger.info(f"vLLM-Omni configuration unchanged - will reuse existing container")
+            logger.info("vLLM-Omni configuration unchanged - will reuse existing container")
             return False
 
         except Exception as e:
@@ -1081,14 +1082,17 @@ class VLLMContainerManager:
                 - gpu_memory_utilization: GPU memory fraction
                 - trust_remote_code: Whether to trust remote code
                 - hf_token: HuggingFace token (optional)
+                - image_override: Explicit image to use instead of the
+                  built-in default (set from Settings > Container Images)
 
         Returns:
             Dict with container info (id, name, image, reused)
         """
         try:
-            # Get appropriate image
+            # Get appropriate image - prefer an explicit user override
+            # (Settings > Container Images) over the built-in default.
             accelerator = config.get("accelerator", "nvidia")
-            image = self.get_omni_image(accelerator)
+            image = config.get("image_override") or self.get_omni_image(accelerator)
             model = config.get("model", "Tongyi-MAI/Z-Image-Turbo")
             port = config.get("port", 8091)
 

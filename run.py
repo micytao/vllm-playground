@@ -3,13 +3,14 @@
 Launcher script for vLLM Playground with process management
 """
 
-import sys
+import atexit
 import os
 import signal
-import atexit
-import psutil
+import sys
 from pathlib import Path
 from typing import Optional
+
+import psutil
 
 # Ensure current directory is in path for importing app.py
 # (This is usually automatic, but being explicit doesn't hurt)
@@ -123,7 +124,7 @@ if __name__ == "__main__":
         print("=" * 60)
         print("⚠️  WARNING: vLLM Playground is already running!")
         print("=" * 60)
-        print(f"\nExisting process details:")
+        print("\nExisting process details:")
         print(f"  PID: {existing_proc.pid}")
         print(f"  Started: {existing_proc.create_time()}")
         print(f"  Status: {existing_proc.status()}")

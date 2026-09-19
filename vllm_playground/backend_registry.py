@@ -383,7 +383,7 @@ class InstanceRegistry:
         if gpu_devices is not None:
             vllm_config_copy["gpu_device"] = ",".join(str(d) for d in gpu_devices)
 
-        container_info = await container_manager.start_container(
+        await container_manager.start_container(
             vllm_config_copy,
             container_name=cname,
         )

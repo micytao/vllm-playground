@@ -49,10 +49,15 @@ RUN useradd -m -u 1001 -g 0 -s /bin/bash playground && \
 COPY --chown=1001:0 . ${HOME}/vllm-playground/
 
 # Install Python dependencies globally so they work for root or non-root user
-# This is needed because we may run as root to access Podman socket
+# This is needed because we may run as root to access Podman socket.
+# `pip install .` installs the vllm_playground package itself (so
+# `python3.12 -m vllm_playground.app` below can actually import it) in
+# addition to `-r requirements.txt`, which pulls in guidellm and pins
+# exact versions.
 RUN python3.12 -m pip install --no-cache-dir --upgrade pip && \
     python3.12 -m pip install --no-cache-dir -r ${HOME}/vllm-playground/requirements.txt && \
-    python3.12 -m pip install --no-cache-dir podman
+    python3.12 -m pip install --no-cache-dir podman && \
+    python3.12 -m pip install --no-cache-dir ${HOME}/vllm-playground/
 
 # Make playground directory accessible by both root and user 1001
 RUN chmod -R 775 ${HOME}/vllm-playground
@@ -79,5 +84,8 @@ ENV WEBUI_PORT=7860 \
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:7860/api/status || exit 1
 
-# Start web UI (use absolute path to app.py for reliability)
-CMD ["python3.12", "/home/playground/vllm-playground/app.py"]
+# Start web UI as an installed module (not a bare script path) -- app.py
+# lives at vllm_playground/app.py and does `import vllm_playground.*` /
+# `from . import ...`, so it must be run as part of the installed package,
+# not as a standalone file.
+CMD ["python3.12", "-m", "vllm_playground.app"]

@@ -1,0 +1,134 @@
+name: Release
+
+# Tags are cut from `main` (see the CI/CD Pipeline Design plan's branching
+# section). This is the final gate before anything is ever published --
+# nothing here should be re-tested by `ci.yml` on a tag push since tags
+# aren't branches, so `gate` re-runs a fast safety-net subset itself.
+# `deep-checks` additionally re-runs the slower CPU E2E chat test and the
+# Podman/OpenShift container image builds (see deep-checks.yml) -- those
+# don't run on every PR, so a release is the one place they're a hard,
+# required gate instead of just a nightly heads-up.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  gate:
+    name: Version-consistency & safety-net gate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Derive version from tag
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Verify __version__ matches the tag
+        run: |
+          pkg_version=$(python -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('vllm_playground/__init__.py').read()).group(1))")
+          echo "Tag version:     ${{ steps.version.outputs.version }}"
+          echo "Package version: $pkg_version"
+          if [ "$pkg_version" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::vllm_playground/__init__.py.__version__ ($pkg_version) does not match tag ${{ steps.version.outputs.tag }}"
+            exit 1
+          fi
+
+      - name: Verify releases/vX.Y.Z.md exists
+        run: |
+          notes_file="releases/${{ steps.version.outputs.tag }}.md"
+          if [ ! -f "$notes_file" ]; then
+            echo "::error::Missing release notes file: $notes_file"
+            exit 1
+          fi
+          echo "notes_file=$notes_file" >> "$GITHUB_ENV"
+
+      - name: Verify CHANGELOG.md mentions the version
+        run: |
+          if ! grep -qF "${{ steps.version.outputs.tag }}" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md does not mention ${{ steps.version.outputs.tag }}"
+            exit 1
+          fi
+
+      - name: Install package with dev extras
+        run: pip install -e ".[dev,mcp,benchmark]"
+
+      - name: Re-run fast test subset as a final safety net
+        run: pytest tests/unit tests/api -v
+
+  deep-checks:
+    name: Deep checks (CPU E2E + container builds)
+    needs: gate
+    uses: ./.github/workflows/deep-checks.yml
+
+  publish-pypi:
+    name: Build & publish to PyPI (Trusted Publishing)
+    needs: [gate, deep-checks]
+    runs-on: ubuntu-latest
+    environment: pypi-release
+    permissions:
+      id-token: write # required for PyPI Trusted Publishing (OIDC), no stored token needed
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: pip install build twine
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Check package metadata
+        run: twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Upload build artifacts for the GitHub Release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  github-release:
+    name: Create GitHub Release
+    needs: [gate, deep-checks, publish-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create the GitHub Release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: releases/${{ github.ref_name }}.md
+          files: dist/*
+          draft: false
+          prerelease: false

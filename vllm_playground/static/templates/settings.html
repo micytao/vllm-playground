@@ -1,0 +1,57 @@
+<!-- Settings View Template -->
+<!-- Loaded dynamically by imageSettings.js -->
+
+<div class="settings-container">
+    <div class="settings-section">
+        <div class="settings-section-header">
+            <h2>Container Images</h2>
+            <p class="settings-section-description">
+                Choose which vLLM / vLLM-Omni container image version to use when launching in
+                <strong>Container mode</strong>. Versions are fetched live from Docker Hub and cached for a few
+                hours; leave a row on <strong>(default)</strong> to always use the version built into this
+                release of vLLM Playground.
+            </p>
+        </div>
+
+        <div class="settings-note">
+            ℹ️ Changing a version here only affects <strong>newly started</strong> containers. Containers that
+            are already running keep their current image until you stop and restart them.
+        </div>
+
+        <table class="image-settings-table">
+            <thead>
+                <tr>
+                    <th class="image-settings-th-image">Container Image</th>
+                </tr>
+            </thead>
+            <tbody id="image-settings-rows">
+                <tr id="image-settings-loading-row">
+                    <td class="image-settings-loading">Loading available versions…</td>
+                </tr>
+            </tbody>
+            <tfoot>
+                <tr class="image-settings-row-static">
+                    <td>
+                        <div class="image-settings-row-header">
+                            <span class="image-settings-row-title">vLLM (Google Cloud TPU)</span>
+                            <div class="image-settings-row-controls">
+                                <span class="image-settings-static-value">:latest</span>
+                            </div>
+                        </div>
+                        <span class="image-settings-row-repo">vllm/vllm-tpu</span>
+                        <p class="image-settings-row-description">
+                            Official vLLM inference server for Google Cloud TPU accelerators. No versioned
+                            releases are published for this image, so there is no version to select.
+                        </p>
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <div class="settings-actions">
+            <button class="btn btn-secondary" id="image-settings-refresh-btn">
+                🔄 Refresh versions from Docker Hub
+            </button>
+        </div>
+    </div>
+</div>

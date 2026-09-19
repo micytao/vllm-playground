@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="/static/css/token-counter.css">
     <link rel="stylesheet" href="/static/css/logprobs.css">
     <link rel="stylesheet" href="/static/css/observability.css">
+    <link rel="stylesheet" href="/static/css/settings.css">
     <!-- uPlot for Observability time-series charts -->
     <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css">
@@ -89,6 +90,10 @@
                 <button class="nav-item" data-view="tutorials" title="Tutorials" id="nav-tutorials">
                     <span class="nav-item-icon">📖</span>
                     <span class="nav-label">Tutorials</span>
+                </button>
+                <button class="nav-item" data-view="settings" title="Settings" id="nav-settings">
+                    <span class="nav-item-icon">⚙️</span>
+                    <span class="nav-label">Settings</span>
                 </button>
                 <div class="nav-status">
                     <span id="nav-status-dot" class="status-dot"></span>
@@ -1868,6 +1873,9 @@ claude --model <span class="env-model">your-model-name</span></code></pre>
                     </div>
                 </div>
             </div>
+
+            <!-- Settings View (template loaded dynamically from static/templates/settings.html) -->
+            <div class="view-content" id="settings-view" style="display: none;"></div>
         </div>
     </div>
 

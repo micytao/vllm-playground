@@ -28,8 +28,8 @@ except ImportError:
 # Only import manager if MCP is available
 if TYPE_CHECKING or MCP_AVAILABLE:
     try:
-        from .manager import MCPManager
         from .config import MCPServerConfig, MCPTransport
+        from .manager import MCPManager
     except ImportError:
         MCPManager = None
         MCPServerConfig = None

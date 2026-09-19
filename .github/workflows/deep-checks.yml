@@ -1,0 +1,106 @@
+name: Deep checks (CPU E2E + container builds)
+
+# Slower, heavier checks that don't run on every PR:
+#   - a real CPU model end-to-end chat test: starts an actual vLLM
+#     subprocess (no mocks) and chats with it through
+#     /v1/chat/completions and /v1/completions.
+#   - Podman + OpenShift container image builds, booted and smoke-tested
+#     against GET /api/status. The Podman build alone takes ~7-8 minutes
+#     (mostly `microdnf install podman-remote`), and container/OpenShift
+#     orchestration isn't the actively-developed primary use case (that's
+#     local/CLI usage), so it doesn't belong on every PR.
+#
+# Rather than a nightly cron (which would run even on days with zero new
+# commits), this is wired as a required gate right before every real
+# release -- see release.yml, which calls this as a reusable workflow via
+# `uses:` -- so a broken release never ships. It's also available
+# on-demand via workflow_dispatch for ad-hoc testing between releases.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Branch/tag/SHA to run against (defaults to the calling workflow's commit)"
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch/tag/SHA to run against"
+        required: false
+        default: "development"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+
+jobs:
+  container-build-check:
+    name: Container build check (${{ matrix.image.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: vllm-playground (Podman orchestrator)
+            containerfile: containers/Containerfile.vllm-playground
+          - name: openshift (Kubernetes orchestrator)
+            containerfile: openshift/Containerfile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.image.containerfile }}
+          push: false
+          load: true
+          tags: vllm-playground-ci:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Boot image and smoke test /api/status
+        run: |
+          docker run -d --name ci-smoke -p 7860:7860 vllm-playground-ci:test
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:7860/api/status > /dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          docker logs ci-smoke || true
+          docker rm -f ci-smoke || true
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::Container never became healthy on /api/status"
+            exit 1
+          fi
+
+  cpu-chat-e2e:
+    name: Real CPU model chat E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install vllm (CPU build) + playground + test deps
+        run: |
+          pip install --upgrade pip
+          pip install vllm
+          pip install -e ".[dev]"
+
+      - name: Run real CPU model chat E2E test
+        run: pytest tests/e2e_nightly -v -s

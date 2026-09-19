@@ -5,7 +5,6 @@ Checks if everything is properly configured
 """
 
 import sys
-import subprocess
 from pathlib import Path
 
 
@@ -48,11 +47,11 @@ def check_vllm():
         print(f"✅ vLLM is installed (version: {vllm.__version__})")
         return True
     except ImportError:
-        print(f"⚠️  vLLM is NOT installed (required for running models)")
+        print("⚠️  vLLM is NOT installed (required for running models)")
         print("    Install with: pip install vllm")
         return False
     except AttributeError:
-        print(f"✅ vLLM is installed (version unknown)")
+        print("✅ vLLM is installed (version unknown)")
         return True
 
 
@@ -64,15 +63,15 @@ def check_cuda():
         if torch.cuda.is_available():
             count = torch.cuda.device_count()
             device = torch.cuda.get_device_name(0)
-            print(f"✅ CUDA is available")
+            print("✅ CUDA is available")
             print(f"   - {count} GPU(s) detected")
             print(f"   - Primary GPU: {device}")
             return True
         else:
-            print(f"⚠️  CUDA is NOT available (GPU required for vLLM)")
+            print("⚠️  CUDA is NOT available (GPU required for vLLM)")
             return False
     except ImportError:
-        print(f"⚠️  PyTorch not installed (cannot check CUDA)")
+        print("⚠️  PyTorch not installed (cannot check CUDA)")
         return False
 
 

@@ -3,6 +3,7 @@ import { initMCPModule } from './modules/mcp.js';
 import { initGuideLLMModule } from './modules/guidellm.js';
 import { initClaudeCodeModule } from './modules/claudecode.js';
 import { initOmniModule } from './modules/omni.js';
+import { initImageSettingsModule } from './modules/imageSettings.js';
 import { initTokenCounterModule } from './modules/token-counter.js';
 import { initLogprobsModule } from './modules/logprobs.js';
 import { initObservabilityModule } from './modules/observability.js';
@@ -569,6 +570,12 @@ class VLLMWebUI {
                 case 'tutorials':
                     viewTitle.innerHTML = '<span class="view-title-icon">📖</span> Tutorials';
                     this.lazyLoadTutorials();
+                    break;
+                case 'settings':
+                    viewTitle.innerHTML = '<span class="view-title-icon">⚙️</span> Settings';
+                    if (this.onSettingsViewActivated) {
+                        this.onSettingsViewActivated();
+                    }
                     break;
                 default:
                     viewTitle.textContent = viewId;
@@ -1807,6 +1814,9 @@ number ::= [0-9]+`
 
             // Initialize Claude Code module
             initClaudeCodeModule(this);
+
+            // Initialize Settings / Container Images module
+            initImageSettingsModule(this);
 
             // Handle vLLM-Omni availability
             this.omniAvailable = features.vllm_omni_installed || false;
@@ -3572,6 +3582,13 @@ number ::= [0-9]+`
             let rawChunks = [];
             let toolsWereRequested = requestBody.tools && requestBody.tools.length > 0;
             let accumulatedLogprobs = [];
+            // Track whether the stream produced *any* choice chunk (even with
+            // no content) and what finish_reason it reported, so we can tell
+            // "upstream responded successfully but generated nothing" (e.g. an
+            // embedding-only/non-chat model was selected) apart from a genuine
+            // connectivity/parse failure when building the final error message.
+            let receivedAnyChoiceChunk = false;
+            let lastFinishReason = null;
 
             while (true) {
                 const {done, value} = await reader.read();
@@ -3594,9 +3611,26 @@ number ::= [0-9]+`
                             break;
                         }
 
+                        let parsed;
                         try {
-                            const parsed = JSON.parse(data);
+                            parsed = JSON.parse(data);
+                        } catch (e) {
+                            // Skip invalid JSON lines
+                            console.debug('Skipped line:', line, 'Error:', e.message);
+                            continue;
+                        }
 
+                        // Surface upstream/backend errors embedded in the SSE stream
+                        // (e.g. non-200 responses from the vLLM server) instead of
+                        // silently dropping them and showing "No response from model".
+                        if (parsed.error) {
+                            const errMessage = typeof parsed.error === 'string'
+                                ? parsed.error
+                                : (parsed.error.message || JSON.stringify(parsed.error));
+                            throw new Error(errMessage);
+                        }
+
+                        {
                             // Store raw chunks for debugging
                             if (toolsWereRequested) {
                                 rawChunks.push(parsed);
@@ -3605,6 +3639,10 @@ number ::= [0-9]+`
                             if (parsed.choices && parsed.choices.length > 0) {
                                 // Handle OpenAI-compatible chat completions endpoint format
                                 const choice = parsed.choices[0];
+                                receivedAnyChoiceChunk = true;
+                                if (choice.finish_reason) {
+                                    lastFinishReason = choice.finish_reason;
+                                }
                                 let content = null;
 
                                 // Check for tool calls in delta (streaming)
@@ -3690,9 +3728,6 @@ number ::= [0-9]+`
                                 // Merge metrics into usage data
                                 usageData = { ...usageData, ...parsed.metrics };
                             }
-                        } catch (e) {
-                            // Skip invalid JSON lines
-                            console.debug('Skipped line:', line, 'Error:', e.message);
                         }
                     }
                 }
@@ -3843,6 +3878,22 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                     textSpan.textContent = errorMsg;
                     textSpan.classList.add('message-text');  // Add class for proper styling
                     console.error('Tool calling failed. Raw chunks:', rawChunks);
+                } else if (receivedAnyChoiceChunk) {
+                    // The upstream responded successfully (HTTP 200, valid SSE
+                    // chunks, no error field) but generated zero content tokens.
+                    // This is commonly caused by picking a model that can't do
+                    // chat/text generation at all (e.g. an embedding-only model
+                    // like bge-m3/e5/gte) rather than a real failure - so give
+                    // a more actionable message than a bare "No response".
+                    let emptyMsg = 'The model returned an empty response (no error, no generated text).\n\n';
+                    if (lastFinishReason) {
+                        emptyMsg += `Finish reason: ${lastFinishReason}\n\n`;
+                    }
+                    emptyMsg += 'This often happens when the selected model doesn\'t actually support chat/text ' +
+                        'generation - for example, an embedding-only model (e.g. bge-m3, e5, gte-*). ' +
+                        'Try selecting a different, generative/instruct model from the model dropdown.';
+                    textSpan.textContent = emptyMsg;
+                    textSpan.classList.add('message-text');
                 } else {
                     textSpan.textContent = 'No response from model';
                     textSpan.classList.add('message-text');
@@ -3863,7 +3914,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                     .reduce((a, b) => a + b, 0) / 4
             );
 
-            const completionTokens = usageData?.completion_tokens || fullText.split(/\s+/).length;
+            const completionTokens = usageData?.completion_tokens || (fullText.trim() ? fullText.trim().split(/\s+/).length : 0);
             const totalTokens = usageData?.total_tokens || (estimatedPromptTokens + completionTokens);
 
             // Extract additional metrics from usage data if available

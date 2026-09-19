@@ -8,10 +8,9 @@ a unified interface for tool discovery and execution.
 import asyncio
 import logging
 import shutil
-from typing import Dict, List, Optional, Any, Set
-from contextlib import asynccontextmanager
+from typing import Any, Dict, List, Optional
 
-from .config import MCPServerConfig, MCPServerStatus, MCPTransport, MCPConfigStore, MCP_PRESETS
+from .config import MCP_PRESETS, MCPConfigStore, MCPServerConfig, MCPServerStatus, MCPTransport
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +76,8 @@ def check_command_available(command: str) -> tuple[bool, Optional[str]]:
 # Check MCP availability
 try:
     from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
     from mcp.client.sse import sse_client
+    from mcp.client.stdio import stdio_client
 
     MCP_AVAILABLE = True
 except ImportError:
@@ -282,7 +281,6 @@ class MCPServerConnection:
         2. Explicitly closing async generators to prevent GC-triggered errors
         3. Suppressing the inevitable cancel scope errors
         """
-        import asyncio
 
         # Try to close the write stream to signal the server to exit
         if self._write:

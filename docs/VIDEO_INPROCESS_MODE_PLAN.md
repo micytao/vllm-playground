@@ -92,6 +92,7 @@ if config.model_type == "video" and config.run_mode == "subprocess":
 
     def load_video_model():
         from vllm_omni.entrypoints.omni import Omni
+
         return Omni(
             model=config.model,
             vae_use_slicing=True,
@@ -131,13 +132,13 @@ if omni_run_mode == "inprocess" and omni_inprocess_model is not None:
 
     # Generate
     outputs = omni_inprocess_model.generate(
-        {"prompt": request.prompt, "negative_prompt": request.negative_prompt},
-        sampling_params
+        {"prompt": request.prompt, "negative_prompt": request.negative_prompt}, sampling_params
     )
 
     # Extract frames and export to MP4
     frames = outputs[0].images  # List of PIL Images
     from diffusers.utils import export_to_video
+
     video_bytes = export_to_video(frames, fps=request.fps)
 
     # Return base64 encoded MP4

@@ -4,12 +4,13 @@ MCP Server Configuration Models
 Defines the configuration schema for MCP servers.
 """
 
-from enum import Enum
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
 import json
-from pathlib import Path
 import logging
+from enum import Enum
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 

@@ -6,6 +6,25 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 ---
 
+## [v0.1.9](releases/v0.1.9.md) - 2026-09-20
+
+**CI/CD Pipeline, Configurable Container Images & Remote Fixes**
+
+### Added
+- **CI/CD pipeline** — Layered test suite (lint, unit, API, container, Kubernetes, frontend) on every PR via GitHub Actions; real CPU E2E chat test and Podman/OpenShift container image builds run as a required gate before every release; tag-triggered PyPI publishing via Trusted Publishing (OIDC).
+- **Configurable container image versions** — New Settings tab to pick vLLM/vLLM-Omni image versions per accelerator from a live Docker Hub-sourced dropdown, with persisted overrides and an offline fallback list.
+- **MaaS/KServe per-model routing** — Remote mode now detects and uses gateways that advertise a dedicated base URL per model instead of one shared OpenAI-compatible root, with a self-healing retry.
+
+### Changed
+- Default container image versions bumped: `vllm/vllm-openai`/`-rocm` → v0.29.0, `vllm/vllm-omni`/`-rocm` → v0.28.0; CPU mode now uses the official multi-arch `vllm/vllm-openai-cpu:v0.29.0`; AMD default switched to the versioned `vllm/vllm-openai-rocm`.
+- Recipes catalog synced with the latest upstream vLLM recipes (2026-07-02), including `ArceeAI/Trinity-Large-Thinking`.
+
+### Fixed
+- **Broken container images** — Both the Podman and OpenShift `Containerfile`s failed to start (`ModuleNotFoundError: No module named 'vllm_playground'`) because `app.py` ran as a bare script instead of as part of the installed package; caught by the new CI container-build checks and fixed in both.
+- **Remote mode streaming errors** — Upstream errors were serialized as invalid JSON and silently dropped by the frontend, showing a generic "No response from model" instead of the real error; also fixed a token-count fallback that fabricated "1 out" tokens on failed requests.
+
+---
+
 ## [v0.1.8](releases/v0.1.8.md) - 2026-04-06
 
 **Multi-Instance Backends & Remote Polish**

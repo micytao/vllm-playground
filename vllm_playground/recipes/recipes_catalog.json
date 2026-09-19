@@ -1,7 +1,7 @@
 {
   "metadata": {
     "source": "https://github.com/vllm-project/recipes",
-    "last_updated": "2025-12-20",
+    "last_updated": "2026-07-02",
     "description": "Community-maintained recipes for running models with vLLM"
   },
   "categories": [
@@ -1308,6 +1308,38 @@
             "speech",
             "lightweight",
             "vllm-omni",
+            "single-gpu"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arceeai",
+      "name": "ArceeAI",
+      "icon": "\ud83e\udd16",
+      "description": "ArceeAI models from vLLM recipes",
+      "recipes": [
+        {
+          "id": "trinity-large-thinking",
+          "name": "Trinity-Large-Thinking",
+          "description": "Trinity-Large-Thinking - from vLLM recipes",
+          "model_id": "arcee-ai/Trinity-Large-Thinking",
+          "docs_url": "https://github.com/vllm-project/recipes/tree/main/ArceeAI",
+          "hardware": {
+            "recommended": "See documentation",
+            "minimum": "See documentation"
+          },
+          "config": {
+            "dtype": "bfloat16",
+            "enable_expert_parallel": true
+          },
+          "tags": [
+            "tpu",
+            "coding",
+            "vision",
+            "chat",
+            "moe",
+            "reasoning",
             "single-gpu"
           ]
         }

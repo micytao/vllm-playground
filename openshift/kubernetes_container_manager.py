@@ -8,10 +8,10 @@ import logging
 import os
 import shlex
 import time
-from typing import Optional, Dict, Any, AsyncIterator
+from typing import Any, AsyncIterator, Dict, Optional
+
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
-from kubernetes.stream import stream
 
 logger = logging.getLogger(__name__)
 
@@ -409,8 +409,9 @@ class VLLMKubernetesManager:
             - {'ready': False, 'error': message} if error occurred
         """
         try:
-            import aiohttp
             import time
+
+            import aiohttp
         except ImportError:
             logger.warning("aiohttp not available - skipping readiness check")
             return {"ready": False, "error": "aiohttp not installed"}
@@ -616,9 +617,6 @@ class VLLMKubernetesManager:
                         logger.info(f"Pod {self.POD_NAME} is running, starting log stream")
                         break
                     # else: still in Pending/ContainerCreating - keep waiting
-
-                # Check if pod is still in Pending state (likely pulling image)
-                pod_phase = status.get("status", "Unknown")
 
                 # Provide status updates - immediate for first few checks, then every 5 seconds
                 should_update = (i <= 3) or (i > 0 and i % 5 == 0)

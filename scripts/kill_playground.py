@@ -5,8 +5,9 @@ Use this to manually stop a running vLLM Playground instance
 """
 
 import sys
-import psutil
 from pathlib import Path
+
+import psutil
 
 # PID file location - must match run.py
 # Both scripts should reference the same workspace root
@@ -102,7 +103,7 @@ def main():
 
             if psutil.pid_exists(pid):
                 proc = psutil.Process(pid)
-                print(f"\n📋 Found process from PID file:")
+                print("\n📋 Found process from PID file:")
                 print(f"   PID: {pid}")
                 print(f"   Status: {proc.status()}")
 
