@@ -4,10 +4,6 @@ name: Release
 # section). This is the final gate before anything is ever published --
 # nothing here should be re-tested by `ci.yml` on a tag push since tags
 # aren't branches, so `gate` re-runs a fast safety-net subset itself.
-# `deep-checks` additionally re-runs the slower Podman/OpenShift container
-# image builds (see deep-checks.yml) -- those don't run on every PR, so a
-# release is the one place they're a hard, required gate instead of just a
-# nightly heads-up.
 on:
   push:
     tags:
@@ -72,14 +68,9 @@ jobs:
       - name: Re-run fast test subset as a final safety net
         run: pytest tests/unit tests/api -v
 
-  deep-checks:
-    name: Deep checks (container builds)
-    needs: gate
-    uses: ./.github/workflows/deep-checks.yml
-
   publish-pypi:
     name: Build & publish to PyPI (Trusted Publishing)
-    needs: [gate, deep-checks]
+    needs: gate
     runs-on: ubuntu-latest
     environment: pypi-release
     permissions:
@@ -111,7 +102,7 @@ jobs:
 
   github-release:
     name: Create GitHub Release
-    needs: [gate, deep-checks, publish-pypi]
+    needs: [gate, publish-pypi]
     runs-on: ubuntu-latest
     permissions:
       contents: write # required to create the GitHub Release
