@@ -1,14 +1,17 @@
-name: Deep checks (CPU E2E + container builds)
+name: Deep checks (container builds)
 
-# Slower, heavier checks that don't run on every PR:
-#   - a real CPU model end-to-end chat test: starts an actual vLLM
-#     subprocess (no mocks) and chats with it through
-#     /v1/chat/completions and /v1/completions.
-#   - Podman + OpenShift container image builds, booted and smoke-tested
-#     against GET /api/status. The Podman build alone takes ~7-8 minutes
-#     (mostly `microdnf install podman-remote`), and container/OpenShift
-#     orchestration isn't the actively-developed primary use case (that's
-#     local/CLI usage), so it doesn't belong on every PR.
+# Slower, heavier checks that don't run on every PR: Podman + OpenShift
+# container image builds, booted and smoke-tested against GET /api/status.
+# The Podman build alone takes ~7-8 minutes (mostly
+# `microdnf install podman-remote`), and container/OpenShift orchestration
+# isn't the actively-developed primary use case (that's local/CLI usage),
+# so it doesn't belong on every PR.
+#
+# Note: this deliberately does NOT install the real `vllm` package or spin
+# up a subprocess-mode model server. `vllm` is only needed by users who
+# choose subprocess mode on their own machine -- that's out of scope for
+# this project's CI, which targets the container-based workflow (the
+# images built/smoke-tested here already have vllm baked in upstream).
 #
 # Rather than a nightly cron (which would run even on days with zero new
 # commits), this is wired as a required gate right before every real
@@ -32,10 +35,6 @@ on:
 
 permissions:
   contents: read
-
-env:
-  PYTHONUNBUFFERED: "1"
-  HF_HUB_DISABLE_TELEMETRY: "1"
 
 jobs:
   container-build-check:
@@ -82,25 +81,3 @@ jobs:
             echo "::error::Container never became healthy on /api/status"
             exit 1
           fi
-
-  cpu-chat-e2e:
-    name: Real CPU model chat E2E
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install vllm (CPU build) + playground + test deps
-        run: |
-          pip install --upgrade pip
-          pip install vllm
-          pip install -e ".[dev]"
-
-      - name: Run real CPU model chat E2E test
-        run: pytest tests/e2e_nightly -v -s
