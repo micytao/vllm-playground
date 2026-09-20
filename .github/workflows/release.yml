@@ -4,10 +4,10 @@ name: Release
 # section). This is the final gate before anything is ever published --
 # nothing here should be re-tested by `ci.yml` on a tag push since tags
 # aren't branches, so `gate` re-runs a fast safety-net subset itself.
-# `deep-checks` additionally re-runs the slower CPU E2E chat test and the
-# Podman/OpenShift container image builds (see deep-checks.yml) -- those
-# don't run on every PR, so a release is the one place they're a hard,
-# required gate instead of just a nightly heads-up.
+# `deep-checks` additionally re-runs the slower Podman/OpenShift container
+# image builds (see deep-checks.yml) -- those don't run on every PR, so a
+# release is the one place they're a hard, required gate instead of just a
+# nightly heads-up.
 on:
   push:
     tags:
@@ -73,7 +73,7 @@ jobs:
         run: pytest tests/unit tests/api -v
 
   deep-checks:
-    name: Deep checks (CPU E2E + container builds)
+    name: Deep checks (container builds)
     needs: gate
     uses: ./.github/workflows/deep-checks.yml
 
