@@ -2100,6 +2100,9 @@ async def debug_connection():
     """Debug endpoint to show connection configuration"""
     global current_config, current_run_mode
 
+    if os.environ.get("VLLM_PLAYGROUND_ENABLE_DEBUG_ENDPOINTS", "false").lower() != "true":
+        raise HTTPException(status_code=404, detail="Not Found")
+
     is_kubernetes = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
 
     debug_info = {
