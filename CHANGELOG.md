@@ -11,7 +11,7 @@ For detailed release notes, see the [releases/](releases/) folder.
 **CI/CD Pipeline, Configurable Container Images & Remote Fixes**
 
 ### Added
-- **CI/CD pipeline** — Layered test suite (lint, unit, API, container, Kubernetes, frontend) on every PR via GitHub Actions; Podman/OpenShift container image builds run as a required gate before every release; tag-triggered PyPI publishing via Trusted Publishing (OIDC).
+- **CI/CD pipeline** — Layered test suite (lint, unit, API, container manager, Kubernetes manager, frontend) on every PR via GitHub Actions; version/changelog consistency gate plus a fast safety-net test re-run before every release; tag-triggered PyPI publishing via Trusted Publishing (OIDC).
 - **Configurable container image versions** — New Settings tab to pick vLLM/vLLM-Omni image versions per accelerator from a live Docker Hub-sourced dropdown, with persisted overrides and an offline fallback list.
 - **MaaS/KServe per-model routing** — Remote mode now detects and uses gateways that advertise a dedicated base URL per model instead of one shared OpenAI-compatible root, with a self-healing retry.
 

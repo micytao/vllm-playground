@@ -163,13 +163,14 @@ jobs:
           /tmp/wheel-venv/bin/vllm-playground status || true
 
   # NOTE: container image build/smoke-test checks (Podman + OpenShift
-  # Containerfiles) intentionally do NOT run here. They're slow (the
-  # Podman one takes ~7-8 minutes, mostly `microdnf install
-  # podman-remote`) and container/OpenShift orchestration is not the
-  # primary, actively-developed use case (that's local/CLI usage). They
-  # run as a required gate right before every real release instead -- see
-  # .github/workflows/deep-checks.yml, called from release.yml -- so
-  # breakage never actually ships, without paying the cost on every PR.
+  # Containerfiles) intentionally do NOT run anywhere in this pipeline
+  # (not here, and not as a release gate either). They're slow (the
+  # Podman one takes ~9+ minutes, mostly `microdnf install
+  # podman-remote`) and container/OpenShift orchestration is not this
+  # project's actively-developed, primary use case (that's local/CLI
+  # usage). If the Containerfiles ever need re-validating, build them
+  # manually with `docker build -f containers/Containerfile.vllm-playground .`
+  # (or the openshift/Containerfile equivalent) before a release.
 
   manifest-validate:
     name: Validate Kubernetes/OpenShift manifests
