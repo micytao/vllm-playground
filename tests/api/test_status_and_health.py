@@ -59,9 +59,25 @@ def test_gpu_status_returns_200(client):
     assert resp.status_code == 200
 
 
-def test_debug_connection_without_config(client):
+def test_debug_endpoints_are_404_by_default(client):
+    """Debug endpoints leak backend/infra details, so they're opt-in only
+    (CWE-862: missing authorization on a sensitive endpoint)."""
+    for endpoint in ("/api/debug/connection", "/api/debug/test-vllm-connection"):
+        resp = client.get(endpoint)
+        assert resp.status_code == 404, endpoint
+
+
+def test_debug_connection_without_config_when_explicitly_enabled(client, monkeypatch):
+    monkeypatch.setenv("VLLM_PLAYGROUND_ENABLE_DEBUG_ENDPOINTS", "true")
     resp = client.get("/api/debug/connection")
     assert resp.status_code == 200
     body = resp.json()
     assert body["current_run_mode"] is None
     assert "config" not in body
+
+
+def test_test_vllm_connection_without_config_when_explicitly_enabled(client, monkeypatch):
+    monkeypatch.setenv("VLLM_PLAYGROUND_ENABLE_DEBUG_ENDPOINTS", "true")
+    resp = client.get("/api/debug/test-vllm-connection")
+    assert resp.status_code == 200
+    assert resp.json() == {"error": "No server configuration available"}

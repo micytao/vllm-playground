@@ -2095,10 +2095,23 @@ async def get_status():
     return JSONResponse(content=server_status.model_dump(), headers={"Cache-Control": "no-cache"})
 
 
+def _require_debug_endpoints_enabled() -> None:
+    """Debug endpoints leak backend/infra details (connection config,
+    Kubernetes namespace/service names, raw upstream health-check
+    responses) that are useful for attacker reconnaissance if this app is
+    ever reachable beyond localhost (e.g. an OpenShift Route). They're
+    opt-in only, off by default; see CWE-862 (missing authorization).
+    """
+    if os.environ.get("VLLM_PLAYGROUND_ENABLE_DEBUG_ENDPOINTS", "false").lower() != "true":
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
 @app.get("/api/debug/connection")
 async def debug_connection():
     """Debug endpoint to show connection configuration"""
     global current_config, current_run_mode
+
+    _require_debug_endpoints_enabled()
 
     is_kubernetes = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
 
@@ -2138,6 +2151,8 @@ async def debug_connection():
 async def test_vllm_connection():
     """Test if we can reach the vLLM service"""
     global current_config, current_run_mode
+
+    _require_debug_endpoints_enabled()
 
     if not current_config:
         return {"error": "No server configuration available"}

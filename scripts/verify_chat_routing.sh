@@ -37,6 +37,15 @@ else
 fi
 echo ""
 
+# Debug endpoints (/api/debug/*) leak backend/infra details, so they're
+# opt-in only via VLLM_PLAYGROUND_ENABLE_DEBUG_ENDPOINTS=true (CWE-862).
+# Set it on the deployment so Tests 2 and 5 below can actually reach them.
+echo "🔧 Ensuring debug endpoints are enabled on the deployment..."
+oc set env deployment/vllm-playground -n "$NAMESPACE" VLLM_PLAYGROUND_ENABLE_DEBUG_ENDPOINTS=true 2>/dev/null \
+    && echo "✅ Debug endpoints enabled (deployment will roll out)" \
+    || echo "⚠️  Could not set env on deployment/vllm-playground -- Tests 2 and 5 may 404 until it's set manually"
+echo ""
+
 # Test 2: Check connection configuration
 echo "=== Test 2: Connection Configuration ==="
 CONNECTION_INFO=$(curl -s $WEB_UI_URL/api/debug/connection)
