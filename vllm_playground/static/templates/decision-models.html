@@ -1,0 +1,156 @@
+<!-- Decision Models View Template (Experimental) -->
+<!-- Loaded dynamically by decisionModels.js -->
+
+<div class="dm-layout">
+
+    <!-- Experimental disclosure banner -->
+    <div class="dm-banner">
+        <span class="dm-banner-icon">&#9888;</span>
+        <div class="dm-banner-text">
+            <strong>Experimental.</strong>
+            Explores vLLM's native structured-read decision capability (single-step diffusion canvas reads
+            on DiffusionGemma). Requires a nightly vLLM build and NVIDIA + FlashAttention4; the
+            request/response shape is an evolving vLLM example contract, not a stable API.
+            <span id="dm-mock-mode-note">All results below are currently <strong>simulated</strong> &mdash;
+            no live vLLM instance is wired up yet.</span>
+        </div>
+    </div>
+
+    <!-- Decision Server panel -->
+    <div class="dm-server-panel">
+        <div class="dm-server-panel-header">
+            <div class="dm-server-status">
+                <span class="dm-status-dot" id="dm-status-dot"></span>
+                <span class="dm-status-text" id="dm-status-text">Stopped</span>
+            </div>
+            <div class="dm-server-actions">
+                <button class="btn btn-primary btn-sm" id="dm-launch-btn">Launch Decision Server</button>
+                <button class="btn btn-danger btn-sm" id="dm-stop-btn" style="display: none;">Stop</button>
+            </div>
+        </div>
+        <p class="dm-server-message" id="dm-server-message"></p>
+        <p class="dm-hardware-warning" id="dm-hardware-warning" style="display: none;"></p>
+
+        <details class="dm-advanced" id="dm-launch-settings">
+            <summary>Launch settings (model, image, canvas)</summary>
+            <div class="dm-launch-fields">
+                <div class="dm-run-field">
+                    <label for="dm-model-input">Model (HF repo id)</label>
+                    <input type="text" id="dm-model-input" class="dm-textarea dm-textarea-mono dm-input-sm" />
+                </div>
+                <div class="dm-run-field">
+                    <label for="dm-image-input">Nightly vLLM image tag</label>
+                    <input type="text" id="dm-image-input" class="dm-textarea dm-textarea-mono dm-input-sm" />
+                    <span class="dm-field-hint">Nightly tags drift -- check
+                        <a href="https://hub.docker.com/r/vllm/vllm-openai/tags" target="_blank" rel="noopener">vllm/vllm-openai tags</a>
+                        if the pull/start fails.</span>
+                </div>
+                <div class="dm-run-field">
+                    <label for="dm-canvas-input">Canvas length</label>
+                    <input type="number" id="dm-canvas-input" class="dm-textarea dm-textarea-mono dm-input-sm" step="16" min="16" max="512" />
+                    <span class="dm-field-hint">Multiple of 16; must fit the longest answer template below.</span>
+                </div>
+                <div class="dm-run-field">
+                    <label for="dm-gpu-device-input">GPU device (optional)</label>
+                    <input type="text" id="dm-gpu-device-input" class="dm-textarea dm-textarea-mono dm-input-sm" placeholder="e.g. 0 (default: all)" />
+                </div>
+            </div>
+        </details>
+
+        <details class="dm-advanced" id="dm-log-panel">
+            <summary>Server logs</summary>
+            <pre class="dm-log-output" id="dm-log-output">(no logs yet)</pre>
+        </details>
+    </div>
+
+    <!-- Use case gallery -->
+    <div class="dm-gallery-section">
+        <h3 class="dm-section-title">Use Cases</h3>
+        <p class="dm-section-subtitle">Pick an example to see a Choice, Noul, or Score decision in action.</p>
+        <div class="dm-gallery" id="dm-gallery">
+            <div class="dm-gallery-loading">Loading use cases&hellip;</div>
+        </div>
+    </div>
+
+    <!-- Run panel (hidden until a use case is selected) -->
+    <div class="dm-run-panel" id="dm-run-panel" style="display: none;">
+        <div class="dm-run-header">
+            <div>
+                <h3 id="dm-run-title"></h3>
+                <p id="dm-run-description"></p>
+            </div>
+            <button class="dm-run-close" id="dm-run-close" title="Close">&times;</button>
+        </div>
+
+        <!-- Generic body: used by every non-interactive use case -->
+        <div class="dm-run-body" id="dm-generic-body">
+            <div class="dm-run-field">
+                <label for="dm-state-input">State</label>
+                <textarea id="dm-state-input" class="dm-textarea" rows="4"></textarea>
+            </div>
+
+            <details class="dm-advanced">
+                <summary>Advanced: edit questions JSON</summary>
+                <textarea id="dm-questions-input" class="dm-textarea dm-textarea-mono" rows="10"></textarea>
+            </details>
+
+            <button class="btn btn-primary" id="dm-run-btn">Run Decision</button>
+            <span class="dm-run-error" id="dm-run-error" style="display: none;"></span>
+        </div>
+
+        <div class="dm-run-results" id="dm-run-results" style="display: none;">
+            <div class="dm-results-header">
+                <span class="dm-simulated-badge" id="dm-simulated-badge" style="display: none;">SIMULATED</span>
+                <span class="dm-live-badge" id="dm-live-badge" style="display: none;">LIVE</span>
+                <span class="dm-results-timing" id="dm-results-timing"></span>
+            </div>
+            <p class="dm-results-note" id="dm-results-note"></p>
+            <div class="dm-answers" id="dm-answers"></div>
+        </div>
+
+        <!-- Race Lane Decider: live control-loop demo -->
+        <div class="dm-race-body" id="dm-race-body" style="display: none;">
+            <div class="dm-race-toolbar">
+                <button class="btn btn-primary btn-sm" id="dm-race-start-btn">Start</button>
+                <button class="btn btn-secondary btn-sm" id="dm-race-reset-btn">Reset</button>
+                <label class="dm-race-speed-label">Speed
+                    <select id="dm-race-speed-select">
+                        <option value="1400">Slow</option>
+                        <option value="900" selected>Normal</option>
+                        <option value="500">Fast</option>
+                    </select>
+                </label>
+                <span class="dm-race-badge" id="dm-race-source-badge"></span>
+            </div>
+
+            <div class="dm-race-stats">
+                <div class="dm-race-stat"><span class="dm-race-stat-label">Rows survived</span><span class="dm-race-stat-value" id="dm-race-score">0</span></div>
+                <div class="dm-race-stat"><span class="dm-race-stat-label">Hazard probability</span><span class="dm-race-stat-value" id="dm-race-hazard">&mdash;</span></div>
+                <div class="dm-race-stat"><span class="dm-race-stat-label">Decision latency</span><span class="dm-race-stat-value" id="dm-race-latency">&mdash;</span></div>
+            </div>
+
+            <div class="dm-race-track" id="dm-race-track"></div>
+            <p class="dm-race-message" id="dm-race-message">Press Start -- every tick, the current track layout becomes one batched Choice+Noul request to the Decision Server.</p>
+        </div>
+
+        <!-- Rubric Grading Puzzle: editable submission + rubric, N x Score -->
+        <div class="dm-rubric-body" id="dm-rubric-body" style="display: none;">
+            <div class="dm-run-field">
+                <label for="dm-rubric-submission-input">Submission to grade</label>
+                <textarea id="dm-rubric-submission-input" class="dm-textarea" rows="4"></textarea>
+            </div>
+            <div class="dm-run-field">
+                <label for="dm-rubric-instructions-input">Rubric instructions</label>
+                <textarea id="dm-rubric-instructions-input" class="dm-textarea" rows="2"></textarea>
+            </div>
+            <div class="dm-run-field" id="dm-rubric-criteria-list"></div>
+
+            <button class="btn btn-primary" id="dm-rubric-grade-btn">Grade Submission</button>
+            <span class="dm-run-error" id="dm-rubric-error" style="display: none;"></span>
+            <span class="dm-race-badge" id="dm-rubric-source-badge"></span>
+
+            <div class="dm-rubric-results" id="dm-rubric-results" style="display: none;"></div>
+        </div>
+    </div>
+
+</div>

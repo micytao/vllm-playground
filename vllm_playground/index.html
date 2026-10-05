@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="/static/css/logprobs.css">
     <link rel="stylesheet" href="/static/css/observability.css">
     <link rel="stylesheet" href="/static/css/settings.css">
+    <link rel="stylesheet" href="/static/css/decisionModels.css">
     <!-- uPlot for Observability time-series charts -->
     <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css">
@@ -83,6 +84,16 @@
                 <button class="nav-item" data-view="claude-code" title="Claude Code" id="nav-claude-code">
                     <img src="/assets/Claude.png" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label">Claude Code</span>
+                </button>
+
+                <!-- Experimental Section -->
+                <div class="nav-divider">
+                    <span class="nav-divider-label">Experimental</span>
+                </div>
+                <button class="nav-item" data-view="decision-models" title="Decision Models (Experimental)" id="nav-decision-models">
+                    <span class="nav-item-icon icon-decision-nav"></span>
+                    <span class="nav-label">Decision Models</span>
+                    <span class="nav-badge nav-badge-experimental">BETA</span>
                 </button>
             </div>
 
@@ -1437,6 +1448,14 @@
                 <div class="view-loading" id="observability-view-loading">
                     <span class="loading-spinner"></span>
                     <span>Loading Observability...</span>
+                </div>
+            </div>
+
+            <!-- Decision Models View (Experimental; template loaded dynamically from static/templates/decision-models.html) -->
+            <div class="view-content" id="decision-models-view" style="display: none;">
+                <div class="view-loading" id="decision-models-view-loading">
+                    <span class="loading-spinner"></span>
+                    <span>Loading Decision Models...</span>
                 </div>
             </div>
 

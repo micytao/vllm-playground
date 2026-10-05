@@ -724,7 +724,7 @@ omni_websocket_connections: List[WebSocket] = []
 omni_inprocess_model: Optional[Any] = None  # Holds the Omni model when using in-process mode
 
 # User settings store (persists to ~/.vllm-playground/settings.json)
-from . import image_catalog  # noqa: E402
+from . import decision_models, image_catalog  # noqa: E402
 from .settings_store import SettingsStore  # noqa: E402
 
 settings_store = SettingsStore()
@@ -2199,6 +2199,26 @@ async def save_settings(request: Request):
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid image reference for {key}: {data[key]!r}",
+            )
+
+    # Decision Models (Experimental) tab settings -- same conservative image
+    # reference check as above, plus bounds on the diffusion canvas length.
+    if data.get("decision_image_tag") and not image_catalog.is_valid_custom_tag(data["decision_image_tag"]):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid image reference for decision_image_tag: {data['decision_image_tag']!r}",
+        )
+    if data.get("decision_model_override") and not image_catalog.is_valid_custom_tag(data["decision_model_override"]):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model repo for decision_model_override: {data['decision_model_override']!r}",
+        )
+    if "decision_canvas_length" in data:
+        canvas_length = data["decision_canvas_length"]
+        if not isinstance(canvas_length, int) or not (16 <= canvas_length <= 512) or canvas_length % 16 != 0:
+            raise HTTPException(
+                status_code=400,
+                detail="decision_canvas_length must be a multiple of 16 between 16 and 512",
             )
 
     return settings_store.update(data)
@@ -5627,8 +5647,106 @@ async def get_recipe_config(category_id: str, recipe_id: str):
             status_code=404, content={"error": f"Recipe '{recipe_id}' not found in category '{category_id}'"}
         )
     except Exception as e:
-        logger.error(f"Error loading recipe: {e}")
+        logger.error(f"Error loading recipe config: {e}")
         return JSONResponse(status_code=500, content={"error": f"Failed to load recipe: {str(e)}"})
+
+
+# ---------------------------------------------------------------------------
+# Decision Models (Experimental)
+#
+# Sandbox tab for exploring vLLM's native structured-read decision capability
+# (DiffusionGemma + single-step diffusion canvas reads). Fully isolated from
+# the main Server Config / instance-manager flow: these endpoints only touch
+# decision_models.py, never the global vllm_process/current_config state used
+# elsewhere in this file. Phase 1: catalog + mocked evaluation only, clearly
+# labeled as simulated -- no live vLLM/GPU dependency yet.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/decision/examples")
+async def get_decision_examples():
+    """Return the curated Decision Models use-case catalog for the gallery."""
+    return {"use_cases": decision_models.list_use_cases()}
+
+
+@app.get("/api/decision/status")
+async def get_decision_status():
+    """Report real Decision Server lifecycle status (phase/ready/message)."""
+    return decision_models.get_server_status()
+
+
+@app.get("/api/decision/server/logs")
+async def get_decision_server_logs(limit: int = 200):
+    """Return recently buffered Decision Server + sidecar log lines, for the
+    frontend's log panel to poll (no WebSocket plumbing needed for this
+    isolated, self-contained tab)."""
+    return {"lines": decision_models.get_server_logs(limit=limit)}
+
+
+class DecisionServerStartRequest(BaseModel):
+    model_id: Optional[str] = None
+    image_tag: Optional[str] = None
+    canvas_length: Optional[int] = None
+    gpu_device: Optional[str] = None
+
+
+@app.post("/api/decision/server/start")
+async def post_decision_server_start(request: DecisionServerStartRequest):
+    """Launch the dedicated Decision Server (nightly vLLM DiffusionGemma
+    container + structured_server.py sidecar). Fully isolated: its own
+    container name/ports, never touches vllm_process/current_config, and is
+    not registered in backend_registry.py (see the resolved start/stop
+    lifecycle design)."""
+    # Fall back to persisted Settings > Decision Models overrides (if any)
+    # before decision_models' own hardcoded defaults, so a user's saved
+    # nightly tag / canvas length / model override survive across launches.
+    saved = settings_store.get()
+    try:
+        return await decision_models.start_decision_server(
+            model_id=request.model_id or saved.get("decision_model_override") or None,
+            image_tag=request.image_tag or saved.get("decision_image_tag") or None,
+            canvas_length=request.canvas_length or saved.get("decision_canvas_length") or None,
+            gpu_device=request.gpu_device,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"Decision Server start failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from None
+
+
+@app.post("/api/decision/server/stop")
+async def post_decision_server_stop():
+    """Stop the Decision Server's sidecar and container, if running."""
+    try:
+        return await decision_models.stop_decision_server()
+    except Exception as e:
+        logger.error(f"Decision Server stop failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from None
+
+
+class DecisionEvaluateRequest(BaseModel):
+    state: Any
+    questions: Dict[str, Any]
+
+
+@app.post("/api/decision/evaluate")
+async def post_decision_evaluate(request: DecisionEvaluateRequest):
+    """Evaluate a System One-shaped {state, questions} request.
+
+    Routed to the live Decision Server when it's ready, otherwise (or on a
+    live-call failure) falls back to decision_models' deterministic mock
+    evaluator. The response is always explicitly tagged "source": "mock" or
+    "live" so the frontend can show an accurate badge rather than presenting
+    a simulated result as real.
+    """
+    try:
+        return await decision_models.evaluate(request.state, request.questions)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"Decision evaluate failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Decision evaluation failed: {str(e)}") from None
 
 
 @app.post("/api/recipes/sync")

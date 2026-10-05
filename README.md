@@ -32,6 +32,7 @@ Run subprocess, container, and remote vLLM servers side by side; switch tabs, sa
 
 ### 🆕 What's New in v0.1.9
 
+- **Decision Models (Experimental)** — New sandbox tab for vLLM's native structured-read decision capability (DiffusionGemma, single-step diffusion canvas reads), fully isolated from the main Server Config flow, with a mock-by-default gallery plus two interactive demos (a live race-lane control loop and a batched rubric grader). Requires a nightly vLLM build and an NVIDIA GPU — see **[Decision Models Guide](docs/DECISION_MODELS_GUIDE.md)**.
 - **Configurable container image versions** — New Settings tab to pick vLLM/vLLM-Omni image versions per accelerator from a live Docker Hub-sourced dropdown, with persisted overrides and an offline fallback list.
 - **MaaS/KServe per-model routing** — Remote mode now detects and uses gateways that advertise a dedicated base URL per model instead of one shared OpenAI-compatible root, with a self-healing retry.
 - **Remote mode fixes** — Streaming errors now surface as real, readable messages instead of a generic "No response from model"; fixed a token-count fallback that fabricated "1 out" tokens on failed requests.

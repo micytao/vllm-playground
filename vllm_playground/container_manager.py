@@ -386,6 +386,14 @@ class VLLMContainerManager:
         else:
             logger.info("Tool calling disabled in config")
 
+        # Generic passthrough for CLI flags not covered by a first-class option
+        # above (e.g. Decision Models' --diffusion-config/--max-logprobs). Kept
+        # last so it can't accidentally clobber an earlier flag's value.
+        extra_args = vllm_config.get("extra_args")
+        if extra_args:
+            vllm_args.extend(str(a) for a in extra_args)
+            logger.info(f"Extra vLLM arguments: {' '.join(str(a) for a in extra_args)}")
+
         return {"environment": env, "volumes": volumes, "ports": ports, "vllm_args": vllm_args}
 
     async def _get_container_config_hash(self, vllm_config: Dict[str, Any]) -> str:

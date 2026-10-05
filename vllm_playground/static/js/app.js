@@ -7,6 +7,7 @@ import { initImageSettingsModule } from './modules/imageSettings.js';
 import { initTokenCounterModule } from './modules/token-counter.js';
 import { initLogprobsModule } from './modules/logprobs.js';
 import { initObservabilityModule } from './modules/observability.js';
+import { initDecisionModelsModule } from './modules/decisionModels.js';
 import { metricsPoller } from './modules/metrics-poller.js';
 
 class VLLMWebUI {
@@ -563,6 +564,12 @@ class VLLMWebUI {
                         this.onObservabilityViewActivated();
                     }
                     break;
+                case 'decision-models':
+                    viewTitle.innerHTML = '<span class="view-title-icon icon-decision-header"></span> Decision Models <span class="view-title-badge">Experimental</span>';
+                    if (this.onDecisionModelsViewActivated) {
+                        this.onDecisionModelsViewActivated();
+                    }
+                    break;
                 case 'instances':
                     viewTitle.innerHTML = '<span class="view-title-icon icon-instances-header"></span> Instances';
                     this.refreshInstancesPage();
@@ -593,6 +600,13 @@ class VLLMWebUI {
         if (this.currentView === 'claude-code' && viewId !== 'claude-code') {
             if (this.onClaudeCodeViewDeactivated) {
                 this.onClaudeCodeViewDeactivated();
+            }
+        }
+
+        // Handle view deactivation for Decision Models
+        if (this.currentView === 'decision-models' && viewId !== 'decision-models') {
+            if (this.onDecisionModelsViewDeactivated) {
+                this.onDecisionModelsViewDeactivated();
             }
         }
 
@@ -1832,6 +1846,9 @@ number ::= [0-9]+`
             // Initialize Observability Dashboard
             initObservabilityModule(this);
 
+            // Initialize Decision Models (Experimental)
+            initDecisionModelsModule(this);
+
             // Sidebar health badge (replaces per-panel resize handles)
             this.initSidebarHealthBadge();
 
@@ -1840,6 +1857,9 @@ number ::= [0-9]+`
 
             // Preload Observability template
             this.loadObservabilityTemplate();
+
+            // Preload Decision Models template
+            this.loadDecisionModelsTemplate();
 
             // Handle ModelScope availability
             this.modelscopeInstalled = features.modelscope_installed || false;
