@@ -272,7 +272,15 @@ DEFAULT_MODEL_ID = "google/diffusiongemma-26B-A4B-it"
 # (2026-09-28). Nightly tags drift fast; if the pull/start fails, check
 # https://hub.docker.com/r/vllm/vllm-openai/tags for a newer nightly-<sha>
 # and paste it into the Image Tag field.
-DEFAULT_NIGHTLY_IMAGE_TAG = "vllm/vllm-openai:nightly-e9757321527ca1ecd514c07c1418dd2c53da3d19"
+#
+# Must stay fully qualified (docker.io/...), matching every other default
+# image constant in this codebase (see container_manager.py, cli.py). Podman
+# treats an unqualified name like "vllm/vllm-openai:..." as ambiguous and
+# needs a TTY to prompt which registry to pull from; our container launches
+# always run non-interactively, so a short name fails hard with
+# "short-name resolution enforced but cannot prompt without a TTY" instead
+# of silently defaulting to Docker Hub the way `docker pull` would.
+DEFAULT_NIGHTLY_IMAGE_TAG = "docker.io/vllm/vllm-openai:nightly-e9757321527ca1ecd514c07c1418dd2c53da3d19"
 DEFAULT_CANVAS_LENGTH = 64
 
 VENDOR_DIR = Path(__file__).resolve().parent / "vendor"

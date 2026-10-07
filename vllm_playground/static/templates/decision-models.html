@@ -43,7 +43,10 @@
                     <input type="text" id="dm-image-input" class="dm-textarea dm-textarea-mono dm-input-sm" />
                     <span class="dm-field-hint">Nightly tags drift -- check
                         <a href="https://hub.docker.com/r/vllm/vllm-openai/tags" target="_blank" rel="noopener">vllm/vllm-openai tags</a>
-                        if the pull/start fails.</span>
+                        if the pull/start fails. Must include the registry, e.g.
+                        <code>docker.io/vllm/vllm-openai:nightly-&lt;sha&gt;</code> --
+                        Podman can't resolve a bare <code>vllm/vllm-openai:...</code> name
+                        without a TTY to prompt.</span>
                 </div>
                 <div class="dm-run-field">
                     <label for="dm-canvas-input">Canvas length</label>
