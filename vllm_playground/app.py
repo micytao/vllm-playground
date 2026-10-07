@@ -2639,6 +2639,18 @@ async def get_hardware_capabilities():
         detection_method: str - How GPU was detected (nvidia-smi, amd-smi, kubernetes, none)
         accelerator: str - Detected accelerator type (nvidia, amd, or null if none)
     """
+    # The actual detection below is entirely synchronous (subprocess.run calls
+    # with timeouts, plus an un-timed Kubernetes API call) and was previously
+    # run directly on the event loop. A single slow/hanging call here (e.g. a
+    # K8s API server that's unreachable, or nvidia-smi taking longer than
+    # usual under load) would stall every other concurrent request on this
+    # server -- including unrelated static file fetches -- for as long as it
+    # takes. Running it in a worker thread keeps this endpoint from ever
+    # blocking the rest of the app.
+    return await asyncio.to_thread(_detect_hardware_capabilities_sync)
+
+
+def _detect_hardware_capabilities_sync() -> Dict[str, Any]:
     gpu_available = False
     detection_method = "none"
     accelerator = None  # Will be "nvidia" or "amd" if detected

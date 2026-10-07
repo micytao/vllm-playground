@@ -18,6 +18,12 @@ const DM_ACTIVE_PHASES = new Set(["pulling", "starting_vllm", "waiting_health", 
 const DM_STATUS_POLL_MS = 2500;
 const DM_LOG_POLL_MS = 3000;
 const DM_RACE_LANES = ["left", "center", "right"];
+// /api/hardware-capabilities shells out to nvidia-smi/amd-smi/tpu-info (and,
+// in a Kubernetes namespace, lists cluster nodes) on every call. That's cheap
+// most of the time, but re-fetching it on every single tab switch adds a
+// real, avoidable round-trip for something that essentially never changes
+// mid-session. Re-check at most this often.
+const DM_HARDWARE_CACHE_MS = 60000;
 
 export function initDecisionModelsModule(ui) {
     DecisionModelsModule.ui = ui;
@@ -38,6 +44,7 @@ const DecisionModelsModule = {
     launchFieldsTouched: false,
     lastPhase: null,
     hardwareOk: null,
+    hardwareCheckedAt: 0,
     race: null,
     rubricUseCase: null,
 
@@ -87,7 +94,14 @@ const DecisionModelsModule = {
         if (!this.templateLoaded) {
             await this.loadTemplate();
         } else {
-            this._checkHardwareGate();
+            // Only re-check hardware if we've never checked, or the cached
+            // result is stale -- avoid hammering /api/hardware-capabilities
+            // (which shells out to nvidia-smi etc.) on every tab switch.
+            if (!this.hardwareCheckedAt || Date.now() - this.hardwareCheckedAt > DM_HARDWARE_CACHE_MS) {
+                this._checkHardwareGate();
+            } else {
+                this._updateLaunchButtonState();
+            }
             this._refreshServerStatus();
             this._startStatusPolling();
         }
@@ -186,6 +200,7 @@ const DecisionModelsModule = {
             const caps = await response.json();
             const ok = !!caps.gpu_available && caps.accelerator === 'nvidia';
             this.hardwareOk = ok;
+            this.hardwareCheckedAt = Date.now();
             if (ok) {
                 warning.style.display = 'none';
             } else if (!caps.gpu_available) {
