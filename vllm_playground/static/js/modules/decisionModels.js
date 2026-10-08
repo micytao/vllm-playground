@@ -281,13 +281,28 @@ const DecisionModelsModule = {
 
             // Prefill launch fields from server-reported defaults (once, and
             // never once the user has started editing them).
+            //
+            // status.model_id/image_tag/canvas_length reflect whatever was
+            // last *attempted*, even if that attempt failed (phase=error) --
+            // they are not reset back to null on failure. Only trust them as
+            // "current config" while that attempt is actually live (ready or
+            // still in progress); otherwise prefer status.defaults so a
+            // one-time bad value (e.g. a since-fixed default, or a typo)
+            // doesn't keep re-populating the form forever.
             if (!this.launchFieldsTouched && status.defaults) {
+                const useLiveValues = phase === 'ready' || busy;
                 const modelInput = document.getElementById('dm-model-input');
                 const imageInput = document.getElementById('dm-image-input');
                 const canvasInput = document.getElementById('dm-canvas-input');
-                if (modelInput && !modelInput.value) modelInput.value = status.model_id || status.defaults.model_id || '';
-                if (imageInput && !imageInput.value) imageInput.value = status.image_tag || status.defaults.image_tag || '';
-                if (canvasInput && !canvasInput.value) canvasInput.value = status.canvas_length || status.defaults.canvas_length || '';
+                if (modelInput && !modelInput.value) {
+                    modelInput.value = (useLiveValues && status.model_id) || status.defaults.model_id || '';
+                }
+                if (imageInput && !imageInput.value) {
+                    imageInput.value = (useLiveValues && status.image_tag) || status.defaults.image_tag || '';
+                }
+                if (canvasInput && !canvasInput.value) {
+                    canvasInput.value = (useLiveValues && status.canvas_length) || status.defaults.canvas_length || '';
+                }
             }
 
             // Auto-poll faster while a launch/stop is in progress, and drop

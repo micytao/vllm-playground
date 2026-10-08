@@ -444,6 +444,14 @@ async def start_decision_server(
             _state.last_error = str(e)
             _state.message = f"Failed to start Decision Server: {e}"
             _log(f"ERROR: {e}")
+            # Clear the attempted config so a failed launch doesn't linger as
+            # the apparent "current" model_id/image_tag/canvas_length forever
+            # (get_server_status() would otherwise keep reporting a dead
+            # attempt's values -- e.g. a since-corrected image tag -- instead
+            # of falling back to the fresh defaults).
+            _state.model_id = None
+            _state.image_tag = None
+            _state.canvas_length = DEFAULT_CANVAS_LENGTH
             if started_container:
                 # Best-effort rollback so a half-started attempt doesn't leave
                 # a GPU container silently running in the background.
