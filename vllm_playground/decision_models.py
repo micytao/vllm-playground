@@ -485,7 +485,16 @@ async def start_decision_server(
                             _log(line)
                         _log("--- end container logs ---")
                     else:
-                        _log("(Container produced no logs before exiting.)")
+                        # No stdout/stderr at all usually means the container
+                        # never got as far as running its entrypoint (e.g. a
+                        # GPU device-injection/CDI failure at the OCI runtime
+                        # level) rather than an application-level crash --
+                        # pull the exit state instead, which podman tracks
+                        # independently of whatever the process did or didn't
+                        # print.
+                        _log("(Container produced no logs before exiting -- checking exit state instead.)")
+                        exit_state = await container_manager.get_container_exit_state(DECISION_CONTAINER_NAME)
+                        _log(f"Container exit state: {exit_state}")
                 except Exception as log_err:
                     _log(f"Warning: failed to capture container logs before rollback: {log_err}")
 

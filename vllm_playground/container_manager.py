@@ -862,6 +862,39 @@ class VLLMContainerManager:
             logger.error(f"Error fetching log snapshot for {container_name}: {e}")
             return f"[ERROR] Failed to fetch container logs: {e}"
 
+    async def get_container_exit_state(self, container_name: str) -> Dict[str, Any]:
+        """
+        Fetch `podman inspect`'s .State for a container, before it's removed.
+
+        A container that fails before its entrypoint ever runs (e.g. GPU
+        device-injection/CDI failures, OCI runtime create errors) produces
+        *no* stdout/stderr for get_container_logs_snapshot() to capture, but
+        .State.Error/.ExitCode/.OOMKilled almost always have something useful
+        even then -- this is the fallback when logs come back empty.
+
+        Returns a dict with whatever of {status, exit_code, error, oom_killed,
+        started_at, finished_at} podman reported, or {"error": "..."} if the
+        inspect itself failed (e.g. container already gone).
+        """
+        try:
+            result = await self._run_podman_cmd_async(
+                "inspect", container_name, "--format", "{{json .State}}", capture_output=True, check=False
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return {"error": (result.stderr or "inspect returned no output").strip()}
+            state = json.loads(result.stdout.strip())
+            return {
+                "status": state.get("Status"),
+                "exit_code": state.get("ExitCode"),
+                "error": state.get("Error") or None,
+                "oom_killed": state.get("OOMKilled"),
+                "started_at": state.get("StartedAt"),
+                "finished_at": state.get("FinishedAt"),
+            }
+        except Exception as e:
+            logger.error(f"Error fetching exit state for {container_name}: {e}")
+            return {"error": f"Failed to fetch container exit state: {e}"}
+
     async def stop_container(self, remove: bool = False, container_name: Optional[str] = None) -> Dict[str, str]:
         """
         Stop vLLM container (optionally remove it)

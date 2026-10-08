@@ -8,6 +8,7 @@ a real subprocess.
 """
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -174,6 +175,9 @@ class _FakeContainerManager:
     async def get_container_logs_snapshot(self, container_name, tail=200):
         return "fake container crashed: some diagnostic line\n"
 
+    async def get_container_exit_state(self, container_name):
+        return {"status": "exited", "exit_code": 1, "error": "fake exit error"}
+
 
 @pytest.fixture(autouse=True)
 def _reset_decision_server_state():
@@ -244,6 +248,23 @@ def test_start_decision_server_rolls_back_container_on_health_failure(monkeypatc
     # error is lost forever once `podman rm` runs.
     logs = decision_models.get_server_logs()
     assert any("fake container crashed" in line for line in logs)
+
+
+def test_start_decision_server_falls_back_to_exit_state_when_no_logs(monkeypatch):
+    """A container that fails before its entrypoint ever runs (e.g. a GPU
+    device-injection/CDI error) produces no stdout/stderr at all -- in that
+    case we should still surface *something* via `podman inspect`'s exit
+    state rather than just "(no logs)" and nothing else."""
+    fake_cm = _FakeContainerManager(ready=False)
+    fake_cm.get_container_logs_snapshot = AsyncMock(return_value="")
+    monkeypatch.setattr(decision_models, "container_manager", fake_cm)
+
+    with pytest.raises(RuntimeError, match="did not become healthy"):
+        asyncio.run(decision_models.start_decision_server())
+
+    logs = decision_models.get_server_logs()
+    assert any("checking exit state instead" in line for line in logs)
+    assert any("fake exit error" in line for line in logs)
 
 
 def test_start_decision_server_rejects_concurrent_start(monkeypatch):
