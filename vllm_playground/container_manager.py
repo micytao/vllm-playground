@@ -622,7 +622,7 @@ class VLLMContainerManager:
                 # Wait for readiness if requested
                 if wait_ready:
                     port = vllm_config.get("port", 8000)
-                    readiness = await self.wait_for_ready(port=port)
+                    readiness = await self.wait_for_ready(port=port, container_name=target_name)
                     result.update(readiness)
 
                 return result
@@ -756,7 +756,7 @@ class VLLMContainerManager:
             # Wait for readiness if requested
             if wait_ready:
                 port = vllm_config.get("port", 8000)
-                readiness = await self.wait_for_ready(port=port)
+                readiness = await self.wait_for_ready(port=port, container_name=target_name)
                 result.update(readiness)
 
             return result
@@ -768,7 +768,9 @@ class VLLMContainerManager:
             logger.error(f"Unexpected error starting container: {e}")
             raise
 
-    async def wait_for_ready(self, port: int = 8000, timeout: int = 120) -> Dict[str, Any]:
+    async def wait_for_ready(
+        self, port: int = 8000, timeout: int = 120, container_name: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Wait for vLLM service inside container to be ready
 
@@ -778,6 +780,15 @@ class VLLMContainerManager:
         Args:
             port: Port where vLLM is listening (default: 8000)
             timeout: Maximum time to wait in seconds (default: 120)
+            container_name: Name of the container to poll (default: CONTAINER_NAME).
+                MUST be passed explicitly by callers using a custom container
+                name (e.g. the isolated Decision Server) -- otherwise the
+                "is it still running?" check below silently checks the WRONG
+                container (CONTAINER_NAME's default, "vllm-service"), which
+                reports not-running whenever that unrelated container happens
+                to be stopped and causes an instant false "container_stopped"
+                failure even though the container this call actually cares
+                about is healthy and still starting up.
 
         Returns:
             Dictionary with status:
@@ -791,14 +802,15 @@ class VLLMContainerManager:
             logger.warning("aiohttp not available - skipping readiness check")
             return {"ready": False, "error": "aiohttp not installed"}
 
-        logger.info(f"Waiting for vLLM to be ready on port {port} (timeout: {timeout}s)...")
+        target_name = container_name or self.CONTAINER_NAME
+        logger.info(f"Waiting for vLLM to be ready on port {port} (container: {target_name}, timeout: {timeout}s)...")
         start_time = time.time()
         last_error = None
 
         while time.time() - start_time < timeout:
             try:
                 # Check if container is still running
-                status = await self.get_container_status()
+                status = await self.get_container_status(container_name=target_name)
                 if not status.get("running", False):
                     elapsed = time.time() - start_time
                     return {"ready": False, "error": "container_stopped", "elapsed_time": round(elapsed, 1)}

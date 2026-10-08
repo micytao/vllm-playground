@@ -440,7 +440,9 @@ async def start_decision_server(
                 "Waiting for vLLM health check (nightly DiffusionGemma startup can take several minutes)..."
             )
             _log("Waiting for vLLM /health ...")
-            readiness = await container_manager.wait_for_ready(port=DECISION_CONTAINER_PORT, timeout=900)
+            readiness = await container_manager.wait_for_ready(
+                port=DECISION_CONTAINER_PORT, timeout=900, container_name=DECISION_CONTAINER_NAME
+            )
             if not readiness.get("ready"):
                 raise RuntimeError(f"vLLM did not become healthy: {readiness.get('error', 'unknown error')}")
             _log(f"vLLM is healthy (took {readiness.get('elapsed_time')}s)")

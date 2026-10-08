@@ -158,6 +158,7 @@ class _FakeContainerManager:
         self.raise_on_start = raise_on_start
         self.start_calls = []
         self.stop_calls = []
+        self.wait_for_ready_calls = []
 
     async def start_container(self, vllm_config, image=None, wait_ready=False, container_name=None):
         self.start_calls.append({"vllm_config": vllm_config, "image": image, "container_name": container_name})
@@ -165,7 +166,8 @@ class _FakeContainerManager:
             raise self.raise_on_start
         return {"id": "fake123", "name": container_name, "status": "started", "image": image, "reused": False}
 
-    async def wait_for_ready(self, port=8000, timeout=120):
+    async def wait_for_ready(self, port=8000, timeout=120, container_name=None):
+        self.wait_for_ready_calls.append({"port": port, "timeout": timeout, "container_name": container_name})
         return {"ready": self.ready, "elapsed_time": 1.0} if self.ready else {"ready": False, "error": "timeout"}
 
     async def stop_container(self, remove=False, container_name=None):
@@ -225,6 +227,14 @@ def test_start_decision_server_builds_extra_args_and_container_name(monkeypatch)
     assert call["vllm_config"]["port"] == decision_models.DECISION_CONTAINER_PORT
     assert "--diffusion-config" in call["vllm_config"]["extra_args"]
     assert "--enable-prefix-caching" in call["vllm_config"]["extra_args"]
+    # Regression guard: wait_for_ready() defaults to polling CONTAINER_NAME
+    # ("vllm-service", the *main* vLLM container) when no container_name is
+    # passed. Without this, its "is it still running?" check targets an
+    # unrelated container and can report false-positive "container_stopped"
+    # for a perfectly healthy, still-starting Decision Server -- which then
+    # gets killed by our own rollback. Confirmed live on a real GPU VM.
+    assert len(fake_cm.wait_for_ready_calls) == 1
+    assert fake_cm.wait_for_ready_calls[0]["container_name"] == decision_models.DECISION_CONTAINER_NAME
 
 
 def test_start_decision_server_rolls_back_container_on_health_failure(monkeypatch):
