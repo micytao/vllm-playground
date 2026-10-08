@@ -268,10 +268,25 @@ DECISION_CONTAINER_PORT = 8800  # host port for the dedicated vLLM container
 SIDECAR_PORT = 8801  # structured_server.py sidecar, fronts the container above
 
 DEFAULT_MODEL_ID = "google/diffusiongemma-26B-A4B-it"
-# Known-good nightly tag referenced in the Red Hat DiffusionGemma guide
-# (2026-09-28). Nightly tags drift fast; if the pull/start fails, check
-# https://hub.docker.com/r/vllm/vllm-openai/tags for a newer nightly-<sha>
-# and paste it into the Image Tag field.
+# A nightly tag that was confirmed to exist on Docker Hub as of 2026-10-08.
+#
+# IMPORTANT: Docker Hub only retains nightly-<sha> tags for a few weeks
+# before pruning them (vllm/vllm-openai has ~80 nightly-ish tags total across
+# all CUDA variants at any given time), so THIS EXACT TAG WILL EVENTUALLY
+# 404 again with "manifest unknown" -- that is expected, not a bug, and
+# bumping this constant is at best a temporary fix. If that happens:
+#   1. List current tags:
+#      curl -s "https://hub.docker.com/v2/repositories/vllm/vllm-openai/tags?page_size=100&name=nightly" \
+#        | python3 -c "import json,sys; d=json.load(sys.stdin); \
+#          print('\n'.join(sorted((r['name'] for r in d['results'] \
+#          if r['name'].startswith('nightly-')), reverse=True)[:5]))"
+#   2. Paste a fresh docker.io/vllm/vllm-openai:nightly-<sha> into the
+#      Image Tag field in the UI (or decision_image_tag in Settings) to
+#      unblock immediately without a code change.
+#   3. Separately -- bumping the SHA here only confirms the *image* pulls;
+#      it does NOT confirm that specific nightly still contains the
+#      DiffusionGemma / diffusion-canvas vllm_xargs support this feature
+#      depends on, since that's tracked on a moving nightly branch upstream.
 #
 # Must stay fully qualified (docker.io/...), matching every other default
 # image constant in this codebase (see container_manager.py, cli.py). Podman
@@ -280,7 +295,7 @@ DEFAULT_MODEL_ID = "google/diffusiongemma-26B-A4B-it"
 # always run non-interactively, so a short name fails hard with
 # "short-name resolution enforced but cannot prompt without a TTY" instead
 # of silently defaulting to Docker Hub the way `docker pull` would.
-DEFAULT_NIGHTLY_IMAGE_TAG = "docker.io/vllm/vllm-openai:nightly-e9757321527ca1ecd514c07c1418dd2c53da3d19"
+DEFAULT_NIGHTLY_IMAGE_TAG = "docker.io/vllm/vllm-openai:nightly-81198e97ba7eee2a22540caaa756b7fdddcb4d93"
 DEFAULT_CANVAS_LENGTH = 64
 
 VENDOR_DIR = Path(__file__).resolve().parent / "vendor"
