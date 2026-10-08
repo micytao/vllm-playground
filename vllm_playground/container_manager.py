@@ -834,6 +834,34 @@ class VLLMContainerManager:
         logger.warning(f"❌ Timeout waiting for vLLM to be ready ({elapsed:.1f}s)")
         return {"ready": False, "error": "timeout", "elapsed_time": round(elapsed, 1), "last_error": last_error}
 
+    async def get_container_logs_snapshot(self, container_name: str, tail: int = 200) -> str:
+        """
+        Fetch a one-shot snapshot of a container's stdout/stderr (no -f follow).
+
+        Intended for failure diagnostics: callers that are about to stop/remove
+        a container after a failed health check should grab this *first*, since
+        `podman rm` destroys log history for good. Best-effort -- returns an
+        "[ERROR] ..." string rather than raising, so a logging failure never
+        masks the original error that triggered the caller's rollback.
+
+        Args:
+            container_name: Exact container name (no default -- callers should
+                always pass the specific container they care about).
+            tail: Number of trailing log lines to fetch.
+
+        Returns:
+            Combined stdout+stderr text (possibly empty if the container never
+            produced output before exiting).
+        """
+        try:
+            result = await self._run_podman_cmd_async(
+                "logs", "--tail", str(tail), container_name, capture_output=True, check=False
+            )
+            return (result.stdout or "") + (result.stderr or "")
+        except Exception as e:
+            logger.error(f"Error fetching log snapshot for {container_name}: {e}")
+            return f"[ERROR] Failed to fetch container logs: {e}"
+
     async def stop_container(self, remove: bool = False, container_name: Optional[str] = None) -> Dict[str, str]:
         """
         Stop vLLM container (optionally remove it)

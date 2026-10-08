@@ -468,6 +468,27 @@ async def start_decision_server(
             _state.image_tag = None
             _state.canvas_length = DEFAULT_CANVAS_LENGTH
             if started_container:
+                # Grab the container's actual stdout/stderr *before* removing
+                # it -- `podman rm` destroys log history for good, and a
+                # container that fails this fast (often <1s, well before our
+                # own health-check loop even gets a second iteration in) is
+                # almost always crashing on its own startup/argument parsing,
+                # which is exactly what these logs would show. Without this,
+                # the only way to see why is to win a race against our own
+                # rollback with a manually-run `podman logs -f` in another
+                # terminal.
+                try:
+                    snapshot = await container_manager.get_container_logs_snapshot(DECISION_CONTAINER_NAME, tail=200)
+                    if snapshot.strip():
+                        _log("--- vLLM container logs (captured before rollback) ---")
+                        for line in snapshot.splitlines():
+                            _log(line)
+                        _log("--- end container logs ---")
+                    else:
+                        _log("(Container produced no logs before exiting.)")
+                except Exception as log_err:
+                    _log(f"Warning: failed to capture container logs before rollback: {log_err}")
+
                 # Best-effort rollback so a half-started attempt doesn't leave
                 # a GPU container silently running in the background.
                 try:

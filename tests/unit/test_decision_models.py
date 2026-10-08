@@ -171,6 +171,9 @@ class _FakeContainerManager:
         self.stop_calls.append({"remove": remove, "container_name": container_name})
         return {"status": "stopped_and_removed"}
 
+    async def get_container_logs_snapshot(self, container_name, tail=200):
+        return "fake container crashed: some diagnostic line\n"
+
 
 @pytest.fixture(autouse=True)
 def _reset_decision_server_state():
@@ -230,9 +233,17 @@ def test_start_decision_server_rolls_back_container_on_health_failure(monkeypatc
     status = decision_models.get_server_status()
     assert status["phase"] == "error"
     assert status["last_error"]
+    # A failed launch shouldn't leave stale config behind for prefill to pick up.
+    assert status["model_id"] is None
+    assert status["image_tag"] is None
     # Rollback should have stopped the container it just started.
     assert len(fake_cm.stop_calls) == 1
     assert fake_cm.stop_calls[0]["container_name"] == decision_models.DECISION_CONTAINER_NAME
+    # The container's own logs must be captured into our buffer *before*
+    # rollback removes them -- otherwise a fast-crashing container's actual
+    # error is lost forever once `podman rm` runs.
+    logs = decision_models.get_server_logs()
+    assert any("fake container crashed" in line for line in logs)
 
 
 def test_start_decision_server_rejects_concurrent_start(monkeypatch):
