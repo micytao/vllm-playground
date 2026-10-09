@@ -102,6 +102,19 @@ class VLLMContainerManager:
         if self.use_sudo:
             logger.info("Container manager initialized with sudo enabled")
 
+    def _nvidia_gpu_flags(self, gpu_device: Optional[str] = None) -> list:
+        """Return the CLI flags to pass NVIDIA GPUs into a container.
+
+        Uses ``--gpus`` for both Docker and Podman.  Docker supports it
+        natively via the NVIDIA Container Runtime; Podman 4.1+ supports it
+        via the nvidia-container-toolkit OCI hooks.  This is simpler and
+        more portable than Podman's CDI (``--device nvidia.com/gpu=…``),
+        which requires extra setup (``nvidia-ctk cdi generate``) that many
+        systems (e.g. DGX Spark) don't have.
+        """
+        spec = f'"device={gpu_device}"' if gpu_device else "all"
+        return ["--gpus", spec]
+
     def get_default_image(self, use_cpu: bool = False, accelerator: str = "nvidia") -> str:
         """
         Get the appropriate built-in default container image based on CPU/GPU mode and accelerator type.
@@ -701,19 +714,7 @@ class VLLMContainerManager:
                 else:
                     # NVIDIA CUDA GPU support (default)
                     gpu_device = vllm_config.get("gpu_device")
-                    if self.runtime == "docker":
-                        gpu_spec = f'"device={gpu_device}"' if gpu_device else "all"
-                        podman_cmd.extend(["--gpus", gpu_spec])
-                    else:
-                        # Podman uses --device with CDI
-                        device_spec = f"nvidia.com/gpu={gpu_device}" if gpu_device else "nvidia.com/gpu=all"
-                        podman_cmd.extend(
-                            [
-                                "--device",
-                                device_spec,
-                                "--security-opt=label=disable",
-                            ]
-                        )
+                    podman_cmd.extend(self._nvidia_gpu_flags(gpu_device))
                     gpu_info = f"device={gpu_device}" if gpu_device else "all"
                     logger.info(f"NVIDIA CUDA GPU passthrough enabled for container ({gpu_info})")
 
@@ -1292,30 +1293,7 @@ class VLLMContainerManager:
             # Add GPU flags based on accelerator and runtime
             gpu_device = config.get("gpu_device")  # e.g., "0", "1", "0,1"
             if accelerator == "nvidia":
-                if self.runtime == "docker":
-                    # Docker uses --gpus flag
-                    if gpu_device:
-                        # Specific GPU selection: --gpus '"device=0"' or '"device=0,1"'
-                        container_cmd.extend(["--gpus", f'"device={gpu_device}"'])
-                    else:
-                        container_cmd.extend(["--gpus", "all"])
-                else:
-                    # Podman uses --device with CDI (Container Device Interface)
-                    if gpu_device:
-                        # Specific GPU selection for Podman
-                        # For single GPU: nvidia.com/gpu=0
-                        # For multiple: need to add multiple --device flags
-                        for dev in gpu_device.split(","):
-                            container_cmd.extend(["--device", f"nvidia.com/gpu={dev.strip()}"])
-                        container_cmd.append("--security-opt=label=disable")
-                    else:
-                        container_cmd.extend(
-                            [
-                                "--device",
-                                "nvidia.com/gpu=all",
-                                "--security-opt=label=disable",
-                            ]
-                        )
+                container_cmd.extend(self._nvidia_gpu_flags(gpu_device))
             elif accelerator == "amd":
                 # AMD ROCm requires additional security flags
                 container_cmd.extend(
