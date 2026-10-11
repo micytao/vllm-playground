@@ -32,30 +32,67 @@
         <p class="dm-hardware-warning" id="dm-hardware-warning" style="display: none;"></p>
 
         <details class="dm-advanced" id="dm-launch-settings">
-            <summary>Launch settings (model, image, canvas)</summary>
+            <summary>Launch settings (mode, model, image, canvas)</summary>
             <div class="dm-launch-fields">
+                <!-- Run Mode Toggle (mirrors the vLLM Server tab's Run Mode UI) -->
+                <div class="form-group mode-toggle-group" id="dm-run-mode-group">
+                    <label>Run Mode</label>
+                    <div class="mode-toggle-buttons">
+                        <label class="mode-button active" id="dm-run-mode-container-label">
+                            <input type="radio" name="dm-run-mode" id="dm-run-mode-container" value="container" checked>
+                            <span>&#128230; Local</span>
+                        </label>
+                        <label class="mode-button" id="dm-run-mode-remote-label">
+                            <input type="radio" name="dm-run-mode" id="dm-run-mode-remote" value="remote">
+                            <span>&#127760; Remote</span>
+                        </label>
+                    </div>
+                    <small class="form-help" id="dm-run-mode-help">Local: launch a nightly vLLM DiffusionGemma container on this machine (needs an NVIDIA GPU). Remote: connect to an existing Jev endpoint.</small>
+                </div>
+
+                <!-- Local (container) launch fields -->
+                <div class="dm-mode-fields" id="dm-local-fields">
+                    <div class="dm-run-field">
+                        <label for="dm-image-input">Nightly vLLM image tag</label>
+                        <input type="text" id="dm-image-input" class="dm-textarea dm-textarea-mono dm-input-sm" />
+                        <span class="dm-field-hint">Nightly tags drift -- check
+                            <a href="https://hub.docker.com/r/vllm/vllm-openai/tags" target="_blank" rel="noopener">vllm/vllm-openai tags</a>
+                            if the pull/start fails. Must include the registry, e.g.
+                            <code>docker.io/vllm/vllm-openai:nightly-&lt;sha&gt;</code> --
+                            Podman can't resolve a bare <code>vllm/vllm-openai:...</code> name
+                            without a TTY to prompt.</span>
+                    </div>
+                    <div class="dm-run-field">
+                        <label for="dm-canvas-input">Canvas length</label>
+                        <input type="number" id="dm-canvas-input" class="dm-textarea dm-textarea-mono dm-input-sm" step="16" min="16" max="512" />
+                        <span class="dm-field-hint">Multiple of 16; must fit the longest answer template below.</span>
+                    </div>
+                    <div class="dm-run-field">
+                        <label for="dm-gpu-device-input">GPU device (optional)</label>
+                        <input type="text" id="dm-gpu-device-input" class="dm-textarea dm-textarea-mono dm-input-sm" placeholder="e.g. 0 (default: all)" />
+                    </div>
+                </div>
+
+                <!-- Remote endpoint fields -->
+                <div class="dm-mode-fields" id="dm-remote-fields" style="display: none;">
+                    <div class="dm-run-field">
+                        <label for="dm-remote-url-input">Endpoint URL</label>
+                        <input type="text" id="dm-remote-url-input" class="dm-textarea dm-textarea-mono dm-input-sm" placeholder="https://my-jev-host:8801" />
+                        <span class="dm-field-hint">Must already expose the Jev
+                            <code>/v1/systemone</code> contract (a running
+                            <code>structured_server.py</code> or equivalent). No local
+                            container, sidecar, or GPU is used in this mode.</span>
+                    </div>
+                    <div class="dm-run-field">
+                        <label for="dm-remote-api-key-input">API key (optional)</label>
+                        <input type="password" id="dm-remote-api-key-input" class="dm-textarea dm-textarea-mono dm-input-sm" placeholder="sent as Authorization: Bearer ..." />
+                    </div>
+                </div>
+
+                <!-- Model: used by both modes -->
                 <div class="dm-run-field">
                     <label for="dm-model-input">Model (HF repo id)</label>
                     <input type="text" id="dm-model-input" class="dm-textarea dm-textarea-mono dm-input-sm" />
-                </div>
-                <div class="dm-run-field">
-                    <label for="dm-image-input">Nightly vLLM image tag</label>
-                    <input type="text" id="dm-image-input" class="dm-textarea dm-textarea-mono dm-input-sm" />
-                    <span class="dm-field-hint">Nightly tags drift -- check
-                        <a href="https://hub.docker.com/r/vllm/vllm-openai/tags" target="_blank" rel="noopener">vllm/vllm-openai tags</a>
-                        if the pull/start fails. Must include the registry, e.g.
-                        <code>docker.io/vllm/vllm-openai:nightly-&lt;sha&gt;</code> --
-                        Podman can't resolve a bare <code>vllm/vllm-openai:...</code> name
-                        without a TTY to prompt.</span>
-                </div>
-                <div class="dm-run-field">
-                    <label for="dm-canvas-input">Canvas length</label>
-                    <input type="number" id="dm-canvas-input" class="dm-textarea dm-textarea-mono dm-input-sm" step="16" min="16" max="512" />
-                    <span class="dm-field-hint">Multiple of 16; must fit the longest answer template below.</span>
-                </div>
-                <div class="dm-run-field">
-                    <label for="dm-gpu-device-input">GPU device (optional)</label>
-                    <input type="text" id="dm-gpu-device-input" class="dm-textarea dm-textarea-mono dm-input-sm" placeholder="e.g. 0 (default: all)" />
                 </div>
             </div>
         </details>

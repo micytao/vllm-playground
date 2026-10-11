@@ -2220,6 +2220,13 @@ async def save_settings(request: Request):
                 status_code=400,
                 detail="decision_canvas_length must be a multiple of 16 between 16 and 512",
             )
+    if data.get("decision_remote_url") and not str(data["decision_remote_url"]).lower().startswith(
+        ("http://", "https://")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="decision_remote_url must start with http:// or https://",
+        )
 
     return settings_store.update(data)
 
@@ -5696,24 +5703,38 @@ async def get_decision_server_logs(limit: int = 200):
 
 
 class DecisionServerStartRequest(BaseModel):
+    # mode: "container" (default) launches the local nightly vLLM container +
+    # sidecar; "remote" connects to an externally-managed Jev /v1/systemone
+    # endpoint with no local launch.
+    mode: Optional[str] = "container"
     model_id: Optional[str] = None
     image_tag: Optional[str] = None
     canvas_length: Optional[int] = None
     gpu_device: Optional[str] = None
+    remote_url: Optional[str] = None
+    remote_api_key: Optional[str] = None
 
 
 @app.post("/api/decision/server/start")
 async def post_decision_server_start(request: DecisionServerStartRequest):
-    """Launch the dedicated Decision Server (nightly vLLM DiffusionGemma
-    container + structured_server.py sidecar). Fully isolated: its own
-    container name/ports, never touches vllm_process/current_config, and is
-    not registered in backend_registry.py (see the resolved start/stop
+    """Launch or connect the Decision Server. In "container" mode, launch the
+    dedicated nightly vLLM DiffusionGemma container + structured_server.py
+    sidecar; in "remote" mode, connect to an externally-managed Jev endpoint.
+    Fully isolated either way: never touches vllm_process/current_config, and
+    is not registered in backend_registry.py (see the resolved start/stop
     lifecycle design)."""
     # Fall back to persisted Settings > Decision Models overrides (if any)
     # before decision_models' own hardcoded defaults, so a user's saved
-    # nightly tag / canvas length / model override survive across launches.
+    # nightly tag / canvas length / model override / remote endpoint survive
+    # across launches.
     saved = settings_store.get()
     try:
+        if request.mode == "remote":
+            return await decision_models.connect_remote_decision_server(
+                url=request.remote_url or saved.get("decision_remote_url") or "",
+                model_id=request.model_id or saved.get("decision_model_override") or None,
+                api_key=request.remote_api_key or saved.get("decision_remote_api_key") or None,
+            )
         return await decision_models.start_decision_server(
             model_id=request.model_id or saved.get("decision_model_override") or None,
             image_tag=request.image_tag or saved.get("decision_image_tag") or None,

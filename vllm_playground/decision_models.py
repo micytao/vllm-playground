@@ -41,9 +41,22 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from . import image_catalog
 from .container_manager import container_manager
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_remote_root_url(url: str) -> str:
+    """Strip a trailing ``/v1`` so a remote Jev endpoint URL matches the HTTP
+    root convention used elsewhere (we call ``{root}/health`` and
+    ``{root}/v1/systemone``). Mirrors ``app.py:normalize_vllm_remote_root_url``
+    and ``backend_registry._normalize_remote_root_url`` without importing them."""
+    u = (url or "").strip().rstrip("/")
+    if len(u) >= 3 and u.lower().endswith("/v1"):
+        return u[:-3].rstrip("/")
+    return u
+
 
 # ---------------------------------------------------------------------------
 # Use case catalog
@@ -329,6 +342,12 @@ class _ServerState:
         self.sidecar_process: Optional[subprocess.Popen] = None
         self.log_buffer: "deque[str]" = deque(maxlen=_LOG_BUFFER_MAX)
         self.lock = asyncio.Lock()
+        # How the live backend is reached: "managed" = local nightly vLLM
+        # container + vendored structured_server.py sidecar (default); "remote"
+        # = an externally-managed endpoint already exposing /v1/systemone.
+        self.connection: str = "managed"
+        self.remote_url: Optional[str] = None
+        self.remote_api_key: Optional[str] = None
 
 
 _state = _ServerState()
@@ -349,6 +368,10 @@ def get_server_status() -> Dict[str, Any]:
         "image_tag": _state.image_tag,
         "canvas_length": _state.canvas_length,
         "last_error": _state.last_error,
+        # Which backend the (ready/attempted) server is: "managed" or "remote".
+        "connection": _state.connection,
+        # Remote endpoint URL when connection == "remote" (never the API key).
+        "remote_url": _state.remote_url,
         # Always included so the frontend's launch form can prefill sensible
         # values without duplicating these constants in JS.
         "defaults": {
@@ -394,6 +417,9 @@ async def start_decision_server(
             raise ValueError("canvas_length must be a multiple of 16 between 16 and 512")
 
         _state.phase = "pulling"
+        _state.connection = "managed"
+        _state.remote_url = None
+        _state.remote_api_key = None
         _state.model_id = model_id
         _state.image_tag = image_tag
         _state.canvas_length = canvas_length
@@ -580,9 +606,95 @@ async def _drain_sidecar_output() -> None:
         _log(f"[sidecar] {line.rstrip()}")
 
 
-async def stop_decision_server() -> Dict[str, Any]:
-    """Stop the sidecar process and the dedicated container, if running."""
+async def connect_remote_decision_server(
+    url: str,
+    model_id: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Connect to an externally-managed remote Jev endpoint that already
+    exposes the structured_server.py ``/v1/systemone`` contract.
+
+    Unlike start_decision_server(), this launches nothing locally -- no
+    container, no sidecar, no GPU or ``transformers`` dependency. We just
+    validate + probe the endpoint and, on success, flip the Decision Server
+    into a ready "remote" connection so evaluate() proxies to it. Raises on
+    failure (with _state left in phase="error" and a readable message)."""
     async with _state.lock:
+        if _state.phase in ("pulling", "starting_vllm", "waiting_health", "starting_sidecar"):
+            raise RuntimeError(f"Decision Server is already starting (phase={_state.phase}).")
+        if _state.phase == "ready":
+            raise RuntimeError("Decision Server is already running. Stop it first to connect to a different endpoint.")
+
+        url = (url or "").strip()
+        if not url:
+            raise ValueError("remote_url is required to connect to a remote Decision endpoint.")
+        if not url.lower().startswith(("http://", "https://")):
+            raise ValueError("remote_url must start with http:// or https://")
+        model_id = (model_id or DEFAULT_MODEL_ID).strip()
+        if not image_catalog.is_valid_custom_tag(model_id):
+            raise ValueError(f"Invalid model name/repo: {model_id!r}")
+
+        root = _normalize_remote_root_url(url)
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+        _state.phase = "waiting_health"
+        _state.connection = "remote"
+        _state.remote_url = root
+        _state.remote_api_key = api_key or None
+        _state.model_id = model_id
+        _state.image_tag = None
+        _state.last_error = None
+        _state.message = f"Connecting to remote Decision endpoint ({root})..."
+        _state.log_buffer.clear()
+        _log(f"Connecting to remote Decision endpoint: url={root} model={model_id}")
+
+        import aiohttp
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{root}/health", headers=headers, timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    # A 2xx is ideal, but some Jev/sidecar deployments don't
+                    # expose /health; any HTTP response (even 404/405) proves
+                    # the host is reachable, so only a transport error below
+                    # counts as "unreachable".
+                    _log(f"Remote endpoint responded to /health with HTTP {resp.status}")
+        except Exception as e:
+            _state.phase = "error"
+            _state.last_error = str(e)
+            _state.message = f"Could not reach remote Decision endpoint at {root}: {e}"
+            _state.connection = "managed"
+            _state.remote_url = None
+            _state.remote_api_key = None
+            _state.model_id = None
+            _log(f"ERROR: {_state.message}")
+            raise RuntimeError(_state.message) from None
+
+        _state.phase = "ready"
+        _state.message = f"Connected to remote Decision endpoint -- {model_id} via {root}."
+        _log("Remote Decision endpoint ready.")
+        return get_server_status()
+
+
+async def stop_decision_server() -> Dict[str, Any]:
+    """Stop the sidecar process and the dedicated container, if running.
+
+    For a remote connection there is nothing to tear down locally -- just
+    reset state back to a stopped, managed default."""
+    async with _state.lock:
+        if _state.connection == "remote":
+            _log("Disconnecting from remote Decision endpoint.")
+            _state.phase = "stopped"
+            _state.message = "Decision Server is stopped."
+            _state.connection = "managed"
+            _state.remote_url = None
+            _state.remote_api_key = None
+            _state.model_id = None
+            _state.image_tag = None
+            _state.last_error = None
+            return get_server_status()
+
         _state.phase = "stopping"
         _state.message = "Stopping Decision Server..."
         _log("Stopping Decision Server...")
@@ -711,24 +823,42 @@ async def evaluate(state: Any, questions: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def _evaluate_live(state: Any, questions: Dict[str, Any]) -> Dict[str, Any]:
-    """Proxy a {state, questions} request to the structured_server.py sidecar's
-    /v1/systemone endpoint. Its Jev-shaped per-question answers (noul/choice/
-    score) already match this module's mock_evaluate() output shape, so no
-    answer translation is needed -- only envelope wrapping."""
+    """Proxy a {state, questions} request to the live Jev ``/v1/systemone``
+    endpoint -- the local structured_server.py sidecar when connection is
+    "managed", or the externally-managed remote endpoint when "remote". The
+    Jev-shaped per-question answers (noul/choice/score) already match this
+    module's mock_evaluate() output shape, so no answer translation is needed
+    -- only envelope wrapping."""
+    if _state.connection == "remote":
+        root = _normalize_remote_root_url(_state.remote_url or "")
+        if not root:
+            raise RuntimeError("Remote Decision endpoint URL is not set.")
+        url = f"{root}/v1/systemone"
+        headers = {"Authorization": f"Bearer {_state.remote_api_key}"} if _state.remote_api_key else {}
+    else:
+        url = f"http://127.0.0.1:{SIDECAR_PORT}/v1/systemone"
+        headers = {}
+
+    return await _post_systemone(url, headers, state, questions)
+
+
+async def _post_systemone(url: str, headers: Dict[str, str], state: Any, questions: Dict[str, Any]) -> Dict[str, Any]:
+    """POST a {model, state, questions} body to a Jev /v1/systemone endpoint
+    and wrap the response in this module's standard live envelope."""
     import aiohttp
 
     started = time.perf_counter()
-    url = f"http://127.0.0.1:{SIDECAR_PORT}/v1/systemone"
     async with aiohttp.ClientSession() as session:
         async with session.post(
             url,
             json={"model": _state.model_id or DEFAULT_MODEL_ID, "state": state, "questions": questions},
+            headers=headers,
             timeout=aiohttp.ClientTimeout(total=45),
         ) as resp:
             body = await resp.json(content_type=None)
             if resp.status != 200:
                 detail = body.get("error", {}).get("message") if isinstance(body, dict) else None
-                raise RuntimeError(detail or f"sidecar returned HTTP {resp.status}")
+                raise RuntimeError(detail or f"endpoint returned HTTP {resp.status}")
 
     elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
     return {
