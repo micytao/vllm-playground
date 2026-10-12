@@ -89,7 +89,9 @@ class FakeAiohttpResponse:
             self._text_data = ""
         self.content = FakeAiohttpContent(stream_chunks)
 
-    async def json(self):
+    async def json(self, **kwargs):
+        # Accept (and ignore) kwargs like aiohttp's real json(content_type=...)
+        # so callers that pass content_type=None still work against the fake.
         return self._json_data
 
     async def text(self):

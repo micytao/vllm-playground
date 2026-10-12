@@ -38,6 +38,10 @@ DEFAULTS: Dict[str, Any] = {
     "decision_image_tag": "",
     "decision_canvas_length": 64,
     "decision_model_override": "",
+    # Remote Jev endpoint (connect to an externally-managed /v1/systemone
+    # server instead of launching a local container + sidecar).
+    "decision_remote_url": "",
+    "decision_remote_api_key": "",
 }
 
 # Keys that are allowed to be stored (acts as a simple schema guard)

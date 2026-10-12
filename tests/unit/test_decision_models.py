@@ -190,9 +190,15 @@ def _reset_decision_server_state():
     decision_models._state.image_tag = None
     decision_models._state.last_error = None
     decision_models._state.sidecar_process = None
+    decision_models._state.connection = "managed"
+    decision_models._state.remote_url = None
+    decision_models._state.remote_api_key = None
     decision_models._state.log_buffer.clear()
     yield
     decision_models._state.phase = "stopped"
+    decision_models._state.connection = "managed"
+    decision_models._state.remote_url = None
+    decision_models._state.remote_api_key = None
 
 
 def test_start_decision_server_requires_container_runtime(monkeypatch):
@@ -309,3 +315,130 @@ def test_get_server_logs_returns_buffered_lines():
     decision_models._log("line two")
     logs = decision_models.get_server_logs()
     assert logs[-2:] == ["line one", "line two"]
+
+
+# ---------------------------------------------------------------------------
+# Remote Jev endpoint connection
+# ---------------------------------------------------------------------------
+
+
+def test_connect_remote_decision_server_success(fake_aiohttp):
+    fake_aiohttp.add("GET", "/health", json_data={"status": "ok"}, status=200)
+
+    status = asyncio.run(
+        decision_models.connect_remote_decision_server(
+            url="https://jev.example.com:8801/v1",
+            model_id="google/diffusiongemma-26B-A4B-it",
+            api_key="secret",
+        )
+    )
+
+    assert status["phase"] == "ready"
+    assert status["ready"] is True
+    assert status["connection"] == "remote"
+    # Trailing /v1 is normalized off the stored root.
+    assert status["remote_url"] == "https://jev.example.com:8801"
+    # The API key is never surfaced in status.
+    assert "remote_api_key" not in status
+    # /health was probed with a bearer header.
+    assert ("GET", "https://jev.example.com:8801/health") in fake_aiohttp.requests
+
+
+def test_connect_remote_rejects_empty_url():
+    with pytest.raises(ValueError, match="remote_url is required"):
+        asyncio.run(decision_models.connect_remote_decision_server(url=""))
+    assert decision_models.get_server_status()["phase"] == "stopped"
+
+
+def test_connect_remote_rejects_non_http_url():
+    with pytest.raises(ValueError, match="http"):
+        asyncio.run(decision_models.connect_remote_decision_server(url="ftp://nope"))
+
+
+def test_connect_remote_rejects_invalid_model():
+    with pytest.raises(ValueError, match="Invalid model"):
+        asyncio.run(decision_models.connect_remote_decision_server(url="https://jev.example.com", model_id="bad name!"))
+
+
+def test_connect_remote_unreachable_sets_error_and_resets(fake_aiohttp):
+    fake_aiohttp.add("GET", "/health", exception=ConnectionError("dns fail"))
+
+    with pytest.raises(RuntimeError, match="Could not reach"):
+        asyncio.run(decision_models.connect_remote_decision_server(url="https://jev.example.com"))
+
+    status = decision_models.get_server_status()
+    assert status["phase"] == "error"
+    assert status["last_error"]
+    # A failed connect must not leave a half-set remote connection behind.
+    assert status["connection"] == "managed"
+    assert status["remote_url"] is None
+    assert status["model_id"] is None
+
+
+def test_connect_remote_tolerates_missing_health_endpoint(fake_aiohttp):
+    # Some deployments don't expose /health; any HTTP response proves the host
+    # is reachable, so a 404 should still connect successfully.
+    fake_aiohttp.add("GET", "/health", json_data={"error": "not found"}, status=404)
+
+    status = asyncio.run(decision_models.connect_remote_decision_server(url="https://jev.example.com"))
+    assert status["phase"] == "ready"
+    assert status["connection"] == "remote"
+
+
+def test_evaluate_live_remote_posts_to_systemone(fake_aiohttp):
+    decision_models._state.phase = "ready"
+    decision_models._state.connection = "remote"
+    decision_models._state.remote_url = "https://jev.example.com"
+    decision_models._state.remote_api_key = "secret"
+    decision_models._state.model_id = "google/diffusiongemma-26B-A4B-it"
+
+    fake_aiohttp.add(
+        "POST",
+        "/v1/systemone",
+        json_data={"answers": {"q": {"type": "noul", "noul": 0.8}}},
+        status=200,
+    )
+    try:
+        result = asyncio.run(decision_models.evaluate("state", {"q": {"type": "noul", "instructions": "x"}}))
+        assert result["source"] == "live"
+        assert result["answers"]["q"]["noul"] == 0.8
+        assert ("POST", "https://jev.example.com/v1/systemone") in fake_aiohttp.requests
+    finally:
+        decision_models._state.phase = "stopped"
+        decision_models._state.connection = "managed"
+        decision_models._state.remote_url = None
+        decision_models._state.remote_api_key = None
+
+
+def test_evaluate_remote_falls_back_to_mock_on_failure(fake_aiohttp):
+    decision_models._state.phase = "ready"
+    decision_models._state.connection = "remote"
+    decision_models._state.remote_url = "https://jev.example.com"
+
+    fake_aiohttp.add("POST", "/v1/systemone", exception=ConnectionError("remote down"))
+    try:
+        result = asyncio.run(decision_models.evaluate("state", {"q": {"type": "noul", "instructions": "x"}}))
+        assert result["source"] == "mock"
+        assert "remote down" in result["note"]
+    finally:
+        decision_models._state.phase = "stopped"
+        decision_models._state.connection = "managed"
+        decision_models._state.remote_url = None
+
+
+def test_stop_remote_resets_without_container(monkeypatch):
+    fake_cm = _FakeContainerManager()
+    monkeypatch.setattr(decision_models, "container_manager", fake_cm)
+    decision_models._state.phase = "ready"
+    decision_models._state.connection = "remote"
+    decision_models._state.remote_url = "https://jev.example.com"
+    decision_models._state.model_id = "some/model"
+
+    status = asyncio.run(decision_models.stop_decision_server())
+
+    assert status["phase"] == "stopped"
+    assert status["connection"] == "managed"
+    assert status["remote_url"] is None
+    assert status["model_id"] is None
+    # Remote disconnect must not touch the container runtime at all.
+    assert len(fake_cm.stop_calls) == 0

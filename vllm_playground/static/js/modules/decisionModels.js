@@ -158,10 +158,16 @@ const DecisionModelsModule = {
 
         // Track manual edits so status polling never clobbers fields the
         // user is actively customizing before launch.
-        ['dm-model-input', 'dm-image-input', 'dm-canvas-input', 'dm-gpu-device-input'].forEach((id) => {
+        ['dm-model-input', 'dm-image-input', 'dm-canvas-input', 'dm-gpu-device-input',
+            'dm-remote-url-input', 'dm-remote-api-key-input'].forEach((id) => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('input', () => { this.launchFieldsTouched = true; });
         });
+
+        document.querySelectorAll('input[name="dm-run-mode"]').forEach((radio) => {
+            radio.addEventListener('change', () => this._onModeChange());
+        });
+        this._onModeChange();
 
         const logPanel = document.getElementById('dm-log-panel');
         if (logPanel) {
@@ -181,6 +187,39 @@ const DecisionModelsModule = {
 
         const rubricGradeBtn = document.getElementById('dm-rubric-grade-btn');
         if (rubricGradeBtn) rubricGradeBtn.addEventListener('click', () => this._rubricGrade());
+    },
+
+    _launchMode() {
+        const remoteRadio = document.getElementById('dm-run-mode-remote');
+        return remoteRadio && remoteRadio.checked ? 'remote' : 'container';
+    },
+
+    _setMode(mode) {
+        const radio = document.getElementById(`dm-run-mode-${mode}`);
+        if (radio && !radio.checked) {
+            radio.checked = true;
+            this._onModeChange();
+        }
+    },
+
+    _onModeChange() {
+        const remote = this._launchMode() === 'remote';
+        const localFields = document.getElementById('dm-local-fields');
+        const remoteFields = document.getElementById('dm-remote-fields');
+        const launchBtn = document.getElementById('dm-launch-btn');
+        // Highlight the selected run-mode button, same as the vLLM Server tab.
+        const containerLabel = document.getElementById('dm-run-mode-container-label');
+        const remoteLabel = document.getElementById('dm-run-mode-remote-label');
+        if (containerLabel) containerLabel.classList.toggle('active', !remote);
+        if (remoteLabel) remoteLabel.classList.toggle('active', remote);
+        if (localFields) localFields.style.display = remote ? 'none' : 'block';
+        if (remoteFields) remoteFields.style.display = remote ? 'block' : 'none';
+        if (launchBtn && (!this.lastPhase || this.lastPhase === 'stopped' || this.lastPhase === 'error')) {
+            launchBtn.textContent = remote ? 'Connect Decision Endpoint' : 'Launch Decision Server';
+        }
+        // Remote mode needs no local GPU, so re-run the gate logic to lift any
+        // NVIDIA block when switching to remote (and re-apply it for local).
+        this._updateLaunchButtonState();
     },
 
     // -- Hardware gate ---------------------------------------------------------
@@ -220,10 +259,20 @@ const DecisionModelsModule = {
 
     _updateLaunchButtonState() {
         const launchBtn = document.getElementById('dm-launch-btn');
+        const warning = document.getElementById('dm-hardware-warning');
         if (!launchBtn) return;
         // Only hardware-gate the button when a running server isn't already
         // in flight -- never disable Stop/relaunch controls due to this check.
         if (this.lastPhase && this.lastPhase !== 'stopped' && this.lastPhase !== 'error') return;
+        // Remote mode talks to an external endpoint, so no local GPU is
+        // required -- never block Connect on the NVIDIA hardware check.
+        if (this._launchMode() === 'remote') {
+            launchBtn.disabled = false;
+            launchBtn.title = '';
+            if (warning) warning.style.display = 'none';
+            return;
+        }
+        if (warning && this.hardwareOk === false) warning.style.display = 'block';
         launchBtn.disabled = this.hardwareOk === false;
         launchBtn.title = this.hardwareOk === false
             ? 'Blocked: no compatible NVIDIA GPU detected (see warning above).'
@@ -265,18 +314,26 @@ const DecisionModelsModule = {
             message.textContent = status.message || '';
 
             const busy = DM_ACTIVE_PHASES.has(phase);
+            const isRemote = status.connection === 'remote';
             if (launchBtn) {
                 launchBtn.style.display = (phase === 'ready' || busy) ? 'none' : 'inline-block';
-                launchBtn.textContent = busy ? this._phaseLabel(phase) : 'Launch Decision Server';
+                launchBtn.textContent = busy
+                    ? this._phaseLabel(phase)
+                    : (this._launchMode() === 'remote' ? 'Connect Decision Endpoint' : 'Launch Decision Server');
             }
             if (stopBtn) {
                 stopBtn.style.display = (phase === 'ready' || busy) ? 'inline-block' : 'none';
+                stopBtn.textContent = isRemote ? 'Disconnect' : 'Stop';
                 stopBtn.disabled = phase === 'stopping';
             }
             if (mockNote) {
-                mockNote.innerHTML = phase === 'ready'
-                    ? 'The Decision Server is <strong>live</strong> -- results below call the real vLLM-backed sidecar.'
-                    : 'All results below are currently <strong>simulated</strong> &mdash; launch the Decision Server above for live results.';
+                if (phase === 'ready') {
+                    mockNote.innerHTML = isRemote
+                        ? `The Decision Server is <strong>live</strong> -- results below call the remote endpoint at <code>${this._escapeHtml(status.remote_url || '')}</code>.`
+                        : 'The Decision Server is <strong>live</strong> -- results below call the real vLLM-backed sidecar.';
+                } else {
+                    mockNote.innerHTML = 'All results below are currently <strong>simulated</strong> &mdash; launch the Decision Server above for live results.';
+                }
             }
 
             // Prefill launch fields from server-reported defaults (once, and
@@ -302,6 +359,16 @@ const DecisionModelsModule = {
                 }
                 if (canvasInput && !canvasInput.value) {
                     canvasInput.value = (useLiveValues && status.canvas_length) || status.defaults.canvas_length || '';
+                }
+                // Reflect an active/attempted remote connection back into the
+                // form: select remote mode and prefill the URL so a reload or
+                // tab switch shows what's actually connected.
+                if (useLiveValues && isRemote) {
+                    const remoteUrlInput = document.getElementById('dm-remote-url-input');
+                    this._setMode('remote');
+                    if (remoteUrlInput && !remoteUrlInput.value) {
+                        remoteUrlInput.value = status.remote_url || '';
+                    }
                 }
             }
 
@@ -343,16 +410,27 @@ const DecisionModelsModule = {
         const imageInput = document.getElementById('dm-image-input');
         const canvasInput = document.getElementById('dm-canvas-input');
         const gpuInput = document.getElementById('dm-gpu-device-input');
+        const remoteUrlInput = document.getElementById('dm-remote-url-input');
+        const remoteKeyInput = document.getElementById('dm-remote-api-key-input');
+        const mode = this._launchMode();
 
         const body = {
+            mode,
             model_id: modelInput && modelInput.value.trim() ? modelInput.value.trim() : null,
             image_tag: imageInput && imageInput.value.trim() ? imageInput.value.trim() : null,
             canvas_length: canvasInput && canvasInput.value ? parseInt(canvasInput.value, 10) : null,
             gpu_device: gpuInput && gpuInput.value.trim() ? gpuInput.value.trim() : null,
+            remote_url: remoteUrlInput && remoteUrlInput.value.trim() ? remoteUrlInput.value.trim() : null,
+            remote_api_key: remoteKeyInput && remoteKeyInput.value.trim() ? remoteKeyInput.value.trim() : null,
         };
 
+        if (mode === 'remote' && !body.remote_url) {
+            if (message) message.textContent = 'Enter the remote endpoint URL to connect.';
+            return;
+        }
+
         if (launchBtn) launchBtn.disabled = true;
-        if (message) message.textContent = 'Starting Decision Server\u2026';
+        if (message) message.textContent = mode === 'remote' ? 'Connecting to remote endpoint\u2026' : 'Starting Decision Server\u2026';
 
         try {
             const response = await fetch('/api/decision/server/start', {
