@@ -201,6 +201,16 @@ def _reset_decision_server_state():
     decision_models._state.remote_api_key = None
 
 
+def test_get_server_status_defaults_include_remote_model_id():
+    """get_server_status() must expose the remote default model so the
+    frontend can pre-fill the correct value when Remote mode is selected."""
+    status = decision_models.get_server_status()
+    assert "defaults" in status
+    assert status["defaults"]["model_id"] == decision_models.DEFAULT_MODEL_ID
+    assert status["defaults"]["remote_model_id"] == decision_models.DEFAULT_REMOTE_MODEL_ID
+    assert status["defaults"]["remote_model_id"] == "jev-latest"
+
+
 def test_start_decision_server_requires_container_runtime(monkeypatch):
     monkeypatch.setattr(decision_models, "container_manager", None)
     with pytest.raises(RuntimeError, match="container runtime"):
@@ -342,6 +352,21 @@ def test_connect_remote_decision_server_success(fake_aiohttp):
     assert "remote_api_key" not in status
     # /health was probed with a bearer header.
     assert ("GET", "https://jev.example.com:8801/health") in fake_aiohttp.requests
+
+
+def test_connect_remote_uses_jev_latest_default(fake_aiohttp):
+    """When no model_id is supplied, remote mode should default to jev-latest
+    (the official Jev API model alias), not the local DiffusionGemma HF id."""
+    fake_aiohttp.add("GET", "/health", json_data={"status": "ok"}, status=200)
+
+    status = asyncio.run(
+        decision_models.connect_remote_decision_server(
+            url="https://api.typesafe.ai",
+        )
+    )
+
+    assert status["model_id"] == "jev-latest"
+    assert status["phase"] == "ready"
 
 
 def test_connect_remote_rejects_empty_url():

@@ -281,6 +281,7 @@ DECISION_CONTAINER_PORT = 8800  # host port for the dedicated vLLM container
 SIDECAR_PORT = 8801  # structured_server.py sidecar, fronts the container above
 
 DEFAULT_MODEL_ID = "google/diffusiongemma-26B-A4B-it"
+DEFAULT_REMOTE_MODEL_ID = "jev-latest"
 # A nightly tag that was confirmed to exist on Docker Hub as of 2026-10-08.
 #
 # IMPORTANT: Docker Hub only retains nightly-<sha> tags for a few weeks
@@ -376,6 +377,7 @@ def get_server_status() -> Dict[str, Any]:
         # values without duplicating these constants in JS.
         "defaults": {
             "model_id": DEFAULT_MODEL_ID,
+            "remote_model_id": DEFAULT_REMOTE_MODEL_ID,
             "image_tag": DEFAULT_NIGHTLY_IMAGE_TAG,
             "canvas_length": DEFAULT_CANVAS_LENGTH,
         },
@@ -630,7 +632,7 @@ async def connect_remote_decision_server(
             raise ValueError("remote_url is required to connect to a remote Decision endpoint.")
         if not url.lower().startswith(("http://", "https://")):
             raise ValueError("remote_url must start with http:// or https://")
-        model_id = (model_id or DEFAULT_MODEL_ID).strip()
+        model_id = (model_id or DEFAULT_REMOTE_MODEL_ID).strip()
         if not image_catalog.is_valid_custom_tag(model_id):
             raise ValueError(f"Invalid model name/repo: {model_id!r}")
 

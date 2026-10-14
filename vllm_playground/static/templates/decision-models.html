@@ -82,6 +82,8 @@
                             <code>/v1/systemone</code> contract (a running
                             <code>structured_server.py</code> or equivalent). No local
                             container, sidecar, or GPU is used in this mode.</span>
+                        <span class="dm-field-hint">Tip: for the official Jev API, use
+                            <code>https://api.typesafe.ai</code>.</span>
                     </div>
                     <div class="dm-run-field">
                         <label for="dm-remote-api-key-input">API key (optional)</label>
@@ -91,7 +93,7 @@
 
                 <!-- Model: used by both modes -->
                 <div class="dm-run-field">
-                    <label for="dm-model-input">Model (HF repo id)</label>
+                    <label for="dm-model-input" id="dm-model-label">Model (HF repo id)</label>
                     <input type="text" id="dm-model-input" class="dm-textarea dm-textarea-mono dm-input-sm" />
                 </div>
             </div>

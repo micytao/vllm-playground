@@ -217,6 +217,22 @@ const DecisionModelsModule = {
         if (launchBtn && (!this.lastPhase || this.lastPhase === 'stopped' || this.lastPhase === 'error')) {
             launchBtn.textContent = remote ? 'Connect Decision Endpoint' : 'Launch Decision Server';
         }
+        // Swap the model input's default when the mode changes so the user
+        // doesn't accidentally send a DiffusionGemma HF repo id to the
+        // official Jev API or vice versa.
+        const modelInput = document.getElementById('dm-model-input');
+        const modelLabel = document.getElementById('dm-model-label');
+        if (modelLabel) {
+            modelLabel.textContent = remote ? 'Model (e.g. jev-latest)' : 'Model (HF repo id)';
+        }
+        if (modelInput && this._lastDefaults) {
+            const localDefault = this._lastDefaults.model_id || '';
+            const remoteDefault = this._lastDefaults.remote_model_id || '';
+            const current = modelInput.value.trim();
+            if (!current || current === localDefault || current === remoteDefault) {
+                modelInput.value = remote ? remoteDefault : localDefault;
+            }
+        }
         // Remote mode needs no local GPU, so re-run the gate logic to lift any
         // NVIDIA block when switching to remote (and re-apply it for local).
         this._updateLaunchButtonState();
@@ -347,12 +363,16 @@ const DecisionModelsModule = {
             // one-time bad value (e.g. a since-fixed default, or a typo)
             // doesn't keep re-populating the form forever.
             if (!this.launchFieldsTouched && status.defaults) {
+                this._lastDefaults = status.defaults;
                 const useLiveValues = phase === 'ready' || busy;
                 const modelInput = document.getElementById('dm-model-input');
                 const imageInput = document.getElementById('dm-image-input');
                 const canvasInput = document.getElementById('dm-canvas-input');
+                const modeDefault = this._launchMode() === 'remote'
+                    ? (status.defaults.remote_model_id || '')
+                    : (status.defaults.model_id || '');
                 if (modelInput && !modelInput.value) {
-                    modelInput.value = (useLiveValues && status.model_id) || status.defaults.model_id || '';
+                    modelInput.value = (useLiveValues && status.model_id) || modeDefault;
                 }
                 if (imageInput && !imageInput.value) {
                     imageInput.value = (useLiveValues && status.image_tag) || status.defaults.image_tag || '';

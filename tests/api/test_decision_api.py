@@ -89,3 +89,12 @@ def test_settings_accepts_decision_remote_url(client, monkeypatch):
     resp = client.post("/api/settings", json={"decision_remote_url": "https://jev.example.com"})
     assert resp.status_code == 200
     assert captured["decision_remote_url"] == "https://jev.example.com"
+
+
+def test_decision_server_status_defaults_include_remote_model_id(client):
+    resp = client.get("/api/decision/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "defaults" in data
+    assert data["defaults"]["remote_model_id"] == "jev-latest"
+    assert data["defaults"]["model_id"] != data["defaults"]["remote_model_id"]
