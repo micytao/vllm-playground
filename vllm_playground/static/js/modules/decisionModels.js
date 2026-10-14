@@ -70,6 +70,7 @@ const DecisionModelsModule = {
             this.templateLoaded = true;
 
             this._bindEvents();
+            this._prefillFromSavedSettings();
             this._checkHardwareGate();
             this._refreshServerStatus();
             this._startStatusPolling();
@@ -187,6 +188,21 @@ const DecisionModelsModule = {
 
         const rubricGradeBtn = document.getElementById('dm-rubric-grade-btn');
         if (rubricGradeBtn) rubricGradeBtn.addEventListener('click', () => this._rubricGrade());
+    },
+
+    async _prefillFromSavedSettings() {
+        try {
+            const resp = await fetch('/api/settings');
+            if (!resp.ok) return;
+            const settings = await resp.json();
+            const remoteUrl = settings.decision_remote_url || '';
+            if (remoteUrl) {
+                const urlInput = document.getElementById('dm-remote-url-input');
+                if (urlInput && !urlInput.value) urlInput.value = remoteUrl;
+            }
+        } catch (e) {
+            // Non-critical: the form still works, just without pre-fill.
+        }
     },
 
     _launchMode() {
@@ -461,6 +477,16 @@ const DecisionModelsModule = {
             const result = await response.json();
             if (!response.ok) {
                 throw new Error(result.detail || `HTTP ${response.status}`);
+            }
+            // Persist remote connection settings so they survive page reloads.
+            if (mode === 'remote' && body.remote_url) {
+                const app = window.vllmUI;
+                if (app && app.saveSettings) {
+                    app.saveSettings({
+                        decision_remote_url: body.remote_url,
+                        decision_remote_api_key: body.remote_api_key || '',
+                    });
+                }
             }
             this._startLogsPolling();
             const logPanel = document.getElementById('dm-log-panel');
