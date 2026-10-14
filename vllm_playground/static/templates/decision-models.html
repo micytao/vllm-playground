@@ -153,8 +153,8 @@
         <!-- Race Lane Decider: live control-loop demo -->
         <div class="dm-race-body" id="dm-race-body" style="display: none;">
             <div class="dm-race-toolbar">
-                <button class="btn btn-primary btn-sm" id="dm-race-start-btn">Start</button>
-                <button class="btn btn-secondary btn-sm" id="dm-race-reset-btn">Reset</button>
+                <button class="btn btn-primary btn-sm" id="dm-race-start-btn">&#9654; Start</button>
+                <button class="btn btn-secondary btn-sm" id="dm-race-reset-btn">&#8634; Reset</button>
                 <label class="dm-race-speed-label">Speed
                     <select id="dm-race-speed-select">
                         <option value="1400">Slow</option>
@@ -166,13 +166,17 @@
             </div>
 
             <div class="dm-race-stats">
-                <div class="dm-race-stat"><span class="dm-race-stat-label">Rows survived</span><span class="dm-race-stat-value" id="dm-race-score">0</span></div>
-                <div class="dm-race-stat"><span class="dm-race-stat-label">Hazard probability</span><span class="dm-race-stat-value" id="dm-race-hazard">&mdash;</span></div>
-                <div class="dm-race-stat"><span class="dm-race-stat-label">Decision latency</span><span class="dm-race-stat-value" id="dm-race-latency">&mdash;</span></div>
+                <div class="dm-race-stat dm-race-stat-score"><span class="dm-race-stat-label">&#127942; Rows survived</span><span class="dm-race-stat-value" id="dm-race-score">0</span></div>
+                <div class="dm-race-stat dm-race-stat-hazard"><span class="dm-race-stat-label">&#9888;&#65039; Hazard</span><span class="dm-race-stat-value" id="dm-race-hazard">&mdash;</span></div>
+                <div class="dm-race-stat"><span class="dm-race-stat-label">&#9201; Latency</span><span class="dm-race-stat-value" id="dm-race-latency">&mdash;</span></div>
             </div>
 
             <div class="dm-race-track" id="dm-race-track"></div>
-            <p class="dm-race-message" id="dm-race-message">Press Start -- every tick, the current track layout becomes one batched Choice+Noul request to the Decision Server.</p>
+            <p class="dm-race-message" id="dm-race-message">Press Start &mdash; every tick, the current track layout becomes one batched Choice+Noul request to the Decision Server.</p>
+            <details class="dm-race-explainer">
+                <summary>How it works</summary>
+                <p>Each tick compresses the 3-lane road ahead into a JSON state object and sends a single request with two questions: a <strong>Choice</strong> (which lane?) and a <strong>Noul</strong> (collision likely?). The model picks a lane; your code acts on the answer. This is the <em>control-loop</em> pattern &mdash; fast, typed decisions driving real-time behavior.</p>
+            </details>
         </div>
 
         <!-- Rubric Grading Puzzle: editable submission + rubric, N x Score -->

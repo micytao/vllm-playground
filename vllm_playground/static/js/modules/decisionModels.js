@@ -825,17 +825,45 @@ const DecisionModelsModule = {
     _raceRenderTrack() {
         const track = document.getElementById('dm-race-track');
         if (!track || !this.race) return;
-        const rowsHtml = this.race.rows.slice().reverse().map((row) => `
-            <div class="dm-race-row">
-                ${DM_RACE_LANES.map((lane) => `<div class="dm-race-cell ${row[lane] ? 'dm-race-obstacle' : ''}"></div>`).join('')}
-            </div>
-        `).join('');
+
+        const rows = this.race.rows;
+        const totalRows = rows.length;
+
+        const rowsHtml = rows.slice().reverse().map((row, visualIdx) => {
+            const distFromCar = visualIdx;
+            const proximityClass = distFromCar === 0 ? 'dm-race-row-imminent' :
+                                   distFromCar === 1 ? 'dm-race-row-near' : '';
+            return `
+            <div class="dm-race-row ${proximityClass}">
+                ${DM_RACE_LANES.map((lane) => {
+                    let cls = 'dm-race-cell';
+                    if (row[lane]) cls += ' dm-race-obstacle';
+                    return `<div class="${cls}"><span class="dm-race-cell-icon">${row[lane] ? '\u26A0' : ''}</span></div>`;
+                }).join('')}
+            </div>`;
+        }).join('');
+
+        const crashed = this.race._justCrashed;
         const carHtml = `
             <div class="dm-race-row dm-race-car-row">
-                ${DM_RACE_LANES.map((lane) => `<div class="dm-race-cell ${lane === this.race.carLane ? 'dm-race-car' : ''}"></div>`).join('')}
+                ${DM_RACE_LANES.map((lane) => {
+                    if (lane === this.race.carLane) {
+                        return `<div class="dm-race-cell dm-race-car ${crashed ? 'dm-race-car-crash' : ''}">
+                            <span class="dm-race-cell-icon">${crashed ? '\uD83D\uDCA5' : '\uD83C\uDFCE\uFE0F'}</span>
+                        </div>`;
+                    }
+                    return `<div class="dm-race-cell"></div>`;
+                }).join('')}
             </div>
         `;
-        track.innerHTML = rowsHtml + carHtml;
+
+        const laneLabels = `
+            <div class="dm-race-row dm-race-lane-labels">
+                ${DM_RACE_LANES.map((lane) => `<div class="dm-race-lane-label">${lane.charAt(0).toUpperCase() + lane.slice(1)}</div>`).join('')}
+            </div>
+        `;
+
+        track.innerHTML = rowsHtml + carHtml + laneLabels;
     },
 
     _raceSetMessage(message) {
@@ -945,7 +973,9 @@ const DecisionModelsModule = {
 
             this.race.rows.shift();
             this.race.rows.push(this._raceBuildRow());
-            this._raceSetMessage(`Decided lane: ${decidedLane} (hazard ${hazard !== null && hazard !== undefined ? Math.round(hazard * 100) : '?'}%).`);
+            const hazardPct = hazard !== null && hazard !== undefined ? Math.round(hazard * 100) : null;
+            const hazardIcon = hazardPct !== null ? (hazardPct > 60 ? '\u26A0\uFE0F' : hazardPct > 30 ? '\u26AB' : '\u2705') : '';
+            this._raceSetMessage(`${hazardIcon} Lane: ${decidedLane} \u2022 Hazard: ${hazardPct !== null ? hazardPct + '%' : '?'} \u2022 Score: ${this.race.score}`);
         } catch (error) {
             console.error('Race tick failed:', error);
             this._raceSetMessage(`Request failed: ${error.message}`);
@@ -958,10 +988,17 @@ const DecisionModelsModule = {
     _raceCrash() {
         const survived = this.race.score;
         this._raceStop();
-        this._raceSetMessage(`Crashed after ${survived} row(s) survived! Press Start to try again.`);
-        this.race.carLane = 'center';
-        this._raceGenerateInitialRows();
+        this.race._justCrashed = true;
         this._raceRenderTrack();
+        this._raceSetMessage(`\uD83D\uDCA5 Crashed after ${survived} row${survived !== 1 ? 's' : ''} survived! Press Start to try again.`);
+        this.race.carLane = 'center';
+        setTimeout(() => {
+            if (this.race) {
+                this.race._justCrashed = false;
+                this._raceGenerateInitialRows();
+                this._raceRenderTrack();
+            }
+        }, 1200);
     },
 
     // -- Rubric Grading Puzzle (interactive) -----------------------------------
