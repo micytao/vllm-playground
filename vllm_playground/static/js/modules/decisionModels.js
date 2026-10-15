@@ -528,6 +528,8 @@ const DecisionModelsModule = {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
             this.useCases = data.use_cases || [];
+            this.categoryOrder = data.category_order || [];
+            this.categoryLabels = data.category_labels || {};
             this.useCasesLoaded = true;
             this._renderGallery();
         } catch (error) {
@@ -547,18 +549,69 @@ const DecisionModelsModule = {
             return;
         }
 
-        gallery.innerHTML = this.useCases.map((uc) => `
-            <button class="dm-card" data-use-case-id="${this._escapeHtml(uc.id)}">
-                <div class="dm-card-header">
-                    <span class="dm-card-title">${this._escapeHtml(uc.title)}</span>
-                    <span class="dm-card-subtitle">${this._escapeHtml(uc.subtitle || '')}</span>
-                </div>
-                <p class="dm-card-description">${this._escapeHtml(uc.description || '')}</p>
-                <div class="dm-card-tags">
-                    ${(uc.tags || []).map((tag) => `<span class="dm-tag">${this._escapeHtml(tag)}</span>`).join('')}
-                </div>
-            </button>
-        `).join('');
+        const byCategory = {};
+        for (const uc of this.useCases) {
+            const cat = uc.category || 'other';
+            if (!byCategory[cat]) byCategory[cat] = [];
+            byCategory[cat].push(uc);
+        }
+
+        const order = (this.categoryOrder && this.categoryOrder.length
+            ? this.categoryOrder
+            : Object.keys(byCategory)
+        ).filter((cat) => byCategory[cat] && byCategory[cat].length);
+
+        const activeTab = this._activeGalleryTab && (this._activeGalleryTab === '__all__' || order.includes(this._activeGalleryTab))
+            ? this._activeGalleryTab
+            : '__all__';
+        this._activeGalleryTab = activeTab;
+
+        let tabsHtml = '<div class="dm-gallery-tabs" role="tablist">';
+        tabsHtml += `<button class="dm-gallery-tab${activeTab === '__all__' ? ' active' : ''}" data-cat="__all__" role="tab">All <span class="dm-gallery-tab-count">${this.useCases.length}</span></button>`;
+        for (const cat of order) {
+            const label = (this.categoryLabels && this.categoryLabels[cat]) || cat;
+            const shortLabel = label.split('(')[0].trim();
+            const count = byCategory[cat].length;
+            const isActive = cat === activeTab;
+            tabsHtml += `<button class="dm-gallery-tab${isActive ? ' active' : ''}" data-cat="${this._escapeHtml(cat)}" role="tab">${this._escapeHtml(shortLabel)} <span class="dm-gallery-tab-count">${count}</span></button>`;
+        }
+        tabsHtml += '</div>';
+
+        const visibleCats = activeTab === '__all__' ? order : [activeTab];
+
+        let cardsHtml = '<div class="dm-gallery-tab-panel" role="tabpanel">';
+        for (const cat of visibleCats) {
+            const items = byCategory[cat];
+            if (!items || !items.length) continue;
+            if (activeTab === '__all__') {
+                const label = (this.categoryLabels && this.categoryLabels[cat]) || cat;
+                cardsHtml += `<h3 class="dm-gallery-category-heading">${this._escapeHtml(label)}</h3>`;
+            }
+            cardsHtml += '<div class="dm-gallery-category-group">';
+            cardsHtml += items.map((uc) => `
+                <button class="dm-card" data-use-case-id="${this._escapeHtml(uc.id)}">
+                    <div class="dm-card-header">
+                        <span class="dm-card-title">${this._escapeHtml(uc.title)}</span>
+                        <span class="dm-card-subtitle">${this._escapeHtml(uc.subtitle || '')}</span>
+                    </div>
+                    <p class="dm-card-description">${this._escapeHtml(uc.description || '')}</p>
+                    <div class="dm-card-tags">
+                        ${(uc.tags || []).map((tag) => `<span class="dm-tag">${this._escapeHtml(tag)}</span>`).join('')}
+                    </div>
+                </button>
+            `).join('');
+            cardsHtml += '</div>';
+        }
+        cardsHtml += '</div>';
+
+        gallery.innerHTML = tabsHtml + cardsHtml;
+
+        gallery.querySelectorAll('.dm-gallery-tab').forEach((tab) => {
+            tab.addEventListener('click', () => {
+                this._activeGalleryTab = tab.dataset.cat;
+                this._renderGallery();
+            });
+        });
 
         gallery.querySelectorAll('.dm-card').forEach((card) => {
             card.addEventListener('click', () => this._openUseCase(card.dataset.useCaseId));

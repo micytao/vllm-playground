@@ -200,9 +200,8 @@
 }
 
 .dm-gallery {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 14px;
+    display: flex;
+    flex-direction: column;
 }
 
 .dm-gallery-loading,
@@ -211,6 +210,88 @@
     color: var(--text-secondary);
     font-size: 0.85rem;
     padding: 12px 0;
+}
+
+/* -- Category tab bar ---------------------------------------------------- */
+
+.dm-gallery-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 16px;
+}
+
+.dm-gallery-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 14px;
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+    border-radius: 20px;
+    background: transparent;
+    color: var(--text-secondary, #999);
+    font-size: 0.82rem;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.dm-gallery-tab:hover:not(.active) {
+    border-color: var(--primary-color, #4f46e5);
+    color: var(--text-primary, #eee);
+}
+
+.dm-gallery-tab.active {
+    background: var(--primary-color, #4f46e5);
+    border-color: var(--primary-color, #4f46e5);
+    color: #fff;
+}
+
+.dm-gallery-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.1);
+    color: inherit;
+}
+
+.dm-gallery-tab.active .dm-gallery-tab-count {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+/* -- Tab panel / category groups ----------------------------------------- */
+
+.dm-gallery-tab-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.dm-gallery-category-heading {
+    margin: 20px 0 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    letter-spacing: 0.03em;
+    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+    padding-bottom: 6px;
+}
+
+.dm-gallery-category-heading:first-child {
+    margin-top: 0;
+}
+
+.dm-gallery-category-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+    margin-bottom: 8px;
 }
 
 .dm-card {

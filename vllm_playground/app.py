@@ -5685,7 +5685,11 @@ async def get_recipe_config(category_id: str, recipe_id: str):
 @app.get("/api/decision/examples")
 async def get_decision_examples():
     """Return the curated Decision Models use-case catalog for the gallery."""
-    return {"use_cases": decision_models.list_use_cases()}
+    return {
+        "use_cases": decision_models.list_use_cases(),
+        "category_order": decision_models.CATEGORY_ORDER,
+        "category_labels": decision_models.CATEGORY_LABELS,
+    }
 
 
 @app.get("/api/decision/status")

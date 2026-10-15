@@ -21,12 +21,16 @@ from vllm_playground import decision_models
 
 def test_list_use_cases_has_unique_ids_and_required_fields():
     use_cases = decision_models.list_use_cases()
-    assert len(use_cases) == 7
+    assert len(use_cases) == 12
     ids = [uc["id"] for uc in use_cases]
     assert len(ids) == len(set(ids))
     for uc in use_cases:
         assert uc["title"]
         assert uc["questions"]
+        assert "category" in uc, f"use case {uc['id']} missing 'category' field"
+        assert uc["category"] in decision_models.CATEGORY_ORDER, (
+            f"use case {uc['id']} has unknown category {uc['category']!r}"
+        )
 
 
 def test_get_use_case_found_and_missing():
