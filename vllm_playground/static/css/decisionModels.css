@@ -368,7 +368,13 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    gap: 12px;
     margin-bottom: 12px;
+}
+
+.dm-run-header > div:first-child {
+    flex: 1;
+    min-width: 0;
 }
 
 .dm-run-header h3 {
@@ -380,7 +386,6 @@
     margin: 0;
     font-size: 0.82rem;
     color: var(--text-secondary);
-    max-width: 560px;
 }
 
 .dm-run-close {
