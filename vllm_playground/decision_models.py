@@ -867,14 +867,58 @@ async def connect_remote_decision_server(
 
         try:
             async with aiohttp.ClientSession() as session:
+                # Step 1: reachability check via /health
                 async with session.get(
                     f"{root}/health", headers=headers, timeout=aiohttp.ClientTimeout(total=10)
                 ) as resp:
-                    # A 2xx is ideal, but some Jev/sidecar deployments don't
-                    # expose /health; any HTTP response (even 404/405) proves
-                    # the host is reachable, so only a transport error below
-                    # counts as "unreachable".
                     _log(f"Remote endpoint responded to /health with HTTP {resp.status}")
+
+                # Step 2: auth + model validation via a minimal /v1/systemone probe
+                _log("Validating credentials with a probe request to /v1/systemone ...")
+                probe_body = {
+                    "model": model_id,
+                    "state": "connection test",
+                    "questions": {
+                        "_probe": {
+                            "type": "noul",
+                            "instructions": "Is this a test?",
+                        }
+                    },
+                }
+                async with session.post(
+                    f"{root}/v1/systemone",
+                    json=probe_body,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
+                    probe_status = resp.status
+                    if probe_status == 401:
+                        raise RuntimeError("Authentication failed -- check your API key.")
+                    if probe_status == 403:
+                        raise RuntimeError("Access denied -- your API key does not have permission for this endpoint.")
+                    if probe_status == 404:
+                        raise RuntimeError(f"Endpoint {root}/v1/systemone not found (HTTP 404). Is the URL correct?")
+                    if probe_status >= 400:
+                        body = await resp.json(content_type=None)
+                        detail = None
+                        if isinstance(body, dict):
+                            detail = (
+                                body.get("error", {}).get("message")
+                                if isinstance(body.get("error"), dict)
+                                else body.get("error")
+                            )
+                        raise RuntimeError(detail or f"Probe request failed with HTTP {probe_status}.")
+                    _log(f"Probe request succeeded (HTTP {probe_status}).")
+        except RuntimeError as e:
+            _state.phase = "error"
+            _state.last_error = str(e)
+            _state.message = f"Remote Decision endpoint validation failed: {e}"
+            _state.connection = "managed"
+            _state.remote_url = None
+            _state.remote_api_key = None
+            _state.model_id = None
+            _log(f"ERROR: {_state.message}")
+            raise
         except Exception as e:
             _state.phase = "error"
             _state.last_error = str(e)

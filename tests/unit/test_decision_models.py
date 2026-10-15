@@ -338,6 +338,9 @@ def test_get_server_logs_returns_buffered_lines():
 
 def test_connect_remote_decision_server_success(fake_aiohttp):
     fake_aiohttp.add("GET", "/health", json_data={"status": "ok"}, status=200)
+    fake_aiohttp.add(
+        "POST", "/v1/systemone", json_data={"answers": {"_probe": {"type": "noul", "noul": 0.99}}}, status=200
+    )
 
     status = asyncio.run(
         decision_models.connect_remote_decision_server(
@@ -356,12 +359,17 @@ def test_connect_remote_decision_server_success(fake_aiohttp):
     assert "remote_api_key" not in status
     # /health was probed with a bearer header.
     assert ("GET", "https://jev.example.com:8801/health") in fake_aiohttp.requests
+    # Credentials were validated via a probe POST.
+    assert ("POST", "https://jev.example.com:8801/v1/systemone") in fake_aiohttp.requests
 
 
 def test_connect_remote_uses_jev_latest_default(fake_aiohttp):
     """When no model_id is supplied, remote mode should default to jev-latest
     (the official Jev API model alias), not the local DiffusionGemma HF id."""
     fake_aiohttp.add("GET", "/health", json_data={"status": "ok"}, status=200)
+    fake_aiohttp.add(
+        "POST", "/v1/systemone", json_data={"answers": {"_probe": {"type": "noul", "noul": 0.99}}}, status=200
+    )
 
     status = asyncio.run(
         decision_models.connect_remote_decision_server(
@@ -408,10 +416,32 @@ def test_connect_remote_tolerates_missing_health_endpoint(fake_aiohttp):
     # Some deployments don't expose /health; any HTTP response proves the host
     # is reachable, so a 404 should still connect successfully.
     fake_aiohttp.add("GET", "/health", json_data={"error": "not found"}, status=404)
+    fake_aiohttp.add(
+        "POST", "/v1/systemone", json_data={"answers": {"_probe": {"type": "noul", "noul": 0.99}}}, status=200
+    )
 
     status = asyncio.run(decision_models.connect_remote_decision_server(url="https://jev.example.com"))
     assert status["phase"] == "ready"
     assert status["connection"] == "remote"
+
+
+def test_connect_remote_rejects_invalid_api_key(fake_aiohttp):
+    """A 401 from the probe request should fail the connection with a clear
+    authentication error, not silently show 'connected'."""
+    fake_aiohttp.add("GET", "/health", json_data={"status": "ok"}, status=200)
+    fake_aiohttp.add("POST", "/v1/systemone", json_data={"error": "invalid api key"}, status=401)
+
+    with pytest.raises(RuntimeError, match="Authentication failed"):
+        asyncio.run(
+            decision_models.connect_remote_decision_server(
+                url="https://jev.example.com",
+                api_key="bad-key",
+            )
+        )
+
+    status = decision_models.get_server_status()
+    assert status["phase"] == "error"
+    assert status["connection"] == "managed"
 
 
 def test_evaluate_live_remote_posts_to_systemone(fake_aiohttp):
