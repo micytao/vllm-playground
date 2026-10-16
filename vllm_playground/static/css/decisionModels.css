@@ -53,32 +53,131 @@
     margin-left: 6px;
 }
 
-/* --- Page layout --- */
-.dm-layout {
+/* =============================================================================
+   Page Layout (two-column + bottom logs, matching vLLM-Omni)
+   ============================================================================= */
+
+.dm-content-wrapper {
     display: flex;
     flex-direction: column;
-    height: 100%;
-    overflow-y: auto;
-    padding: 20px 24px 32px;
-    gap: 20px;
+    height: calc(100vh - 100px);
+    gap: 0;
+    overflow: hidden;
 }
 
-/* --- Experimental banner --- */
+.dm-layout {
+    display: flex;
+    gap: 0;
+    align-items: stretch;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* =============================================================================
+   Config Panel (left sidebar, matching Omni/vLLM Server)
+   ============================================================================= */
+
+.dm-config-panel {
+    position: relative;
+    background: var(--bg-secondary);
+    padding: 16px 20px;
+    overflow-y: auto;
+    width: 380px;
+    min-width: 300px;
+    max-width: 500px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border-color);
+}
+
+.dm-config-panel h2 {
+    margin: 0 0 16px 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.dm-config-panel .config-section {
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+}
+
+.dm-config-panel .config-section:last-child {
+    border-bottom: none;
+}
+
+.dm-config-panel .config-section-header h3 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0 0 10px 0;
+    color: var(--text-secondary);
+}
+
+.dm-config-panel .form-group {
+    margin-bottom: 14px;
+}
+
+.dm-config-panel .form-group:last-child {
+    margin-bottom: 0;
+}
+
+.dm-config-panel .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    font-size: 0.85rem;
+}
+
+.dm-config-panel .form-control {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-tertiary, var(--bg-primary, #0f172a));
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    box-sizing: border-box;
+}
+
+.dm-config-panel .form-help {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.dm-config-panel .form-help a {
+    color: var(--primary-color, #4f46e5);
+}
+
+.dm-config-panel .button-group {
+    display: flex;
+    gap: 8px;
+}
+
+.dm-config-panel .server-controls-section {
+    margin-top: 8px;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+/* --- Experimental banner (compact, inside config panel) --- */
 .dm-banner {
     display: flex;
-    gap: 12px;
+    gap: 10px;
     align-items: flex-start;
     background: rgba(217, 119, 6, 0.1);
     border: 1px solid rgba(217, 119, 6, 0.35);
     border-radius: 8px;
-    padding: 12px 16px;
-    font-size: 0.85rem;
+    padding: 10px 14px;
+    font-size: 0.78rem;
     line-height: 1.5;
     color: var(--text-secondary);
+    margin-bottom: 16px;
 }
 
 .dm-banner-icon {
-    font-size: 1.1rem;
+    font-size: 1rem;
     flex-shrink: 0;
 }
 
@@ -86,25 +185,17 @@
     color: var(--text-primary);
 }
 
-/* --- Decision Server panel --- */
-.dm-server-panel {
-    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-    border-radius: 8px;
-    padding: 14px 16px;
-    background: var(--bg-secondary, rgba(255, 255, 255, 0.03));
-}
-
-.dm-server-panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.dm-server-status {
+/* --- Server status bar --- */
+.dm-server-status-bar {
     display: flex;
     align-items: center;
     gap: 8px;
+    margin-top: 10px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.9rem;
     font-weight: 600;
+    border: 1px solid var(--border-color);
 }
 
 .dm-status-dot {
@@ -113,6 +204,7 @@
     border-radius: 50%;
     background: #6b7280;
     display: inline-block;
+    flex-shrink: 0;
 }
 
 .dm-status-dot.ready {
@@ -138,52 +230,31 @@
 }
 
 .dm-server-message {
-    margin: 8px 0 0;
-    font-size: 0.82rem;
+    margin: 6px 0 0;
+    font-size: 0.78rem;
     color: var(--text-secondary);
 }
 
 .dm-hardware-warning {
-    margin: 8px 0 0;
+    margin: 0 0 8px;
     font-size: 0.8rem;
     color: #f59e0b;
 }
 
-.dm-launch-fields {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 10px 14px;
-    margin-top: 8px;
-}
-
-.dm-input-sm {
-    padding: 6px 8px;
-}
-
-.dm-field-hint {
-    display: block;
-    font-size: 0.72rem;
-    color: var(--text-secondary);
-    margin-top: 3px;
-}
-
-.dm-field-hint a {
-    color: var(--primary-color, #4f46e5);
-}
-
-.dm-log-output {
-    max-height: 220px;
-    overflow-y: auto;
-    background: var(--bg-primary, #0f172a);
-    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-    border-radius: 6px;
-    padding: 10px 12px;
+.dm-textarea-mono {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 0.72rem;
-    line-height: 1.5;
-    color: var(--text-secondary);
-    white-space: pre-wrap;
-    word-break: break-word;
+    font-size: 0.78rem;
+}
+
+/* =============================================================================
+   Main Panel (right side: gallery + run panel)
+   ============================================================================= */
+
+.dm-main-panel {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 20px 24px 32px;
 }
 
 /* --- Gallery --- */
@@ -362,6 +433,7 @@
     border-radius: 8px;
     padding: 16px;
     background: var(--bg-secondary, rgba(255, 255, 255, 0.03));
+    margin-top: 20px;
 }
 
 .dm-run-header {
@@ -427,11 +499,6 @@
     font-size: 0.85rem;
     font-family: inherit;
     resize: vertical;
-}
-
-.dm-textarea-mono {
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 0.78rem;
 }
 
 .dm-advanced summary {
@@ -587,6 +654,38 @@
     font-size: 0.75rem;
     white-space: pre-wrap;
     margin: 0;
+}
+
+/* =============================================================================
+   Logs Row (consistent with vLLM Server / Omni)
+   ============================================================================= */
+
+#dm-logs-row {
+    flex: 0 0 auto;
+    margin-top: 0;
+    border-radius: 0;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+}
+
+#dm-logs-row .logs-row-header {
+    border-radius: 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+#dm-logs-row.collapsed .logs-row-header {
+    border-radius: 0;
+    border-bottom: none;
+}
+
+#dm-logs-row .logs-row-content {
+    max-height: 200px;
+}
+
+#dm-logs-container {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.78rem;
 }
 
 /* --- Race Lane Decider (interactive) --- */
@@ -848,4 +947,22 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+/* =============================================================================
+   Responsive
+   ============================================================================= */
+
+@media (max-width: 900px) {
+    .dm-layout {
+        flex-direction: column;
+    }
+
+    .dm-config-panel {
+        width: 100%;
+        max-width: none;
+        max-height: 40vh;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+    }
 }

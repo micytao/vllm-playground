@@ -6,6 +6,22 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 ---
 
+## [v0.2.0](releases/v0.2.0.md) - 2026-10-17
+
+**Decision Models (Experimental)**
+
+### Added
+- **Decision Models tab** — New experimental sandbox for structured-read decision models (DiffusionGemma / Jev System One). Gallery of 12 use cases across 4 categories (Noul, Choice, Score, Combination), mock-by-default evaluation, and two interactive demos (Race Lane Decider, Rubric Grading Puzzle). Managed container lifecycle fully isolated from the main Server Config flow. See **[Decision Models Guide](docs/DECISION_MODELS_GUIDE.md)**.
+- **Remote Jev endpoint** — Connect to an external Jev API (e.g. `https://api.typesafe.ai`) with API key authentication. Defaults to `jev-latest` model. Credential probe validates the API key at connect time.
+- **Use case gallery with category tabs** — 12 curated use cases organized into tabbed categories with pill-style filters and count badges. Five new use cases sourced from official TypeSafe cookbooks: LLM Guardrails, Content Moderation, RAG Passage Reranking, Citation Verification, Confidence-Gated Model Routing.
+- **Settings persistence for Decision Models** — Remote endpoint URL and API key are saved/restored via the Settings store.
+
+### Fixed
+- **Debug endpoint auth gate** (CWE-862) — Both debug endpoints gated behind an explicit opt-in environment variable.
+- **SQL injection template literal fix** — Resolved a potential injection vector in `utils.custom` string templating.
+
+---
+
 ## [v0.1.9](releases/v0.1.9.md) - 2026-09-20
 
 **CI/CD Pipeline, Configurable Container Images & Remote Fixes**
@@ -296,6 +312,10 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| v0.2.0 | 2026-10-17 | Decision Models (Experimental), remote Jev endpoint, use case gallery with category tabs |
+| v0.1.9 | 2026-09-20 | CI/CD pipeline, configurable container images, remote mode fixes |
+| v0.1.8 | 2026-04-06 | Multi-instance backends, remote chat model list |
+| v0.1.7 | 2026-03-03 | Hotfix & tutorials |
 | v0.1.6 | 2026-03-02 | Observability dashboard, PagedAttention visualizer, token counter, logprobs, speculative decoding |
 | v0.1.5 | 2026-02-08 | Remote server, VLM vision support, markdown rendering |
 | v0.1.4 | 2026-02-01 | vLLM-Omni multimodal, Studio UI, pre-commit hooks |

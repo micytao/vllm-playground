@@ -5700,10 +5700,63 @@ async def get_decision_status():
 
 @app.get("/api/decision/server/logs")
 async def get_decision_server_logs(limit: int = 200):
-    """Return recently buffered Decision Server + sidecar log lines, for the
-    frontend's log panel to poll (no WebSocket plumbing needed for this
-    isolated, self-contained tab)."""
+    """Return recently buffered Decision Server + sidecar log lines (legacy
+    HTTP polling fallback; the frontend now prefers the WebSocket below)."""
     return {"lines": decision_models.get_server_logs(limit=limit)}
+
+
+# -- Decision Models WebSocket log streaming --------------------------------
+
+decision_websocket_connections: List[WebSocket] = []
+
+
+async def broadcast_decision_log(message: str):
+    """Broadcast a log line to all connected Decision Models WebSocket clients."""
+    if not message:
+        return
+    disconnected = []
+    for ws in decision_websocket_connections:
+        try:
+            await ws.send_text(message)
+        except Exception as e:
+            logger.error(f"Error sending to decision websocket: {e}")
+            disconnected.append(ws)
+    for ws in disconnected:
+        decision_websocket_connections.remove(ws)
+
+
+# Register the broadcast callback so decision_models._log() pushes lines
+# over WebSocket automatically.
+decision_models.set_log_callback(broadcast_decision_log)
+
+
+@app.websocket("/ws/decision/logs")
+async def websocket_decision_logs(websocket: WebSocket):
+    """WebSocket endpoint for streaming Decision Server logs."""
+    await websocket.accept()
+    decision_websocket_connections.append(websocket)
+
+    try:
+        await websocket.send_text("[Decision] Connected to Decision Server log stream")
+
+        # Send buffered log history so the client sees recent logs immediately
+        for line in decision_models.get_server_logs(limit=200):
+            await websocket.send_text(line)
+
+        # Keep connection alive
+        while True:
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                await websocket.send_text("")
+
+    except WebSocketDisconnect:
+        logger.info("Decision WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Decision WebSocket error: {e}")
+    finally:
+        if websocket in decision_websocket_connections:
+            decision_websocket_connections.remove(websocket)
 
 
 class DecisionServerStartRequest(BaseModel):

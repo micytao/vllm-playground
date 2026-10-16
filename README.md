@@ -30,15 +30,16 @@ Run subprocess, container, and remote vLLM servers side by side; switch tabs, sa
 
 ![Instances management grid](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-multiinstnaces-view.png)
 
-### 🆕 What's New in v0.1.9
+### 🆕 What's New in v0.2.0
 
-- **Decision Models (Experimental)** — New sandbox tab for vLLM's native structured-read decision capability (DiffusionGemma, single-step diffusion canvas reads), fully isolated from the main Server Config flow, with a mock-by-default gallery plus two interactive demos (a live race-lane control loop and a batched rubric grader). Requires a nightly vLLM build and an NVIDIA GPU — see **[Decision Models Guide](docs/DECISION_MODELS_GUIDE.md)**.
-- **Configurable container image versions** — New Settings tab to pick vLLM/vLLM-Omni image versions per accelerator from a live Docker Hub-sourced dropdown, with persisted overrides and an offline fallback list.
-- **MaaS/KServe per-model routing** — Remote mode now detects and uses gateways that advertise a dedicated base URL per model instead of one shared OpenAI-compatible root, with a self-healing retry.
-- **Remote mode fixes** — Streaming errors now surface as real, readable messages instead of a generic "No response from model"; fixed a token-count fallback that fabricated "1 out" tokens on failed requests.
-- **CI/CD pipeline** — Every change now runs through an automated test suite (lint, unit, API, container/Kubernetes managers, frontend) before merging, plus a gated release process for PyPI publishing — see **[CI/CD Pipeline guide](docs/CI_CD_PIPELINE.md)**.
+![Decision Models tab](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/decision%20models.png)
 
-*v0.1.8 added multi-instance backends, tougher Remote/LiteLLM probing, and per-instance benchmarking; v0.1.6 introduced the Observability Dashboard, PagedAttention visualizer, token counter, logprobs, and speculative decoding — see **[Changelog](CHANGELOG.md)** for the full history.*
+- **Decision Models (Experimental)** — A brand-new sandbox tab for structured-read decisions powered by DiffusionGemma and Jev / System One. Gallery of 12 use cases across 4 tabbed categories (Noul, Choice, Score, Combination), mock-by-default evaluation, and two interactive demos (Race Lane Decider, Rubric Grading Puzzle). Fully isolated from the main Server Config flow — see **[Decision Models Guide](docs/DECISION_MODELS_GUIDE.md)**.
+- **Remote Jev endpoint** — Connect to an external Jev API (e.g. `https://api.typesafe.ai`) with API key authentication. Credentials are validated at connect time with a probe request, not just a reachability check.
+- **5 new use cases from TypeSafe cookbooks** — LLM Guardrails, Content Moderation, RAG Passage Reranking, Citation Verification, and Confidence-Gated Model Routing, organized into a tabbed category gallery with count badges.
+- **Security hardening** — Debug endpoints gated behind explicit opt-in (CWE-862); SQL injection template literal fix.
+
+*v0.1.9 added CI/CD pipeline, configurable container images, and remote mode fixes; v0.1.8 added multi-instance backends — see **[Changelog](CHANGELOG.md)** for the full history.*
 
 ---
 
@@ -77,6 +78,7 @@ vllm-playground status              # Check status
 
 | Feature | Description |
 |---------|-------------|
+| 🧠 **Decision Models** | Structured-read decisions (Noul, Choice, Score) with Jev/DiffusionGemma — local or remote |
 | 🌐 **Remote Server** | Connect to any remote vLLM instance via URL + API key |
 | 🧩 **Multi-instance** | Several backends at once (subprocess, container, remote); tabs + **[Instances](docs/MULTI_INSTANCE_GUIDE.md)** page |
 | 🖼️ **VLM Support** | Upload images and chat with vision models (Qwen2.5-VL, LLaVA) |
@@ -212,6 +214,8 @@ See [Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md) for details.
 
 ### Releases
 - **[Changelog](CHANGELOG.md)** - Version history and changes
+- **[v0.2.0](releases/v0.2.0.md)** - Decision Models (Experimental), remote Jev endpoint, category gallery
+- **[v0.1.9](releases/v0.1.9.md)** - CI/CD pipeline, configurable container images, remote mode fixes
 - **[v0.1.8](releases/v0.1.8.md)** - Multi-instance backends & remote polish
 - **[v0.1.7](releases/v0.1.7.md)** - Hotfix & tutorials
 - **[v0.1.6](releases/v0.1.6.md)** - Observability dashboard, PagedAttention visualizer, token counter, logprobs

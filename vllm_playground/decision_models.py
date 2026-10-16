@@ -566,10 +566,27 @@ class _ServerState:
 
 _state = _ServerState()
 
+# Optional async callback set by app.py to broadcast log lines over WebSocket.
+_log_callback = None
+
+
+def set_log_callback(callback):
+    """Register an async callback that receives each log line for WebSocket broadcast."""
+    global _log_callback
+    _log_callback = callback
+
 
 def _log(line: str) -> None:
     logger.info(f"[decision-server] {line}")
     _state.log_buffer.append(line)
+    if _log_callback:
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_log_callback(line))
+        except RuntimeError:
+            pass
 
 
 def get_server_status() -> Dict[str, Any]:

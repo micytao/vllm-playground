@@ -1,40 +1,28 @@
 <!-- Decision Models View Template (Experimental) -->
 <!-- Loaded dynamically by decisionModels.js -->
 
-<div class="dm-layout">
+<div class="dm-content-wrapper">
 
-    <!-- Experimental disclosure banner -->
-    <div class="dm-banner">
-        <span class="dm-banner-icon">&#9888;</span>
-        <div class="dm-banner-text">
-            <strong>Experimental.</strong>
-            Explores vLLM's native structured-read decision capability (single-step diffusion canvas reads
-            on DiffusionGemma). Requires a nightly vLLM build and NVIDIA + FlashAttention4; the
-            request/response shape is an evolving vLLM example contract, not a stable API.
-            <span id="dm-mock-mode-note">All results below are currently <strong>simulated</strong> &mdash;
-            no live vLLM instance is wired up yet.</span>
-        </div>
-    </div>
+    <!-- Row 1: Config panel | Main panel (two-column) -->
+    <div class="dm-layout">
 
-    <!-- Decision Server panel -->
-    <div class="dm-server-panel">
-        <div class="dm-server-panel-header">
-            <div class="dm-server-status">
-                <span class="dm-status-dot" id="dm-status-dot"></span>
-                <span class="dm-status-text" id="dm-status-text">Stopped</span>
+        <!-- Left: Config Panel -->
+        <div class="dm-config-panel" id="dm-config-panel">
+            <h2>&#9881; Decision Server</h2>
+
+            <!-- Experimental disclosure banner (compact) -->
+            <div class="dm-banner">
+                <span class="dm-banner-icon">&#9888;</span>
+                <div class="dm-banner-text">
+                    <strong>Experimental.</strong>
+                    Explores vLLM's native structured-read decision capability.
+                    <span id="dm-mock-mode-note">All results below are currently <strong>simulated</strong> &mdash;
+                    no live vLLM instance is wired up yet.</span>
+                </div>
             </div>
-            <div class="dm-server-actions">
-                <button class="btn btn-primary btn-sm" id="dm-launch-btn">Launch Decision Server</button>
-                <button class="btn btn-danger btn-sm" id="dm-stop-btn" style="display: none;">Stop</button>
-            </div>
-        </div>
-        <p class="dm-server-message" id="dm-server-message"></p>
-        <p class="dm-hardware-warning" id="dm-hardware-warning" style="display: none;"></p>
 
-        <details class="dm-advanced" id="dm-launch-settings">
-            <summary>Launch settings (mode, model, image, canvas)</summary>
-            <div class="dm-launch-fields">
-                <!-- Run Mode Toggle (mirrors the vLLM Server tab's Run Mode UI) -->
+            <!-- Run Mode Toggle (always visible, at the top like vLLM Server) -->
+            <div class="config-section">
                 <div class="form-group mode-toggle-group" id="dm-run-mode-group">
                     <label>Run Mode</label>
                     <div class="mode-toggle-buttons">
@@ -47,155 +35,199 @@
                             <span>&#127760; Remote</span>
                         </label>
                     </div>
-                    <small class="form-help" id="dm-run-mode-help">Local: launch a nightly vLLM DiffusionGemma container on this machine (needs an NVIDIA GPU). Remote: connect to an existing Jev endpoint.</small>
+                    <small class="form-help" id="dm-run-mode-help">Local: launch a nightly vLLM DiffusionGemma container (needs NVIDIA GPU). Remote: connect to an existing Jev endpoint.</small>
                 </div>
+            </div>
 
-                <!-- Local (container) launch fields -->
-                <div class="dm-mode-fields" id="dm-local-fields">
-                    <div class="dm-run-field">
+            <!-- Local (container) launch fields -->
+            <div class="config-section dm-mode-fields" id="dm-local-fields">
+                <div class="config-section-header">
+                    <h3>Local Configuration</h3>
+                </div>
+                <div class="config-section-content">
+                    <div class="form-group">
                         <label for="dm-image-input">Nightly vLLM image tag</label>
-                        <input type="text" id="dm-image-input" class="dm-textarea dm-textarea-mono dm-input-sm" />
-                        <span class="dm-field-hint">Nightly tags drift -- check
+                        <input type="text" id="dm-image-input" class="form-control dm-textarea-mono" />
+                        <small class="form-help">Nightly tags drift &mdash; check
                             <a href="https://hub.docker.com/r/vllm/vllm-openai/tags" target="_blank" rel="noopener">vllm/vllm-openai tags</a>
-                            if the pull/start fails. Must include the registry, e.g.
-                            <code>docker.io/vllm/vllm-openai:nightly-&lt;sha&gt;</code> --
-                            Podman can't resolve a bare <code>vllm/vllm-openai:...</code> name
-                            without a TTY to prompt.</span>
+                            if the pull/start fails.</small>
                     </div>
-                    <div class="dm-run-field">
+                    <div class="form-group">
                         <label for="dm-canvas-input">Canvas length</label>
-                        <input type="number" id="dm-canvas-input" class="dm-textarea dm-textarea-mono dm-input-sm" step="16" min="16" max="512" />
-                        <span class="dm-field-hint">Multiple of 16; must fit the longest answer template below.</span>
+                        <input type="number" id="dm-canvas-input" class="form-control dm-textarea-mono" step="16" min="16" max="512" />
+                        <small class="form-help">Multiple of 16; must fit the longest answer template.</small>
                     </div>
-                    <div class="dm-run-field">
+                    <div class="form-group">
                         <label for="dm-gpu-device-input">GPU device (optional)</label>
-                        <input type="text" id="dm-gpu-device-input" class="dm-textarea dm-textarea-mono dm-input-sm" placeholder="e.g. 0 (default: all)" />
+                        <input type="text" id="dm-gpu-device-input" class="form-control dm-textarea-mono" placeholder="e.g. 0 (default: all)" />
                     </div>
                 </div>
+            </div>
 
-                <!-- Remote endpoint fields -->
-                <div class="dm-mode-fields" id="dm-remote-fields" style="display: none;">
-                    <div class="dm-run-field">
+            <!-- Remote endpoint fields -->
+            <div class="config-section dm-mode-fields" id="dm-remote-fields" style="display: none;">
+                <div class="config-section-header">
+                    <h3>Remote Configuration</h3>
+                </div>
+                <div class="config-section-content">
+                    <div class="form-group">
                         <label for="dm-remote-url-input">Endpoint URL</label>
-                        <input type="text" id="dm-remote-url-input" class="dm-textarea dm-textarea-mono dm-input-sm" placeholder="https://my-jev-host:8801" />
-                        <span class="dm-field-hint">Must already expose the Jev
-                            <code>/v1/systemone</code> contract (a running
-                            <code>structured_server.py</code> or equivalent). No local
-                            container, sidecar, or GPU is used in this mode.</span>
-                        <span class="dm-field-hint">Tip: for the official Jev API, use
-                            <code>https://api.typesafe.ai</code>.</span>
+                        <input type="text" id="dm-remote-url-input" class="form-control dm-textarea-mono" placeholder="https://my-jev-host:8801" />
+                        <small class="form-help">Must already expose the Jev
+                            <code>/v1/systemone</code> contract. No local
+                            container, sidecar, or GPU is used in this mode.</small>
+                        <small class="form-help">Tip: for the official Jev API, use
+                            <code>https://api.typesafe.ai</code>.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="dm-remote-api-key-input">API key (optional)</label>
+                        <input type="password" id="dm-remote-api-key-input" class="form-control dm-textarea-mono" placeholder="sent as Authorization: Bearer ..." />
+                    </div>
+                </div>
+            </div>
+
+            <!-- Model: used by both modes -->
+            <div class="config-section">
+                <div class="form-group">
+                    <label for="dm-model-input" id="dm-model-label">Model (HF repo id)</label>
+                    <input type="text" id="dm-model-input" class="form-control dm-textarea-mono" />
+                </div>
+            </div>
+
+            <!-- Server Controls -->
+            <div class="config-section server-controls-section">
+                <p class="dm-hardware-warning" id="dm-hardware-warning" style="display: none;"></p>
+                <div class="button-group">
+                    <button id="dm-launch-btn" class="btn btn-primary">Start Server</button>
+                    <button id="dm-stop-btn" class="btn btn-danger" style="display: none;">Stop</button>
+                </div>
+                <div class="dm-server-status-bar" id="dm-server-status-bar">
+                    <span class="dm-status-dot" id="dm-status-dot"></span>
+                    <span class="dm-status-text" id="dm-status-text">Stopped</span>
+                </div>
+                <p class="dm-server-message" id="dm-server-message"></p>
+            </div>
+
+        </div>
+
+        <!-- Right: Main Panel (Gallery + Run) -->
+        <div class="dm-main-panel" id="dm-main-panel">
+            <!-- Use case gallery -->
+            <div class="dm-gallery-section">
+                <h3 class="dm-section-title">Use Cases</h3>
+                <p class="dm-section-subtitle">Pick an example to see a Choice, Noul, or Score decision in action.</p>
+                <div class="dm-gallery" id="dm-gallery">
+                    <div class="dm-gallery-loading">Loading use cases&hellip;</div>
+                </div>
+            </div>
+
+            <!-- Run panel (hidden until a use case is selected) -->
+            <div class="dm-run-panel" id="dm-run-panel" style="display: none;">
+                <div class="dm-run-header">
+                    <div>
+                        <h3 id="dm-run-title"></h3>
+                        <p id="dm-run-description"></p>
+                    </div>
+                    <button class="dm-run-close" id="dm-run-close" title="Close">&times;</button>
+                </div>
+
+                <!-- Generic body: used by every non-interactive use case -->
+                <div class="dm-run-body" id="dm-generic-body">
+                    <div class="dm-run-field">
+                        <label for="dm-state-input">State</label>
+                        <textarea id="dm-state-input" class="dm-textarea" rows="4"></textarea>
+                    </div>
+
+                    <details class="dm-advanced">
+                        <summary>Advanced: edit questions JSON</summary>
+                        <textarea id="dm-questions-input" class="dm-textarea dm-textarea-mono" rows="10"></textarea>
+                    </details>
+
+                    <button class="btn btn-primary" id="dm-run-btn">Run Decision</button>
+                    <span class="dm-run-error" id="dm-run-error" style="display: none;"></span>
+                </div>
+
+                <div class="dm-run-results" id="dm-run-results" style="display: none;">
+                    <div class="dm-results-header">
+                        <span class="dm-simulated-badge" id="dm-simulated-badge" style="display: none;">SIMULATED</span>
+                        <span class="dm-live-badge" id="dm-live-badge" style="display: none;">LIVE</span>
+                        <span class="dm-results-timing" id="dm-results-timing"></span>
+                    </div>
+                    <p class="dm-results-note" id="dm-results-note"></p>
+                    <div class="dm-answers" id="dm-answers"></div>
+                </div>
+
+                <!-- Race Lane Decider: live control-loop demo -->
+                <div class="dm-race-body" id="dm-race-body" style="display: none;">
+                    <div class="dm-race-toolbar">
+                        <button class="btn btn-primary btn-sm" id="dm-race-start-btn">&#9654; Start</button>
+                        <button class="btn btn-secondary btn-sm" id="dm-race-reset-btn">&#8634; Reset</button>
+                        <label class="dm-race-speed-label">Speed
+                            <select id="dm-race-speed-select">
+                                <option value="1400">Slow</option>
+                                <option value="900" selected>Normal</option>
+                                <option value="500">Fast</option>
+                            </select>
+                        </label>
+                        <span class="dm-race-badge" id="dm-race-source-badge"></span>
+                    </div>
+
+                    <div class="dm-race-stats">
+                        <div class="dm-race-stat dm-race-stat-score"><span class="dm-race-stat-label">&#127942; Rows survived</span><span class="dm-race-stat-value" id="dm-race-score">0</span></div>
+                        <div class="dm-race-stat dm-race-stat-hazard"><span class="dm-race-stat-label">&#9888;&#65039; Hazard</span><span class="dm-race-stat-value" id="dm-race-hazard">&mdash;</span></div>
+                        <div class="dm-race-stat"><span class="dm-race-stat-label">&#9201; Latency</span><span class="dm-race-stat-value" id="dm-race-latency">&mdash;</span></div>
+                    </div>
+
+                    <div class="dm-race-track" id="dm-race-track"></div>
+                    <p class="dm-race-message" id="dm-race-message">Press Start &mdash; every tick, the current track layout becomes one batched Choice+Noul request to the Decision Server.</p>
+                    <details class="dm-race-explainer">
+                        <summary>How it works</summary>
+                        <p>Each tick compresses the 3-lane road ahead into a JSON state object and sends a single request with two questions: a <strong>Choice</strong> (which lane?) and a <strong>Noul</strong> (collision likely?). The model picks a lane; your code acts on the answer. This is the <em>control-loop</em> pattern &mdash; fast, typed decisions driving real-time behavior.</p>
+                    </details>
+                </div>
+
+                <!-- Rubric Grading Puzzle: editable submission + rubric, N x Score -->
+                <div class="dm-rubric-body" id="dm-rubric-body" style="display: none;">
+                    <div class="dm-run-field">
+                        <label for="dm-rubric-submission-input">Submission to grade</label>
+                        <textarea id="dm-rubric-submission-input" class="dm-textarea" rows="4"></textarea>
                     </div>
                     <div class="dm-run-field">
-                        <label for="dm-remote-api-key-input">API key (optional)</label>
-                        <input type="password" id="dm-remote-api-key-input" class="dm-textarea dm-textarea-mono dm-input-sm" placeholder="sent as Authorization: Bearer ..." />
+                        <label for="dm-rubric-instructions-input">Rubric instructions</label>
+                        <textarea id="dm-rubric-instructions-input" class="dm-textarea" rows="2"></textarea>
                     </div>
-                </div>
+                    <div class="dm-run-field" id="dm-rubric-criteria-list"></div>
 
-                <!-- Model: used by both modes -->
-                <div class="dm-run-field">
-                    <label for="dm-model-input" id="dm-model-label">Model (HF repo id)</label>
-                    <input type="text" id="dm-model-input" class="dm-textarea dm-textarea-mono dm-input-sm" />
+                    <button class="btn btn-primary" id="dm-rubric-grade-btn">Grade Submission</button>
+                    <span class="dm-run-error" id="dm-rubric-error" style="display: none;"></span>
+                    <span class="dm-race-badge" id="dm-rubric-source-badge"></span>
+
+                    <div class="dm-rubric-results" id="dm-rubric-results" style="display: none;"></div>
                 </div>
             </div>
-        </details>
+        </div>
 
-        <details class="dm-advanced" id="dm-log-panel">
-            <summary>Server logs</summary>
-            <pre class="dm-log-output" id="dm-log-output">(no logs yet)</pre>
-        </details>
     </div>
 
-    <!-- Use case gallery -->
-    <div class="dm-gallery-section">
-        <h3 class="dm-section-title">Use Cases</h3>
-        <p class="dm-section-subtitle">Pick an example to see a Choice, Noul, or Score decision in action.</p>
-        <div class="dm-gallery" id="dm-gallery">
-            <div class="dm-gallery-loading">Loading use cases&hellip;</div>
-        </div>
-    </div>
-
-    <!-- Run panel (hidden until a use case is selected) -->
-    <div class="dm-run-panel" id="dm-run-panel" style="display: none;">
-        <div class="dm-run-header">
-            <div>
-                <h3 id="dm-run-title"></h3>
-                <p id="dm-run-description"></p>
+    <!-- Row 2: Server Logs (full width, collapsible) -->
+    <div class="logs-row collapsed" id="dm-logs-row">
+        <div class="logs-row-header" id="dm-logs-row-toggle">
+            <div class="logs-row-title">
+                <span class="logs-toggle-icon">&#9660;</span>
+                <h2>&#128203; Server Logs</h2>
             </div>
-            <button class="dm-run-close" id="dm-run-close" title="Close">&times;</button>
-        </div>
-
-        <!-- Generic body: used by every non-interactive use case -->
-        <div class="dm-run-body" id="dm-generic-body">
-            <div class="dm-run-field">
-                <label for="dm-state-input">State</label>
-                <textarea id="dm-state-input" class="dm-textarea" rows="4"></textarea>
-            </div>
-
-            <details class="dm-advanced">
-                <summary>Advanced: edit questions JSON</summary>
-                <textarea id="dm-questions-input" class="dm-textarea dm-textarea-mono" rows="10"></textarea>
-            </details>
-
-            <button class="btn btn-primary" id="dm-run-btn">Run Decision</button>
-            <span class="dm-run-error" id="dm-run-error" style="display: none;"></span>
-        </div>
-
-        <div class="dm-run-results" id="dm-run-results" style="display: none;">
-            <div class="dm-results-header">
-                <span class="dm-simulated-badge" id="dm-simulated-badge" style="display: none;">SIMULATED</span>
-                <span class="dm-live-badge" id="dm-live-badge" style="display: none;">LIVE</span>
-                <span class="dm-results-timing" id="dm-results-timing"></span>
-            </div>
-            <p class="dm-results-note" id="dm-results-note"></p>
-            <div class="dm-answers" id="dm-answers"></div>
-        </div>
-
-        <!-- Race Lane Decider: live control-loop demo -->
-        <div class="dm-race-body" id="dm-race-body" style="display: none;">
-            <div class="dm-race-toolbar">
-                <button class="btn btn-primary btn-sm" id="dm-race-start-btn">&#9654; Start</button>
-                <button class="btn btn-secondary btn-sm" id="dm-race-reset-btn">&#8634; Reset</button>
-                <label class="dm-race-speed-label">Speed
-                    <select id="dm-race-speed-select">
-                        <option value="1400">Slow</option>
-                        <option value="900" selected>Normal</option>
-                        <option value="500">Fast</option>
-                    </select>
+            <div class="logs-row-controls">
+                <label class="auto-scroll-label">
+                    <input type="checkbox" id="dm-auto-scroll" checked>
+                    <span>Auto-scroll</span>
                 </label>
-                <span class="dm-race-badge" id="dm-race-source-badge"></span>
+                <button id="dm-clear-logs-btn" class="btn btn-secondary btn-sm">Clear</button>
             </div>
-
-            <div class="dm-race-stats">
-                <div class="dm-race-stat dm-race-stat-score"><span class="dm-race-stat-label">&#127942; Rows survived</span><span class="dm-race-stat-value" id="dm-race-score">0</span></div>
-                <div class="dm-race-stat dm-race-stat-hazard"><span class="dm-race-stat-label">&#9888;&#65039; Hazard</span><span class="dm-race-stat-value" id="dm-race-hazard">&mdash;</span></div>
-                <div class="dm-race-stat"><span class="dm-race-stat-label">&#9201; Latency</span><span class="dm-race-stat-value" id="dm-race-latency">&mdash;</span></div>
-            </div>
-
-            <div class="dm-race-track" id="dm-race-track"></div>
-            <p class="dm-race-message" id="dm-race-message">Press Start &mdash; every tick, the current track layout becomes one batched Choice+Noul request to the Decision Server.</p>
-            <details class="dm-race-explainer">
-                <summary>How it works</summary>
-                <p>Each tick compresses the 3-lane road ahead into a JSON state object and sends a single request with two questions: a <strong>Choice</strong> (which lane?) and a <strong>Noul</strong> (collision likely?). The model picks a lane; your code acts on the answer. This is the <em>control-loop</em> pattern &mdash; fast, typed decisions driving real-time behavior.</p>
-            </details>
         </div>
-
-        <!-- Rubric Grading Puzzle: editable submission + rubric, N x Score -->
-        <div class="dm-rubric-body" id="dm-rubric-body" style="display: none;">
-            <div class="dm-run-field">
-                <label for="dm-rubric-submission-input">Submission to grade</label>
-                <textarea id="dm-rubric-submission-input" class="dm-textarea" rows="4"></textarea>
+        <div class="logs-row-content" id="dm-logs-row-content">
+            <div id="dm-logs-container" class="logs-container">
+                <div class="log-entry info">Waiting for Decision Server...</div>
             </div>
-            <div class="dm-run-field">
-                <label for="dm-rubric-instructions-input">Rubric instructions</label>
-                <textarea id="dm-rubric-instructions-input" class="dm-textarea" rows="2"></textarea>
-            </div>
-            <div class="dm-run-field" id="dm-rubric-criteria-list"></div>
-
-            <button class="btn btn-primary" id="dm-rubric-grade-btn">Grade Submission</button>
-            <span class="dm-run-error" id="dm-rubric-error" style="display: none;"></span>
-            <span class="dm-race-badge" id="dm-rubric-source-badge"></span>
-
-            <div class="dm-rubric-results" id="dm-rubric-results" style="display: none;"></div>
         </div>
     </div>
 

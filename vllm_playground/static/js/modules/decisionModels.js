@@ -16,7 +16,6 @@
 
 const DM_ACTIVE_PHASES = new Set(["pulling", "starting_vllm", "waiting_health", "starting_sidecar", "stopping"]);
 const DM_STATUS_POLL_MS = 2500;
-const DM_LOG_POLL_MS = 3000;
 const DM_RACE_LANES = ["left", "center", "right"];
 // /api/hardware-capabilities shells out to nvidia-smi/amd-smi/tpu-info (and,
 // in a Kubernetes namespace, lists cluster nodes) on every call. That's cheap
@@ -40,7 +39,7 @@ const DecisionModelsModule = {
     useCasesLoaded: false,
     selectedUseCase: null,
     statusPollTimer: null,
-    logsPollTimer: null,
+    logWebSocket: null,
     launchFieldsTouched: false,
     lastPhase: null,
     hardwareOk: null,
@@ -57,7 +56,7 @@ const DecisionModelsModule = {
             return;
         }
 
-        if (this.templateLoaded && container.querySelector('.dm-layout')) {
+        if (this.templateLoaded && container.querySelector('.dm-content-wrapper')) {
             return;
         }
 
@@ -70,13 +69,22 @@ const DecisionModelsModule = {
             this.templateLoaded = true;
 
             this._bindEvents();
-            this._prefillFromSavedSettings();
-            this._checkHardwareGate();
-            this._refreshServerStatus();
-            this._startStatusPolling();
+
+            // Run all init API calls in parallel for fast activation
+            const initTasks = [
+                this._prefillFromSavedSettings(),
+                this._refreshServerStatus(),
+            ];
             if (!this.useCasesLoaded) {
-                this._fetchUseCases();
+                initTasks.push(this._fetchUseCases());
             }
+            initTasks.push(this._checkHardwareGate());
+
+            this._startStatusPolling();
+            this.connectLogWebSocket();
+
+            // Fire all in parallel -- template is already rendered
+            await Promise.allSettled(initTasks);
 
             console.log('Decision Models template loaded');
         } catch (error) {
@@ -95,16 +103,21 @@ const DecisionModelsModule = {
         if (!this.templateLoaded) {
             await this.loadTemplate();
         } else {
+            const activationTasks = [this._refreshServerStatus()];
+
             // Only re-check hardware if we've never checked, or the cached
             // result is stale -- avoid hammering /api/hardware-capabilities
             // (which shells out to nvidia-smi etc.) on every tab switch.
             if (!this.hardwareCheckedAt || Date.now() - this.hardwareCheckedAt > DM_HARDWARE_CACHE_MS) {
-                this._checkHardwareGate();
+                activationTasks.push(this._checkHardwareGate());
             } else {
                 this._updateLaunchButtonState();
             }
-            this._refreshServerStatus();
+
             this._startStatusPolling();
+            this.connectLogWebSocket();
+
+            await Promise.allSettled(activationTasks);
         }
     },
 
@@ -113,7 +126,7 @@ const DecisionModelsModule = {
         // in-progress launch keeps running server-side but this tab doesn't
         // keep hammering the backend in the background.
         this._stopStatusPolling();
-        this._stopLogsPolling();
+        this.disconnectLogWebSocket();
         this._raceStop();
     },
 
@@ -129,16 +142,67 @@ const DecisionModelsModule = {
         }
     },
 
-    _startLogsPolling() {
-        if (this.logsPollTimer) return;
-        this._pollLogs();
-        this.logsPollTimer = setInterval(() => this._pollLogs(), DM_LOG_POLL_MS);
+    // -- WebSocket log streaming (same pattern as Omni) -----------------------
+
+    connectLogWebSocket() {
+        if (this.logWebSocket &&
+            (this.logWebSocket.readyState === WebSocket.OPEN ||
+             this.logWebSocket.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/decision/logs`;
+
+        try {
+            this.logWebSocket = new WebSocket(wsUrl);
+
+            this.logWebSocket.onopen = () => {
+                console.log('Decision log WebSocket connected');
+            };
+
+            this.logWebSocket.onmessage = (event) => {
+                const message = event.data;
+                if (message && message.trim()) {
+                    this._addLog(message);
+                }
+            };
+
+            this.logWebSocket.onerror = (error) => {
+                console.error('Decision log WebSocket error:', error);
+            };
+
+            this.logWebSocket.onclose = () => {
+                console.log('Decision log WebSocket closed');
+                // Attempt to reconnect after 2 seconds if we haven't deactivated
+                if (this.templateLoaded && document.getElementById('dm-logs-row')) {
+                    setTimeout(() => this.connectLogWebSocket(), 2000);
+                }
+            };
+        } catch (error) {
+            console.error('Failed to connect decision log WebSocket:', error);
+        }
     },
 
-    _stopLogsPolling() {
-        if (this.logsPollTimer) {
-            clearInterval(this.logsPollTimer);
-            this.logsPollTimer = null;
+    disconnectLogWebSocket() {
+        if (this.logWebSocket) {
+            this.logWebSocket.close();
+            this.logWebSocket = null;
+        }
+    },
+
+    _addLog(message) {
+        const container = document.getElementById('dm-logs-container');
+        if (!container) return;
+
+        const entry = document.createElement('div');
+        entry.className = 'log-entry info';
+        entry.textContent = message;
+        container.appendChild(entry);
+
+        const autoScroll = document.getElementById('dm-auto-scroll');
+        if (autoScroll && autoScroll.checked) {
+            container.scrollTop = container.scrollHeight;
         }
     },
 
@@ -170,14 +234,21 @@ const DecisionModelsModule = {
         });
         this._onModeChange();
 
-        const logPanel = document.getElementById('dm-log-panel');
-        if (logPanel) {
-            logPanel.addEventListener('toggle', () => {
-                if (logPanel.open) {
-                    this._startLogsPolling();
-                } else {
-                    this._stopLogsPolling();
-                }
+        // Logs row toggle (collapse/expand, same pattern as vLLM Server)
+        const logsToggle = document.getElementById('dm-logs-row-toggle');
+        if (logsToggle) {
+            logsToggle.addEventListener('click', () => {
+                const logsRow = document.getElementById('dm-logs-row');
+                if (logsRow) logsRow.classList.toggle('collapsed');
+            });
+        }
+
+        const clearLogsBtn = document.getElementById('dm-clear-logs-btn');
+        if (clearLogsBtn) {
+            clearLogsBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const container = document.getElementById('dm-logs-container');
+                if (container) container.innerHTML = '<div class="log-entry info">Logs cleared.</div>';
             });
         }
 
@@ -231,7 +302,7 @@ const DecisionModelsModule = {
         if (localFields) localFields.style.display = remote ? 'none' : 'block';
         if (remoteFields) remoteFields.style.display = remote ? 'block' : 'none';
         if (launchBtn && (!this.lastPhase || this.lastPhase === 'stopped' || this.lastPhase === 'error')) {
-            launchBtn.textContent = remote ? 'Connect Decision Endpoint' : 'Launch Decision Server';
+            launchBtn.textContent = remote ? 'Connect' : 'Start Server';
         }
         // Swap the model input's default when the mode changes so the user
         // doesn't accidentally send a DiffusionGemma HF repo id to the
@@ -351,7 +422,7 @@ const DecisionModelsModule = {
                 launchBtn.style.display = (phase === 'ready' || busy) ? 'none' : 'inline-block';
                 launchBtn.textContent = busy
                     ? this._phaseLabel(phase)
-                    : (this._launchMode() === 'remote' ? 'Connect Decision Endpoint' : 'Launch Decision Server');
+                    : (this._launchMode() === 'remote' ? 'Connect' : 'Start Server');
             }
             if (stopBtn) {
                 stopBtn.style.display = (phase === 'ready' || busy) ? 'inline-block' : 'none';
@@ -364,7 +435,7 @@ const DecisionModelsModule = {
                         ? `The Decision Server is <strong>live</strong> -- results below call the remote endpoint at <code>${this._escapeHtml(status.remote_url || '')}</code>.`
                         : 'The Decision Server is <strong>live</strong> -- results below call the real vLLM-backed sidecar.';
                 } else {
-                    mockNote.innerHTML = 'All results below are currently <strong>simulated</strong> &mdash; launch the Decision Server above for live results.';
+                    mockNote.innerHTML = 'All results below are currently <strong>simulated</strong> &mdash; start the Decision Server for live results.';
                 }
             }
 
@@ -408,13 +479,13 @@ const DecisionModelsModule = {
                 }
             }
 
-            // Auto-poll faster while a launch/stop is in progress, and drop
-            // back to idle polling once settled.
+            // Auto-expand logs row while a launch/stop is in progress
             if (busy) {
                 this._startStatusPolling();
-                this._startLogsPolling();
-            } else if (phase === 'stopped') {
-                this._stopLogsPolling();
+                const logsRow = document.getElementById('dm-logs-row');
+                if (logsRow && logsRow.classList.contains('collapsed')) {
+                    logsRow.classList.remove('collapsed');
+                }
             }
             this._updateLaunchButtonState();
         } catch (error) {
@@ -422,20 +493,6 @@ const DecisionModelsModule = {
             dot.className = 'dm-status-dot error';
             text.textContent = 'Unavailable';
             message.textContent = 'Could not reach the backend to check Decision Server status.';
-        }
-    },
-
-    async _pollLogs() {
-        const logOutput = document.getElementById('dm-log-output');
-        if (!logOutput) return;
-        try {
-            const response = await fetch('/api/decision/server/logs?limit=200');
-            const data = await response.json();
-            const lines = data.lines || [];
-            logOutput.textContent = lines.length ? lines.join('\n') : '(no logs yet)';
-            logOutput.scrollTop = logOutput.scrollHeight;
-        } catch (error) {
-            console.error('Failed to fetch decision server logs:', error);
         }
     },
 
@@ -488,9 +545,11 @@ const DecisionModelsModule = {
                     });
                 }
             }
-            this._startLogsPolling();
-            const logPanel = document.getElementById('dm-log-panel');
-            if (logPanel) logPanel.open = true;
+            // Auto-expand logs row
+            const logsRow = document.getElementById('dm-logs-row');
+            if (logsRow && logsRow.classList.contains('collapsed')) {
+                logsRow.classList.remove('collapsed');
+            }
         } catch (error) {
             console.error('Failed to launch Decision Server:', error);
             if (message) message.textContent = `Failed to launch: ${error.message}`;
@@ -880,7 +939,6 @@ const DecisionModelsModule = {
         if (!track || !this.race) return;
 
         const rows = this.race.rows;
-        const totalRows = rows.length;
 
         const rowsHtml = rows.slice().reverse().map((row, visualIdx) => {
             const distFromCar = visualIdx;
