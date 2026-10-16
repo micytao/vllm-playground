@@ -246,6 +246,8 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     display: flex;
     flex-direction: column;
     gap: 4px;
+    overflow-y: auto;
+    min-height: 0;
 }
 
 .nav-item {
