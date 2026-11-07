@@ -41,11 +41,20 @@ jobs:
   unit-tests:
     name: Unit tests (py${{ matrix.python-version }})
     needs: lint
-    runs-on: ubuntu-latest
+    # ubuntu-latest is 26.04, and actions/setup-python has no Python 3.9
+    # build for that image. 3.9 is still published for 24.04. 3.11 and 3.12
+    # stay on ubuntu-latest.
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.11", "3.12"]
+        include:
+          - python-version: "3.9"
+            os: ubuntu-24.04
+          - python-version: "3.11"
+            os: ubuntu-latest
+          - python-version: "3.12"
+            os: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
