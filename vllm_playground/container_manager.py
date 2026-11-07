@@ -40,6 +40,53 @@ def detect_container_runtime() -> Optional[str]:
     return None
 
 
+def _parse_container_ps_output(output: str) -> list:
+    """Parse `ps --format` JSON from Podman or Docker.
+
+    Accepted shapes:
+    - a JSON array (Podman `--format json`, and some Docker versions)
+    - one JSON object (a single container)
+    - newline-separated JSON objects (Docker `{{json .}}` and Docker CLI 23+
+      `--format json` when more than one container matches)
+
+    Raises ValueError when the output is non-empty but contains no JSON.
+    That is what Docker CLI 20.10 prints for the bare word `json`.
+    """
+    text = output.strip()
+    if not text:
+        return []
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        parsed = None
+
+    if isinstance(parsed, list):
+        return parsed
+    if isinstance(parsed, dict):
+        return [parsed]
+
+    containers = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            containers.append(item)
+        elif isinstance(item, list):
+            containers.extend(entry for entry in item if isinstance(entry, dict))
+
+    if containers:
+        return containers
+
+    snippet = text[:120].replace("\n", "\\n")
+    raise ValueError(f"container ps output was not JSON: {snippet!r}")
+
+
 class VLLMContainerManager:
     """Manages vLLM container lifecycle using Podman CLI"""
 
@@ -810,23 +857,28 @@ class VLLMContainerManager:
 
         while time.time() - start_time < timeout:
             try:
-                # Check if container is still running
+                # Check if container is still running. A failed status probe
+                # (bad JSON, daemon hiccup) is not evidence the container
+                # exited — keep polling until the timeout instead of reporting
+                # "container_stopped" while it is actually healthy.
                 status = await self.get_container_status(container_name=target_name)
-                if not status.get("running", False):
+                if status.get("status") == "error":
+                    last_error = status.get("error") or "container status check failed"
+                elif not status.get("running", False):
                     elapsed = time.time() - start_time
                     return {"ready": False, "error": "container_stopped", "elapsed_time": round(elapsed, 1)}
-
-                # Try to hit the health endpoint
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        f"http://localhost:{port}/health", timeout=aiohttp.ClientTimeout(total=3)
-                    ) as response:
-                        if response.status == 200:
-                            elapsed = time.time() - start_time
-                            logger.info(f"✅ vLLM is ready! (took {elapsed:.1f}s)")
-                            return {"ready": True, "elapsed_time": round(elapsed, 1)}
-                        else:
-                            last_error = f"HTTP {response.status}"
+                else:
+                    # Try to hit the health endpoint
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(
+                            f"http://localhost:{port}/health", timeout=aiohttp.ClientTimeout(total=3)
+                        ) as response:
+                            if response.status == 200:
+                                elapsed = time.time() - start_time
+                                logger.info(f"✅ vLLM is ready! (took {elapsed:.1f}s)")
+                                return {"ready": True, "elapsed_time": round(elapsed, 1)}
+                            else:
+                                last_error = f"HTTP {response.status}"
 
             except aiohttp.ClientError as e:
                 last_error = f"Connection error: {type(e).__name__}"
@@ -961,27 +1013,22 @@ class VLLMContainerManager:
         """
         target_name = container_name or self.CONTAINER_NAME
         try:
-            # Check if container is running
+            # Check if container is running.
+            # Podman: `--format json` is a keyword and returns a JSON array
+            # (or, on some versions, one object per line). Docker CLI 23+
+            # accepts that same keyword. Docker CLI 20.10 does not: it treats
+            # the bare word `json` as template text and prints "json", which
+            # then fails to parse and looks like the container stopped.
+            # `{{json .}}` is the Go template both old and current Docker CLIs
+            # honor, and Docker 23's `json` keyword emits the same per-line
+            # objects. Podman keeps the keyword so its array output is unchanged.
+            ps_format = "{{json .}}" if self.runtime == "docker" else "json"
             result = await self._run_podman_cmd_async(
-                "ps", "--filter", f"name={target_name}", "--format", "json", check=False
+                "ps", "--filter", f"name={target_name}", "--format", ps_format, check=False
             )
 
             if result.returncode == 0 and result.stdout.strip():
-                output = result.stdout.strip()
-
-                # Handle different JSON formats between Docker and Podman
-                # Docker returns: [] or [{...}]
-                # Podman may return: [{...}] or newline-separated JSON objects
-                try:
-                    containers = json.loads(output)
-                except json.JSONDecodeError:
-                    # Podman sometimes returns newline-separated JSON objects
-                    lines = output.strip().split("\n")
-                    containers = [json.loads(line) for line in lines if line.strip()]
-
-                # Ensure containers is a list
-                if isinstance(containers, dict):
-                    containers = [containers]
+                containers = _parse_container_ps_output(result.stdout)
 
                 if containers and len(containers) > 0:
                     container = containers[0]
